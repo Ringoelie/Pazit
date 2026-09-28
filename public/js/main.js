@@ -4,6 +4,10 @@ import { ROLES, RESEARCH } from './data.js';
 import { makeLooks } from './core.js';
 import { fmtMoney, fmtNum, fmtDate, esc } from './util.js';
 import { save, load, clearSave, exportSave, importSave } from './state.js';
+import { answerMail, pendingMail, markAllRead } from './mail.js';
+import { openRegion, seasonOf } from './world.js';
+import { poachFrom, smear } from './rivals.js';
+import { orderUnits, setHwPrice } from './hw.js';
 import { OfficeView } from './office.js';
 import { sfx, setSound } from './audio.js';
 import {
@@ -175,7 +179,7 @@ function flushNotes() {
     toast(n.text, n.kind);
     if (n.kind === 'achievement' || n.text.startsWith('🚀') || n.text.startsWith('🎯')) office.burst(n.kind === 'achievement' ? 60 : 30);
     if (now - lastSfx > 250) {
-      sfx(n.kind === 'achievement' ? 'achievement' : n.kind === 'bad' ? 'bad' : n.kind === 'good' ? 'coin' : 'click');
+      sfx(n.kind === 'achievement' ? 'achievement' : n.kind === 'bad' ? 'bad' : n.kind === 'good' ? 'coin' : n.kind === 'mail' ? 'event' : 'click');
       lastSfx = now;
     }
   }
@@ -199,6 +203,7 @@ function badges() {
     contracts: s.contracts.offers.length && s.contracts.active.length < 3 ? s.contracts.offers.length : '',
     research: res || '',
     investors: s.funding.offer ? '!' : '',
+    mail: pendingMail(s).length || '',
     products: s.products.some((p) => !p.launched && G.coreDone(p)) ? '!' : '',
     finance: s.money < 0 ? '!' : '',
   };
@@ -230,7 +235,10 @@ function render() {
     tickerIdx = 0;
     tickerTime = 0;
   }
+  const se = seasonOf(s);
+  $('#season').innerHTML = se ? `<span title="${esc(se.desc)}">${se.icon} ${esc(se.name)}</span>` : '';
   patch($('#panel'), renderPanel(s, U));
+  if (U.tab === 'mail') markAllRead(s);
   if (U.edit) patch($('#editBar'), editBar(s, U));
   refreshModals();
 }
@@ -459,6 +467,20 @@ const ACTIONS = {
       if (r.ok) office.burst(60);
     });
   },
+  answerMail: (d) => {
+    const r = answerMail(s, +d.id, +d.i);
+    if (r.msg) toast(r.msg, r.ok ? 'info' : 'bad');
+    sfx(r.ok ? 'click' : 'error');
+  },
+  openRegion: (d) => {
+    const r = openRegion(s, d.id);
+    result(r, 'achievement');
+    if (r.ok) office.burst(60);
+  },
+  orderUnits: (d) => result(orderUnits(s, +d.pid, +d.q), 'coin'),
+  hwPrice: (d) => result(setHwPrice(s, +d.pid, +d.m)),
+  rivalPoach: (d) => result(poachFrom(s, +d.id), 'coin'),
+  rivalSmear: (d) => result(smear(s, +d.id), 'good'),
   eventChoice: (d) => {
     const r = G.resolveEvent(s, +d.i);
     if (eventModal) closeModal(eventModal);
@@ -615,6 +637,8 @@ function helpModal(first = false) {
       <li>🔬 <b>I+D:</b> investiga "Modelos de negocio" para poder ganar dinero con publicidad o suscripciones. Luego desbloquea móviles, IA, streaming...</li>
       <li>📣 <b>Marketing, 🖥️ servidores y 📈 inversores:</b> haz crecer tu producto, mantenlo en pie y busca financiación.</li>
       <li>🏢 <b>Oficina:</b> compra mejoras para que el equipo esté feliz y con energía, y múdate cuando te falte espacio.</li>
+      <li>📬 <b>Correo:</b> empleados, clientes, rivales y reguladores te escriben. Si no contestas a tiempo, se aplica la última opción.</li>
+      <li>🗺️ <b>Mundo:</b> abre sedes en otros continentes, vigila las leyes y aprovecha temporadas como Black Friday o Navidades.</li>
       </ol>
       <p class="muted">Controles: <b>Espacio</b> pausa · <b>1-3</b> velocidad · <b>E</b> o ✏️ editar la oficina · arrastra la oficina para moverte · rueda o pellizco para zoom · toca a alguien para ver su ficha.</p>
       <p class="muted">Si te quedas sin dinero durante 45 días, quiebras. ¡Vigila tus finanzas!</p>

@@ -3,7 +3,7 @@
 import { PERKS } from './data.js';
 import { rint, chance, pick, dateOf, fmtMoney } from './util.js';
 import { has, findEmp, findProduct, news, money, addEffect, makePerson, expectedSalary } from './core.js';
-import { valuation, queueFeature, isAIProduct, featureAvailable, installPerk } from './sim.js';
+import { valuation, queueFeature, isAIProduct, featureAvailable, installPerk, teamPowers } from './sim.js';
 
 const live = (s) => s.products.filter((p) => p.launched && p.users > 500);
 const best = (s) => live(s).sort((a, b) => b.users - a.users)[0];
@@ -36,7 +36,7 @@ export const EVENTS = {
   },
 
   poach: {
-    weight: (s) => (s.employees.some((e) => e.role !== 'founder' && e.skill >= 50 && !e.traits.includes('loyal')) ? 2.5 : 0),
+    weight: (s) => (s.employees.some((e) => e.role !== 'founder' && e.skill >= 50 && !e.traits.includes('loyal')) ? 1 : 0),
     setup: (s) => {
       const list = s.employees.filter((e) => e.role !== 'founder' && e.skill >= 50 && !e.traits.includes('loyal'));
       const e = pick(s, list);
@@ -223,7 +223,7 @@ export const EVENTS = {
       text: `Una empresa fantasma te demanda por "usar un botón con forma de corazón". Piden ${fmtMoney(ctx.amount)}.`,
       choices: [
         { label: 'Pagar y olvidarse', hint: fmtMoney(ctx.amount) },
-        { label: 'Pelear en los tribunales', hint: '60% ganas (+5 rep.), 40% pagas el doble' },
+        { label: 'Pelear en los tribunales', hint: `${Math.round(Math.min(0.9, 0.6 + teamPowers(s).legal * 0.08) * 100)}% ganas (+5 rep.); si no, pagas el doble` },
       ],
     }),
     resolve: (s, ctx, i) => {
@@ -231,7 +231,7 @@ export const EVENTS = {
         money(s, -ctx.amount, 'other');
         return 'Pagado. Qué rabia.';
       }
-      if (chance(s, 0.6)) {
+      if (chance(s, Math.min(0.9, 0.6 + teamPowers(s).legal * 0.08))) {
         s.reputation = Math.min(100, s.reputation + 5);
         news(s, `${s.company} gana a un troll de patentes. Internet aplaude.`, 'good');
         return '⚖️ ¡Victoria! El juez se ríe de la demanda.';

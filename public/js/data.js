@@ -21,8 +21,9 @@ export const ROLES = {
   sales: { name: 'Ventas', short: 'VTA', icon: '🤝', produces: 'sales', base: 3100, color: '#257179', unlock: 'sales101' },
   hr: { name: 'Personas (RR.HH.)', short: 'RH', icon: '🫶', produces: 'people', base: 2900, color: '#5d275d', unlock: 'people' },
   ai: { name: 'Ingeniero/a de IA', short: 'IA', icon: '🧠', produces: 'ai', base: 6400, color: '#94b0c2', unlock: 'ml' },
+  legal: { name: 'Abogado/a', short: 'LEX', icon: '⚖️', produces: 'legal', base: 5200, color: '#f4f4f4', unlock: 'compliance' },
 };
-export const HIRABLE = ['dev', 'design', 'marketer', 'research', 'devops', 'pm', 'sales', 'hr', 'ai'];
+export const HIRABLE = ['dev', 'design', 'marketer', 'research', 'devops', 'pm', 'sales', 'hr', 'ai', 'legal'];
 // Roles que trabajan en productos o contratos.
 export const MAKERS = ['founder', 'dev', 'design', 'ai'];
 export const POINT_TYPES = {
@@ -142,7 +143,21 @@ export const FEATURES = {
   bank: { name: 'Cuentas y tarjetas', icon: '🏦', cost: { code: 200, design: 60 }, appeal: 18, monet: 'tx', research: 'fintech' },
   crypto: { name: 'Integración cripto', icon: '🪙', cost: { code: 110 }, appeal: 4, hype: 80, research: 'blockchain' },
   vr: { name: 'Experiencia VR', icon: '🥽', cost: { code: 280, design: 280, ai: 70 }, appeal: 28, load: 1, research: 'vr' },
+  // Cumplimiento normativo: sirven en cualquier producto (universal).
+  privacy: { name: 'Privacidad y RGPD', icon: '🔏', cost: { code: 50, design: 15 }, appeal: 1, universal: true, research: 'compliance' },
+  aiaudit: { name: 'Auditoría de IA', icon: '🧾', cost: { code: 40, ai: 60 }, appeal: 1, universal: true, research: 'compliance' },
+  // Hardware. unit: cuánto encarece cada nivel el coste de fabricación.
+  hwdesign: { name: 'Diseño industrial', icon: '📐', cost: { design: 80, code: 10 }, appeal: 10, hw: true },
+  os: { name: 'Sistema operativo', icon: '💾', cost: { code: 120, design: 30 }, appeal: 10, hw: true },
+  chip: { name: 'Chip propio', icon: '🔲', cost: { code: 160, ai: 40 }, appeal: 14, unit: 0.04, hw: true },
+  battery: { name: 'Batería de larga duración', icon: '🔋', cost: { code: 70, design: 20 }, appeal: 9, unit: 0.03, hw: true },
+  camera: { name: 'Cámara profesional', icon: '📷', cost: { code: 90, design: 40, ai: 30 }, appeal: 12, unit: 0.05, hw: true },
+  screen: { name: 'Pantalla OLED', icon: '🖥️', cost: { design: 90, code: 30 }, appeal: 11, unit: 0.05, hw: true },
+  sensors: { name: 'Sensores de salud', icon: '💓', cost: { code: 80, ai: 30 }, appeal: 11, unit: 0.03, hw: true },
+  waterproof: { name: 'Resistente al agua', icon: '💧', cost: { design: 40, code: 30 }, appeal: 6, unit: 0.02, hw: true },
+  appstore: { name: 'Tienda de apps', icon: '🛍️', cost: { code: 140, design: 40 }, appeal: 8, monet: 'store', hw: true },
 };
+export const UNIVERSAL_WEIGHT = 0.4;
 export const MAX_FEATURE_LEVEL = 10;
 export const LEVEL_COST = 1.55;
 export const LEVEL_APPEAL = 0.55;
@@ -236,7 +251,37 @@ export const CATEGORIES = {
     features: weights('auth:0.8 vr:2 multiplayer:1.5 chat:1.2 profile:1.2 payments:1 crypto:1.2 gamification:1.1 aigen:1.3 voice:1 video:0.8 subs:0.8 ads:0.6 mobile:0.7 i18n:1 a11y:0.8 security:0.8 notif:0.5'),
     desc: 'La apuesta más arriesgada... o la más visionaria.',
   },
+  // Hardware: market = compradores al año; ref = precio de referencia; unit = coste de fabricación.
+  phone: {
+    name: 'Smartphone', icon: '📱', kind: 'hw', market: 3e6, ref: 600, unit: 320, load: 0, core: ['hwdesign', 'os'], research: 'hardware',
+    monet: { store: 1 },
+    rivals: [['Manzana', 400], ['Samsong', 380], ['Xiaomia', 260]],
+    features: weights('hwdesign:1.5 os:1.5 chip:1.3 battery:1.2 camera:1.5 screen:1.3 waterproof:0.8 appstore:1 voice:1 chatbot:0.8 aigen:0.8 security:1 i18n:1 a11y:0.8 darkmode:0.5'),
+    desc: 'Fabrica móviles: margen por unidad y comisión de tu tienda de apps.',
+  },
+  watch: {
+    name: 'Reloj inteligente', icon: '⌚', kind: 'hw', market: 1.5e6, ref: 300, unit: 140, load: 0, core: ['hwdesign', 'sensors'], research: 'hardware',
+    monet: { store: 0.4 },
+    rivals: [['Fitbot', 160], ['Garmín', 220], ['Manzana Watch', 300]],
+    features: weights('hwdesign:1.5 sensors:1.8 battery:1.5 os:1 screen:1 waterproof:1.3 voice:0.8 appstore:0.6 security:0.8 i18n:1 a11y:0.8'),
+    desc: 'Deporte y salud en la muñeca. Arrasa en enero y en Navidad.',
+  },
+  vrhead: {
+    name: 'Gafas VR', icon: '🥽', kind: 'hw', market: 1e6, ref: 450, unit: 260, load: 0, core: ['hwdesign', 'screen'], research: 'vr',
+    monet: { store: 0.8 },
+    rivals: [['Oculta', 300], ['Valvo', 250], ['PicoPico', 160]],
+    features: weights('hwdesign:1.3 screen:1.8 chip:1.3 sensors:1.2 battery:1 os:1 vr:1.5 appstore:1 multiplayer:0.8 aigen:0.6 voice:0.6 i18n:0.8'),
+    desc: 'El hardware del metaverso. Público pequeño pero fiel.',
+  },
+  homebot: {
+    name: 'Robot doméstico', icon: '🤖', kind: 'hw', market: 0.8e6, ref: 1200, unit: 650, load: 0, core: ['hwdesign', 'chip'], research: 'robots',
+    monet: { store: 0.3 },
+    rivals: [['Roombo', 400], ['BotHogar', 300], ['Aspiro', 220]],
+    features: weights('hwdesign:1.3 chip:1.5 sensors:1.5 battery:1.3 camera:1 voice:1.5 chatbot:1.3 aigen:1 recs:0.8 os:1 appstore:0.5 security:1 i18n:0.8'),
+    desc: 'Caro de fabricar, caro de comprar. El futuro del hogar.',
+  },
 };
+export const HW_PRICES = [0.6, 0.8, 1, 1.25, 1.5];
 
 export const PREMIUM_PRICES = [0, 3, 5, 10, 20, 50];
 
@@ -271,6 +316,9 @@ export const RESEARCH = [
   { id: 'quantum', name: 'Computación cuántica', icon: '⚛️', cost: 2700, tier: 6, req: ['edge', 'genai'], desc: '-40% carga de servidores.' },
   { id: 'space', name: 'Programa espacial', icon: '🛰️', cost: 4500, tier: 6, req: ['quantum'], desc: 'Desbloquea la Estación orbital.' },
   { id: 'agi', name: 'AGI', icon: '🌌', cost: 9000, tier: 7, req: ['quantum', 'genai'], desc: '+50% producción de todo el equipo. ¿El final... o el principio?' },
+  { id: 'compliance', name: 'Cumplimiento normativo', icon: '⚖️', cost: 120, tier: 2, req: ['monetization'], desc: 'Abogados, Privacidad y RGPD y Auditoría de IA para esquivar multas.' },
+  { id: 'hardware', name: 'Hardware y fabricación', icon: '🏭', cost: 450, tier: 3, req: ['mobile'], desc: 'Fabrica dispositivos: smartphones y relojes inteligentes.' },
+  { id: 'factory', name: 'Fábrica propia', icon: '🏗️', cost: 750, tier: 4, req: ['hardware'], desc: 'Fabricar cuesta un 15% menos y los pedidos llegan en 18 días en vez de 30.' },
 ];
 export const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map((r) => [r.id, r]));
 
@@ -381,4 +429,51 @@ export const ACHIEVEMENTS = [
   { id: 'crunchSurvivor', name: 'Superviviente', icon: '🧯', desc: 'Sobrevive a un incidente de seguridad.' },
   { id: 'bootstrapped', name: 'Sin inversores', icon: '🥾', desc: 'Llega a $100k/mes sin vender acciones.' },
   { id: 'agi', name: 'Singularidad', icon: '🌌', desc: 'Investiga la AGI.' },
+];
+
+// ---------------------------------------------------------------- temporadas
+// Por mes (0 = enero). demand: multiplica usuarios o ventas por categoría;
+// tx: multiplica las comisiones de las tiendas.
+const SUMMER = { name: 'Verano', icon: '🏖️', demand: { streaming: 1.12, game: 1.2, saas: 0.85, blog: 0.9, dating: 1.1 }, desc: 'Más streaming y juegos; menos trabajo.' };
+export const SEASONS = [
+  { name: 'Propósitos de año nuevo', icon: '📓', demand: { saas: 1.1, watch: 1.4, game: 0.92 }, desc: 'Todo el mundo quiere ser productivo y hacer deporte.' },
+  { name: 'San Valentín', icon: '💘', demand: { dating: 1.35, shop: 1.1 }, desc: 'Las apps de citas echan humo.' },
+  null,
+  null,
+  null,
+  SUMMER,
+  SUMMER,
+  SUMMER,
+  { name: 'Vuelta al cole', icon: '🎒', demand: { saas: 1.15, blog: 1.1, phone: 1.25 }, desc: 'Vuelve la rutina: productividad y móviles nuevos.' },
+  null,
+  { name: 'Black Friday', icon: '🛍️', demand: { shop: 1.4, phone: 1.8, watch: 1.8, vrhead: 1.8, homebot: 1.8 }, tx: { shop: 2 }, desc: 'Compras a lo loco: tiendas y hardware se disparan.' },
+  { name: 'Navidades', icon: '🎄', demand: { shop: 1.3, game: 1.2, phone: 2, watch: 2, vrhead: 2.2, homebot: 2, dating: 0.9 }, tx: { shop: 1.5 }, desc: 'La mejor época para vender hardware. ¿Tienes stock?' },
+];
+
+// ---------------------------------------------------------------- rivales
+export const RIVAL_STYLES = {
+  agresivo: { name: 'Estilo agresivo', icon: '😠', desc: 'Guerras de precios y demandas.', growth: 0.004 },
+  copion: { name: 'Estilo copión', icon: '🦜', desc: 'Copia tus mejores funciones.', growth: 0 },
+  cazatalentos: { name: 'Estilo cazatalentos', icon: '🧲', desc: 'Intenta fichar a tu gente.', growth: 0 },
+  innovador: { name: 'Estilo innovador', icon: '💡', desc: 'Mejora su producto muy deprisa.', growth: 0.012 },
+  dormido: { name: 'Estilo dormido', icon: '😴', desc: 'Vive de las rentas y crece poco.', growth: -0.01 },
+};
+
+// ---------------------------------------------------------------- mundo
+// market: usuarios extra respecto al mercado base. lang: 'es' no necesita
+// traducir; 'en' necesita Multi-idioma; 'asia' lo necesita a nivel 3.
+// arpu: cuánto paga cada usuario de la región respecto a tu mercado base.
+export const REGIONS = {
+  latam: { name: 'Latinoamérica', flag: '🌎', market: 0.2, lang: 'es', arpu: 0.6, salary: 0.6, skill: -3, open: 300000, rent: 9000, cap: 15, desc: 'Hablan tu idioma y el talento es asequible.' },
+  africa: { name: 'África', flag: '🌍', market: 0.12, lang: 'en', arpu: 0.4, salary: 0.5, skill: -2, open: 200000, rent: 6000, cap: 12, desc: 'Un mercado joven. Necesitas Multi-idioma.' },
+  na: { name: 'Norteamérica', flag: '🗽', market: 0.4, lang: 'en', arpu: 1.6, salary: 1.5, skill: 8, open: 1500000, rent: 45000, cap: 25, desc: 'Los usuarios que más pagan y el mejor talento, pero todo es caro. Necesitas Multi-idioma.' },
+  asia: { name: 'Asia', flag: '🏯', market: 0.5, lang: 'asia', arpu: 0.9, salary: 0.9, skill: 4, open: 2500000, rent: 55000, cap: 30, desc: 'El mercado más grande. Necesitas Multi-idioma a nivel 3 para llegar a todos.' },
+};
+
+// day: día de partida en que entra en vigor. require: función que exige.
+export const LAWS = [
+  { id: 'antitrust', name: 'Ley de defensa de la competencia', icon: '🏛️', day: 0, desc: 'Si un producto tuyo supera el 60% de su mercado con más de 1M de usuarios, te investigarán.' },
+  { id: 'privacy', name: 'Ley de protección de datos', icon: '🔏', day: 240, require: 'privacy', minUsers: 1e5, desc: 'Los productos con más de 100.000 usuarios necesitan "Privacidad y RGPD" o se exponen a multas.' },
+  { id: 'aiact', name: 'Ley de Inteligencia Artificial', icon: '🧾', day: 600, require: 'aiaudit', ai: true, desc: 'Los productos con funciones de IA necesitan "Auditoría de IA" o se exponen a multas.' },
+  { id: 'digitaltax', name: 'Tasa digital', icon: '💶', day: 900, desc: 'Un 3% de impuesto sobre los ingresos si superas $1M al mes.' },
 ];

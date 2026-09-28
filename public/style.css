@@ -82,7 +82,9 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(380px, 560px)
 #saved { opacity: 0; transition: opacity 0.3s; }
 #saved.on { opacity: 1; }
 
-.strip { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; padding: 0 4px; min-height: 22px; }
+.strip { display: grid; grid-template-columns: auto auto 1fr; gap: 12px; align-items: center; padding: 0 4px; min-height: 22px; }
+#season { color: var(--cyan); white-space: nowrap; }
+#season:empty { display: none; }
 #quest { color: var(--yellow); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #quest small { color: var(--muted); }
 #ticker { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--silver); text-align: right; }
@@ -290,6 +292,20 @@ summary { cursor: pointer; color: var(--silver); }
 .ach span { font-size: 26px; display: block; }
 .ach b { display: block; font-size: 14px; }
 .ach small { color: var(--muted); font-size: 12px; }
+/* ---------- correo, rivales, mundo ---------- */
+.mails { display: grid; gap: 8px; margin-top: 8px; }
+.mail { background: var(--panel2); border: 2px solid var(--line); padding: 8px 10px; }
+.mail.unread { border-color: var(--cyan); }
+.mail.open { border-color: var(--yellow); }
+.mail header { display: flex; align-items: center; gap: 8px; }
+.mail header small { display: block; color: var(--muted); }
+.mail p { margin: 6px 0; }
+.mail-icon { font-size: 22px; }
+.mail-choices { display: grid; gap: 6px; margin: 6px 0; }
+.mail-out { color: var(--silver); }
+.rivalry { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 6px; margin: 4px 0; font-size: 13px; color: var(--muted); max-width: 260px; }
+.card.rival .col-btns { gap: 4px; }
+.orders { display: grid; gap: 2px; color: var(--cyan); }
 .chart { width: 100%; height: 90px; background: var(--ink); border: 2px solid var(--line); display: block; margin-top: 6px; }
 .legend { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 4px 0 10px; font-size: 14px; }
 .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: middle; }
@@ -324,6 +340,7 @@ summary { cursor: pointer; color: var(--silver); }
 .toast.good { border-left-color: var(--green); }
 .toast.bad { border-left-color: var(--red); }
 .toast.achievement { border-left-color: var(--yellow); background: #3b2f1b; }
+.toast.mail { border-left-color: var(--cyan); }
 .toast.out { opacity: 0; transform: translateX(20px); transition: all 0.3s steps(3); }
 @keyframes slide { from { transform: translateX(30px); opacity: 0; } }
 #tip {
@@ -362,6 +379,7 @@ summary { cursor: pointer; color: var(--silver); }
   .controls { margin-left: auto; }
   .speed button { min-width: 34px; padding: 6px 6px; }
   .strip { grid-template-columns: 1fr; gap: 2px; }
+  #season { font-size: 14px; }
   #ticker { text-align: left; }
   .tab .tn { display: none; }
   .tab.on .tn { display: inline; }
@@ -372,7 +390,7 @@ summary { cursor: pointer; color: var(--silver); }
   .two-col { grid-template-columns: 1fr; }
   .menu { grid-template-columns: 1fr; }
   .card { flex-wrap: wrap; }
-  .card .col-btns { flex-direction: row; align-items: center; width: 100%; justify-content: flex-end; }
+  .card .col-btns { flex-direction: row; align-items: center; width: 100%; justify-content: flex-end; flex-wrap: wrap; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .panel { padding: 10px; }
 }

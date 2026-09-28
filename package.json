@@ -6,7 +6,7 @@
   "description": "Pixel Unicorn: juego de gestión de startups en pixel art para el navegador.",
   "scripts": {
     "dev": "python3 -m http.server 8080 --directory public",
-    "test": "node tests/layout.test.js && node tests/sim.test.js",
+    "test": "node tests/layout.test.js && node tests/depth.test.js && node tests/sim.test.js",
     "deploy": "npx wrangler pages deploy public --project-name pixel-unicorn"
   }
 }

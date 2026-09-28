@@ -319,7 +319,7 @@ export class OfficeView {
 
   onDay(s) {
     if (!this.L || this.edit) return;
-    const working = s.employees.filter((e) => e.off <= 0 && !e.traits.includes('remote'));
+    const working = s.employees.filter((e) => e.off <= 0 && !e.traits.includes('remote') && !e.region);
     const n = Math.min(6, Math.ceil(working.length / 3));
     for (let i = 0; i < n; i++) {
       const e = working[Math.floor(Math.random() * working.length)];
@@ -461,7 +461,7 @@ export class OfficeView {
     const mult = [0, 1, 1.5, 2.2][speed] || 1;
     const points = this.usePoints(layout);
     for (const e of s.employees) {
-      if (e.traits.includes('remote')) continue;
+      if (e.traits.includes('remote') || e.region) continue;
       alive.add(e.id);
       const d = layout.desks[e.desk];
       if (!d) continue;
@@ -554,7 +554,7 @@ export class OfficeView {
       drawables.push({ y: r.y + r.h, ref: 'i:' + it.uid, rect: r, draw: () => drawItem(g, it.id, it.x, it.y, t) });
     }
     const byDesk = new Map();
-    for (const e of s.employees) if (!e.traits.includes('remote')) byDesk.set(e.desk, e);
+    for (const e of s.employees) if (!e.traits.includes('remote') && !e.region) byDesk.set(e.desk, e);
     layout.desks.forEach((d, i) => {
       drawables.push({ y: d.y + 24, ref: 'd:' + i, rect: deskRect(d), draw: () => this.drawDesk(g, d, byDesk.get(i), t) });
     });
@@ -678,7 +678,7 @@ export class OfficeView {
   drawWallDecor(g, s, t) {
     const L = this.L;
     S.drawClock(g, L.loungeX + 12, 20, t);
-    const remote = s.employees.filter((e) => e.traits.includes('remote')).length;
+    const remote = s.employees.filter((e) => e.traits.includes('remote') || e.region).length;
     if (!remote) return;
     const x = 32;
     S.R(g, x, 19, 30, 19, PAL.ink);

@@ -2,8 +2,13 @@
 // por atributos data-act que main.js enruta a la simulación.
 import {
   ROLES, TRAITS, OFFICES, PERKS, FIXTURES, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID, CAMPAIGNS, ROUNDS,
-  QUESTS, ACHIEVEMENTS, POINT_TYPES, PREMIUM_PRICES, MAX_FEATURE_LEVEL, LEVELS,
+  QUESTS, ACHIEVEMENTS, POINT_TYPES, PREMIUM_PRICES, MAX_FEATURE_LEVEL, LEVELS, HW_PRICES, UNIVERSAL_WEIGHT,
+  REGIONS, LAWS, RIVAL_STYLES,
 } from './data.js';
+import { pendingMail } from './mail.js';
+import { seasonOf, seasonDemand, regionMarket, langReach, regionStaff, complianceIssues, lawActive } from './world.js';
+import { warFx, poachCost, smearCost, rivalCooldown } from './rivals.js';
+import { isHW, unitCost, hwPrice, leadTime } from './hw.js';
 import * as G from './sim.js';
 import { perkStats } from './core.js';
 import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, MONTHS } from './util.js';
@@ -11,6 +16,7 @@ import { bar, btn, avatar } from './ui.js';
 
 export const TABS = [
   { id: 'office', icon: '🏢', name: 'Oficina' },
+  { id: 'mail', icon: '📬', name: 'Correo' },
   { id: 'team', icon: '👥', name: 'Equipo' },
   { id: 'products', icon: '📦', name: 'Productos' },
   { id: 'contracts', icon: '📝', name: 'Contratos' },
@@ -20,14 +26,19 @@ export const TABS = [
   { id: 'finance', icon: '💰', name: 'Finanzas' },
   { id: 'investors', icon: '📈', name: 'Inversores' },
   { id: 'market', icon: '🌐', name: 'Mercado' },
+  { id: 'world', icon: '🗺️', name: 'Mundo' },
   { id: 'goals', icon: '🏆', name: 'Logros' },
 ];
 
-const INC_LABEL = { contracts: 'Contratos', ads: 'Publicidad', subs: 'Suscripciones', tx: 'Comisiones', api: 'API', funding: 'Inversión', loans: 'Préstamos', other: 'Otros' };
+const INC_LABEL = {
+  contracts: 'Contratos', ads: 'Publicidad', subs: 'Suscripciones', tx: 'Comisiones', api: 'API', hardware: 'Venta de dispositivos',
+  store: 'Tienda de apps', funding: 'Inversión', loans: 'Préstamos', other: 'Otros',
+};
 const EXP_LABEL = {
   salaries: 'Nóminas', rent: 'Alquiler', perks: 'Mantenimiento', cloud: 'Nube', servers: 'Servidores', marketing: 'Marketing',
   hiring: 'Contratación', office: 'Oficina y mejoras', policies: 'Políticas', interest: 'Intereses', loans: 'Devolución de préstamos',
-  acquisitions: 'Adquisiciones', training: 'Formación', other: 'Otros',
+  acquisitions: 'Adquisiciones', training: 'Formación', manufacturing: 'Fabricación', storage: 'Almacenaje', fines: 'Multas y juicios',
+  taxes: 'Impuestos', regions: 'Sedes internacionales', other: 'Otros',
 };
 
 const kpi = (label, value, sub = '', cls = '') =>
@@ -52,6 +63,8 @@ export function renderPanel(s, U) {
     case 'finance': return financePanel(s);
     case 'investors': return investorsPanel(s);
     case 'market': return marketPanel(s, U);
+    case 'mail': return mailPanel(s);
+    case 'world': return worldPanel(s);
     case 'goals': return goalsPanel(s);
     default: return '';
   }
@@ -130,7 +143,7 @@ function empRow(s, e) {
   const underpaid = e.role !== 'founder' && e.salary < exp * 0.95;
   return `<div class="emp" data-key="emp-${e.id}">
     <button class="emp-main" data-act="empOpen" data-id="${e.id}">${avatar(e)}
-      <div class="emp-name"><b>${esc(e.name)}</b><small>${ROLES[e.role].icon} ${ROLES[e.role].name} · ${levelName(e.skill)}
+      <div class="emp-name"><b>${esc(e.name)}${e.region ? ` <span title="${REGIONS[e.region].name}">${REGIONS[e.region].flag}</span>` : ''}</b><small>${ROLES[e.role].icon} ${ROLES[e.role].name} · ${levelName(e.skill)}
       ${e.traits.map((t) => `<span title="${TRAITS[t].name}">${TRAITS[t].icon}</span>`).join('')}</small></div></button>
     <div class="emp-stats">
       <div title="Habilidad ${Math.round(e.skill)}"><span>HAB</span>${bar(e.skill / 100, 'var(--sky)')}</div>
@@ -191,12 +204,14 @@ export function hireModal(s, U) {
         .map((c) => {
           const fee = Math.round(c.salary * 0.5);
           const remote = c.traits.includes('remote');
-          const blocked = (!remote && free <= 0) || s.money < fee;
+          const R = c.region && REGIONS[c.region];
+          const full = R ? regionStaff(s, c.region) >= R.cap : !remote && free <= 0;
+          const blocked = full || s.money < fee;
           return `<div class="card cand" data-key="cand-${c.id}">${avatar(c)}
-          <div class="grow"><b>${esc(c.name)}</b><small>${ROLES[c.role].icon} ${ROLES[c.role].name} · ${levelName(c.skill)} (${Math.round(c.skill)})</small>
+          <div class="grow"><b>${esc(c.name)}${R ? ` <span class="tag">${R.flag} ${R.name}</span>` : ''}</b><small>${ROLES[c.role].icon} ${ROLES[c.role].name} · ${levelName(c.skill)} (${Math.round(c.skill)})</small>
           ${bar(c.skill / 100, 'var(--sky)')}
           <small>${c.traits.map((t) => `${TRAITS[t].icon} ${TRAITS[t].name}`).join(' · ') || '<span class="muted">Sin rasgos especiales</span>'}</small></div>
-          <div class="col-btns"><b>${fmtMoney(c.salary)}/mes</b>${btn(`Contratar · ${fmtMoney(fee)}`, 'hire', { id: c.id }, { kind: 'primary', disabled: blocked, title: !remote && free <= 0 ? 'Sin escritorios libres' : '' })}</div></div>`;
+          <div class="col-btns"><b>${fmtMoney(c.salary)}/mes</b>${btn(`Contratar · ${fmtMoney(fee)}`, 'hire', { id: c.id }, { kind: 'primary', disabled: blocked, title: full ? (R ? `Sede de ${R.name} llena` : 'Sin escritorios libres') : '' })}</div></div>`;
         })
         .join('') || '<p class="muted">No hay candidatos de este perfil ahora mismo.</p>'
     }</div>
@@ -234,7 +249,9 @@ export function employeeModal(s, id) {
   const e = G.findEmp(s, id);
   if (!e) return '<p>Esta persona ya no trabaja aquí.</p>';
   const fx = G.deskFx(s, e);
-  const env = e.traits.includes('remote')
+  const env = e.region
+    ? `${REGIONS[e.region].flag} Trabaja en la sede de ${REGIONS[e.region].name}.`
+    : e.traits.includes('remote')
     ? '🏠 Trabaja desde casa.'
     : [`🪑 Mesa ${e.desk + 1}`, fx.comfort ? `+${fx.comfort} ánimo por la decoración cercana` : 'sin decoración cerca', fx.noise ? `-${Math.round(fx.noise * 100)}% productividad por ruido` : ''].filter(Boolean).join(' · ');
   const exp = G.expectedSalary(e, s);
@@ -313,7 +330,7 @@ function productsPanel(s) {
         <div class="card-icon">${cat.icon}</div>
         <div class="grow"><b>${esc(p.name)} ${statusTag(p)}</b><small>${cat.name} · ${team.people} ${team.people === 1 ? 'persona' : 'personas'}</small>
         ${next ? `<small>Siguiente: ${FEATURES[next.f].icon} ${FEATURES[next.f].name} ${next.lvl > 1 ? 'nv ' + next.lvl : ''} · ${Number.isFinite(eta[0]) ? fmtDays(eta[0]) : 'sin equipo'}</small>` : '<small class="muted">Cola vacía: el equipo arregla bugs</small>'}</div>
-        <div class="prod-nums"><b>${fmtNum(p.users)}</b><small>usuarios</small><b>${fmtMoney(rev * 30)}</b><small>/mes</small></div></button>`;
+        <div class="prod-nums"><b>${fmtNum(p.users)}</b><small>${isHW(p) ? 'en uso' : 'usuarios'}</small><b>${fmtMoney(rev * 30)}</b><small>/mes</small></div></button>`;
     })
     .join('');
   const canCreate = s.products.length < 5;
@@ -327,10 +344,11 @@ export function newProductModal(s, U) {
   const cats = Object.entries(CATEGORIES)
     .map(([id, c]) => {
       const locked = !G.categoryUnlocked(s, id);
+      const hw = c.kind === 'hw';
       return `<button class="card cat ${sel === id ? 'on' : ''} ${locked ? 'locked' : ''}" data-act="pickCat" data-cat="${id}" ${locked ? 'disabled' : ''}>
-        <div class="card-icon">${c.icon}</div><div class="grow"><b>${c.name}</b>
+        <div class="card-icon">${c.icon}</div><div class="grow"><b>${c.name}${hw ? ' <span class="tag core">hardware</span>' : ''}</b>
         <small>${locked ? '🔒 Requiere ' + RESEARCH_BY_ID[c.research].name : c.desc}</small>
-        <small class="muted">Mercado: ${fmtNum(c.market)} personas</small></div></button>`;
+        <small class="muted">${hw ? `${fmtNum(c.market)} compradores al año · se vende a ~$${c.ref}` : `Mercado: ${fmtNum(c.market)} personas`}</small></div></button>`;
     })
     .join('');
   return `<label class="field">Nombre<div class="row gap"><input id="pname" maxlength="24" value="${esc(U.newName || '')}" placeholder="Nombre del producto">
@@ -365,7 +383,10 @@ function productDetail(s, p) {
         <button class="icon-btn" data-act="dequeue" data-pid="${p.id}" data-i="${i}" aria-label="Quitar">✕</button></div></div>`;
     })
     .join('');
-  const feats = Object.entries(cat.features)
+  const hw = isHW(p);
+  const entries = Object.entries(cat.features);
+  if (!hw) for (const [f, F] of Object.entries(FEATURES)) if (F.universal && cat.features[f] == null) entries.push([f, UNIVERSAL_WEIGHT]);
+  const feats = entries
     .map(([f, w]) => ({ f, w, F: FEATURES[f], unlocked: G.featureUnlocked(s, f) }))
     .sort((a, b) => (b.unlocked - a.unlocked) || (b.w - a.w))
     .map(({ f, w, F, unlocked }) => {
@@ -405,16 +426,18 @@ function productDetail(s, p) {
   }
   if (p.features.payments || p.features.bank) monet.push('<div>💳 Comisiones por transacción activas</div>');
   if (p.features.api) monet.push('<div>🔌 API de pago activa</div>');
+  const alerts = productAlerts(s, p);
   return `<div class="row gap wrap">${btn('← Productos', 'backProducts', {}, { kind: 'ghost' })}
       <h3 class="grow nomargin">${cat.icon} ${esc(p.name)} ${statusTag(p)}</h3>${btn('✏️', 'renameProduct', { pid: p.id }, { kind: 'ghost', title: 'Renombrar' })}</div>
-    ${launchBtn}
+    ${launchBtn}${alerts}
     <div class="kpis">
-      ${kpi('Usuarios', fmtNum(p.users), p.launched ? `pico ${fmtNum(p.peak)}` : 'sin lanzar')}
+      ${hw ? hwKpis(s, p) : kpi('Usuarios', fmtNum(p.users), p.launched ? `pico ${fmtNum(p.peak)}` : 'sin lanzar')}
       ${kpi('Ingresos', fmtMoney(rev.total * 30) + '/mes')}
       ${kpi('Satisfacción', fmtPct(sat), '', sat < 0.45 ? 'warn' : '')}
       ${kpi('Calidad', fmtPct(q), `${Math.round(p.bugs)} bugs`, q < 0.7 ? 'warn' : '')}
       ${kpi('Cuota', fmtPct(sh, 1), `atractivo ${Math.round(G.productAppeal(s, p))}`)}
       ${kpi('Conocimiento', fmtPct(p.awareness), `hype ${Math.round(p.hype)}`)}
+      ${kpi('Mercado', fmtNum(G.potential(s, p)), regionMarket(s, p) > 1.001 ? `×${regionMarket(s, p).toFixed(2)} por sedes` : 'solo tu región')}
     </div>
     <h3>Equipo del producto</h3>
     <div class="row gap wrap"><span class="pt code">💻 ${team.code.toFixed(1)}/día</span><span class="pt design">🎨 ${team.design.toFixed(1)}/día</span>
@@ -424,9 +447,60 @@ function productDetail(s, p) {
     <h3>Cola de desarrollo <small class="muted">${p.queue.length}/8</small></h3>
     <div class="queue">${queue || '<p class="muted">Cola vacía. Añade funciones abajo; mientras tanto, el equipo arregla bugs.</p>'}</div>
     <h3>Funciones</h3><div class="feats">${feats}</div>
-    <h3>Monetización</h3><div class="monet">${monet.join('') || '<p class="muted">Investiga "Modelos de negocio" y desarrolla Publicidad o Plan Premium para ganar dinero.</p>'}
-      ${p.launched ? `<small class="muted">Publicidad ${fmtMoney(rev.ads * 30)} · Premium ${fmtMoney(rev.subs * 30)} · Comisiones ${fmtMoney(rev.tx * 30)} · API ${fmtMoney(rev.api * 30)} (al mes)</small>` : ''}</div>
+    ${hw ? hwSection(s, p) : `<h3>Monetización</h3><div class="monet">${monet.join('') || '<p class="muted">Investiga "Modelos de negocio" y desarrolla Publicidad o Plan Premium para ganar dinero.</p>'}
+      ${p.launched ? `<small class="muted">Publicidad ${fmtMoney(rev.ads * 30)} · Premium ${fmtMoney(rev.subs * 30)} · Comisiones ${fmtMoney(rev.tx * 30)} · API ${fmtMoney(rev.api * 30)} (al mes)</small>` : ''}</div>`}
     <div class="row end">${btn('Retirar producto', 'retireProduct', { pid: p.id }, { kind: 'danger small' })}</div>`;
+}
+
+// Avisos de un producto: leyes, guerra de precios, antimonopolio, temporada.
+function productAlerts(s, p) {
+  const out = [];
+  for (const law of complianceIssues(s, p)) {
+    const F = FEATURES[law.require];
+    out.push(`<div class="banner warn">${law.icon} Incumple la ${law.name}: añade ${F.icon} ${F.name}${G.has(s, 'compliance') ? '' : ' (investiga Cumplimiento normativo)'} o te multarán.</div>`);
+  }
+  if (p.war?.until > s.day) {
+    const c = s.competitors.find((x) => x.id === p.war.rival);
+    const how = p.war.response === 'match' ? 'has igualado precios (-20% ingresos)' : 'aguantas (-30% conversión)';
+    out.push(`<div class="banner warn">⚔️ Guerra de precios con ${esc(c?.name || 'un rival')}: ${how}. Quedan ${fmtDays(p.war.until - s.day)}.</div>`);
+  }
+  if (p.antitrust > s.day) out.push(`<div class="banner warn">🏛️ Bajo vigilancia antimonopolio: crecimiento limitado ${fmtDays(p.antitrust - s.day)} más.</div>`);
+  const m = seasonDemand(s, p.cat);
+  if (m !== 1) {
+    const se = seasonOf(s);
+    out.push(`<div class="banner ${m > 1 ? 'ok' : ''}">${se.icon} ${se.name}: demanda ×${m.toFixed(2)} en ${CATEGORIES[p.cat].name}.</div>`);
+  }
+  return out.join('');
+}
+
+function hwKpis(s, p) {
+  const cover = p.demand > 0 ? p.stock / p.demand : Infinity;
+  return `${kpi('Dispositivos en uso', fmtNum(p.users), `${fmtNum(p.sold)} vendidos`)}
+    ${kpi('Stock', fmtNum(p.stock), Number.isFinite(cover) ? `para ${fmtDays(cover)}` : 'sin demanda aún', p.launched && cover < 10 ? 'warn' : '')}
+    ${kpi('Demanda', fmtNum(p.demand || 0) + '/día', p.lost > 1 ? `perdiendo ${fmtNum(p.lost)}/día` : '', p.lost > 1 ? 'warn' : '')}
+    ${kpi('Margen', fmtMoney(hwPrice(p) - unitCost(s, p)) + '/ud', `precio ${fmtMoney(hwPrice(p))} · coste ${fmtMoney(unitCost(s, p))}`)}`;
+}
+
+function hwSection(s, p) {
+  const cat = CATEGORIES[p.cat];
+  const cost = unitCost(s, p);
+  const ready = G.coreDone(p);
+  const orders = (p.orders || [])
+    .map((o, i) => `<div data-key="ord-${i}-${o.arrive}">🚚 ${fmtNum(o.qty)} unidades · llegan en ${fmtDays(o.arrive - s.day)}</div>`)
+    .join('');
+  const rev = p.rev || {};
+  return `<h3>Fabricación y ventas</h3><div class="monet">
+    <div><span>💲 Precio de venta</span>
+      <div class="chips">${HW_PRICES.map((m) => `<button class="chip ${(p.priceMult ?? 1) === m ? 'on' : ''}" data-act="hwPrice" data-pid="${p.id}" data-m="${m}">$${fmtNum(Math.round(cat.ref * m))}</button>`).join('')}</div>
+      <small class="muted">Más caro: más margen por unidad pero menos ventas.</small></div>
+    <div><span>🏭 Fabricar · ${fmtMoney(cost)}/unidad · llegan en ${leadTime(s)} días</span>
+      <div class="chips">${[1000, 10000, 100000, 1000000]
+        .map((q) => btn(`+${fmtNum(q)} · ${fmtMoney(q * cost)}`, 'orderUnits', { pid: p.id, q }, { kind: 'small', disabled: !ready || s.money < q * cost }))
+        .join('')}</div>
+      ${ready ? '' : '<small class="warn-text">Termina el diseño básico antes de fabricar.</small>'}</div>
+    ${orders ? `<div class="orders">${orders}</div>` : '<small class="muted">No hay pedidos en camino.</small>'}
+    <small class="muted">Almacenaje: 1% del coste al mes · devoluciones: ${fmtPct((1 - G.quality(p)) * 0.15, 1)} de las ventas${p.features.appstore ? ` · tienda de apps: ${fmtMoney((rev.store || 0) * 30)}/mes` : ''}. Consejo: ten stock antes de Black Friday y Navidades.</small>
+  </div>`;
 }
 
 // ---------------------------------------------------------------- contratos
@@ -672,18 +746,100 @@ function marketPanel(s, U) {
   const total = entries.reduce((a, e) => a + e.appeal, 0) || 1;
   const rows = entries
     .map((e) => {
-      const price = e.mine ? 0 : G.competitorPrice(e.c);
-      return `<div class="card ${e.mine ? 'mine' : ''}" data-key="mk-${e.mine ? 'p' + e.p.id : e.c.id}"><div class="card-icon">${e.mine ? '⭐' : '🏢'}</div>
-        <div class="grow"><b>${esc(e.name)}${e.mine ? ' <span class="tag live">tú</span>' : ''}</b>
-        <small>${fmtNum(e.users)} usuarios · atractivo ${Math.round(e.appeal)}</small>${bar(e.appeal / total, e.mine ? 'var(--yellow)' : 'var(--slate)')}</div>
-        ${e.mine ? '' : btn(`Comprar · ${fmtMoney(price)}`, 'acquire', { id: e.c.id }, { kind: 'small', disabled: s.money < price })}</div>`;
+      if (e.mine) {
+        return `<div class="card mine" data-key="mk-p${e.p.id}"><div class="card-icon">⭐</div>
+        <div class="grow"><b>${esc(e.name)} <span class="tag live">tú</span></b>
+        <small>${fmtNum(e.users)} usuarios · atractivo ${Math.round(e.appeal)}</small>${bar(e.appeal / total, 'var(--yellow)')}</div></div>`;
+      }
+      const c = e.c;
+      const st = RIVAL_STYLES[c.style] || RIVAL_STYLES.dormido;
+      const price = G.competitorPrice(c);
+      const pc = poachCost(c);
+      const sc = smearCost(s, c);
+      const pw = rivalCooldown(s, c, 'poachDay', 60);
+      const sw = rivalCooldown(s, c, 'smearDay', 45);
+      const mine = s.products.some((p) => p.launched && p.cat === c.cat);
+      return `<div class="card rival" data-key="mk-${c.id}"><div class="card-icon">${st.icon}</div>
+        <div class="grow"><b>${esc(c.name)}</b><small>CEO: ${esc(c.ceo || '—')} · <span title="${st.desc}">${st.name}</span></small>
+        <small>${fmtNum(e.users)} usuarios · atractivo ${Math.round(e.appeal)}</small>${bar(e.appeal / total, 'var(--slate)')}
+        <div class="rivalry"><span>Rivalidad</span>${bar((c.rivalry || 0) / 100, 'var(--red)')}</div>
+        ${c.last ? `<small class="muted">Último movimiento (${fmtDate(c.lastDay)}): ${esc(c.last)}</small>` : ''}</div>
+        <div class="col-btns">${btn(`🧲 Fichar talento · ${fmtMoney(pc)}`, 'rivalPoach', { id: c.id }, { kind: 'small', disabled: !!pw || s.money < pc, title: pw ? `Espera ${pw} días` : 'Consigue un candidato muy bueno de su equipo' })}
+        ${btn(`📣 Campaña comparativa · ${fmtMoney(sc)}`, 'rivalSmear', { id: c.id }, { kind: 'small', disabled: !mine || !!sw || s.money < sc, title: !mine ? 'Necesitas un producto lanzado aquí' : sw ? `Espera ${sw} días` : 'Hype para ti, atractivo menos para ellos' })}
+        ${btn(`Comprar · ${fmtMoney(price)}`, 'acquire', { id: c.id }, { kind: 'small', disabled: s.money < price })}</div></div>`;
     })
     .join('');
   return `<div class="chips scroll">${chips}</div>
     <div class="kpis">${kpi('Mercado potencial', fmtNum(pot) + ' personas')}${kpi('Competidores', entries.filter((e) => !e.mine).length)}
     ${kpi('Tu cuota', fmtPct(entries.filter((e) => e.mine).reduce((a, e) => a + e.appeal, 0) / total, 1))}</div>
-    <p class="muted">${cat.desc}${G.categoryUnlocked(s, catId) ? '' : ` 🔒 Requiere ${RESEARCH_BY_ID[cat.research].name}.`}</p>
+    <p class="muted">${cat.desc}${G.categoryUnlocked(s, catId) ? '' : ` 🔒 Requiere ${RESEARCH_BY_ID[cat.research].name}.`} Cada rival tiene su estilo: la rivalidad sube cuanto más les quitas mercado.</p>
     <div class="cards">${rows || '<p class="muted">Mercado vacío.</p>'}</div>`;
+}
+
+// ---------------------------------------------------------------- correo
+
+function mailPanel(s) {
+  const pending = pendingMail(s).length;
+  const items = s.mail
+    .map((m) => {
+      const open = m.choices && m.done == null;
+      const choices = open
+        ? `<div class="mail-choices">${m.choices
+            .map((c, i) => `<button class="btn choice ${i === 0 ? 'primary' : ''}" data-act="answerMail" data-id="${m.id}" data-i="${i}"><b>${esc(c.label)}</b>${c.hint ? `<small>${esc(c.hint)}</small>` : ''}</button>`)
+            .join('')}</div><small class="muted">Caduca en ${fmtDays(m.expires - s.day)}. Si no contestas: "${esc(m.choices[m.choices.length - 1].label)}".</small>`
+        : m.choices
+          ? `<p class="mail-out">➡️ ${esc(m.choices[m.done]?.label || '')}${m.outcome ? ` — ${esc(m.outcome)}` : ''}</p>`
+          : '';
+      return `<article class="mail ${m.read ? '' : 'unread'} ${open ? 'open' : ''}" data-key="mail-${m.id}">
+        <header><span class="mail-icon">${m.icon}</span><div class="grow"><b>${esc(m.subject)}</b><small>${esc(m.from)} · ${fmtDate(m.day)}</small></div>${open ? '<span class="tag bad">Decide</span>' : ''}</header>
+        <p>${esc(m.body)}</p>${choices}</article>`;
+    })
+    .join('');
+  return `<div class="row between"><p class="muted nomargin">${pending ? `Tienes ${pending} ${pending === 1 ? 'decisión pendiente' : 'decisiones pendientes'}.` : 'Nada pendiente. Buen trabajo.'}</p></div>
+    <div class="mails">${items || '<div class="empty">📭<p>Bandeja vacía.</p></div>'}</div>`;
+}
+
+// ---------------------------------------------------------------- mundo
+
+function worldPanel(s) {
+  const se = seasonOf(s);
+  const effects = se
+    ? Object.entries(se.demand)
+        .map(([c, m]) => `<span class="tag ${m >= 1 ? 'live' : 'bad'}">${CATEGORIES[c].icon} ${CATEGORIES[c].name} ×${m}</span>`)
+        .join(' ')
+    : '';
+  const i18n = Math.max(0, ...s.products.map((p) => p.features.i18n || 0));
+  const regions = Object.entries(REGIONS)
+    .map(([id, r]) => {
+      const open = s.regions[id] != null;
+      const reach = s.products.length ? Math.max(...s.products.map((p) => langReach(p, id))) : r.lang === 'es' ? 1 : 0.25;
+      return `<div class="card region ${open ? 'owned' : ''}" data-key="reg-${id}"><div class="card-icon">${r.flag}</div>
+        <div class="grow"><b>${r.name}${open ? ' <span class="tag live">sede abierta</span>' : ''}</b><small>${r.desc}</small>
+        <small class="muted">+${fmtPct(r.market)} de mercado · usuarios que pagan ×${r.arpu} · sueldos ×${r.salary} · talento ${r.skill >= 0 ? '+' : ''}${r.skill}</small>
+        <small>${open ? `👥 ${regionStaff(s, id)}/${r.cap} personas · alquiler ${fmtMoney(r.rent)}/mes` : `Abrir: ${fmtMoney(r.open)} + ${fmtMoney(r.rent)}/mes`} · alcance de tus productos: ${fmtPct(reach)}</small></div>
+        ${open ? '' : btn(`Abrir sede · ${fmtMoney(r.open)}`, 'openRegion', { id }, { kind: 'primary', disabled: s.money < r.open })}</div>`;
+    })
+    .join('');
+  const laws = LAWS.map((law) => {
+    const active = lawActive(s, law.id);
+    const bad = active ? s.products.filter((p) => complianceIssues(s, p).some((l) => l.id === law.id)).map((p) => esc(p.name)) : [];
+    const status = !active
+      ? `<small class="muted">Entra en vigor el ${fmtDate(law.day)}.</small>`
+      : bad.length
+        ? `<small class="warn-text">Incumplen: ${bad.join(', ')}</small>`
+        : '<small class="good-text">Cumples.</small>';
+    return `<div class="card ${active ? '' : 'locked'}" data-key="law-${law.id}"><div class="card-icon">${law.icon}</div>
+      <div class="grow"><b>${law.name}</b><small>${law.desc}</small>${status}</div></div>`;
+  }).join('');
+  const legal = s.employees.filter((e) => e.role === 'legal').length;
+  return `<h3>Temporada</h3>
+    ${se ? `<div class="card owned"><div class="card-icon">${se.icon}</div><div class="grow"><b>${se.name}</b><small>${se.desc}</small><div>${effects}</div></div></div>` : '<p class="muted">Temporada tranquila: sin efectos especiales este mes.</p>'}
+    <h3>Expansión internacional</h3>
+    <p class="muted">Cada sede suma mercado a todos tus productos y te deja contratar allí. Para los países que no hablan tu idioma necesitas la función Multi-idioma (tu mejor nivel ahora: ${i18n}).</p>
+    <div class="cards">${regions}</div>
+    <h3>Leyes y reguladores</h3>
+    <p class="muted">Abogados en plantilla: ${legal}. Cada uno reduce la probabilidad de auditoría y mejora tus opciones en los juicios.</p>
+    <div class="cards">${laws}</div>`;
 }
 
 // ---------------------------------------------------------------- logros
