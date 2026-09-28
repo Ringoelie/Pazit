@@ -316,6 +316,7 @@ summary { cursor: pointer; color: var(--silver); }
 #modals { position: relative; z-index: 50; }
 .modal-back {
   position: fixed; inset: 0; background: rgba(8, 9, 18, 0.72); display: grid; place-items: center; padding: 12px;
+  grid-template-columns: minmax(0, 1fr);
   animation: fade 0.15s steps(3);
 }
 .modal { width: min(560px, 100%); max-height: calc(100vh - 24px); display: flex; flex-direction: column; animation: pop 0.2s steps(4); }

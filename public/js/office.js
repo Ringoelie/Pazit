@@ -283,8 +283,15 @@ export class OfficeView {
       'wheel',
       (e) => {
         e.preventDefault();
+        // Un paso de zoom por cada muesca de rueda (~100 px); los trackpads
+        // mandan muchos eventos pequeños y se van acumulando.
+        const dy = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1) * (e.ctrlKey ? 3 : 1);
+        if (Math.sign(dy) !== Math.sign(this.wheel || 0)) this.wheel = 0;
+        this.wheel = (this.wheel || 0) + dy;
+        if (Math.abs(this.wheel) < 90) return;
+        this.wheel = 0;
         const w = this.toWorld(e.clientX, e.clientY);
-        this.zoomBy(e.deltaY < 0 ? 1 : -1, w.px, w.py);
+        this.zoomBy(dy < 0 ? 1 : -1, w.px, w.py);
       },
       { passive: false },
     );

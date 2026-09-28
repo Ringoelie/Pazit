@@ -31,6 +31,7 @@ let lastSfx = 0;
 let tickerIdx = 0;
 let tickerTime = 0;
 let lastNewsDay = -1;
+let loopError = false;
 
 const U = { tab: 'office', pid: null, mktPid: null, cat: null, hireRole: 'all', newCat: 'blog', newName: '', empModal: null, edit: false, editSel: null, prevSpeed: 1 };
 try {
@@ -57,7 +58,7 @@ function start(state) {
   lastSaveDay = s.day;
   eventModal = null;
   overModal = null;
-  closeAllModals();
+  closeAllModals(true);
   if (U.edit) setEdit(false);
   office.tier = -1;
   office.selected = null;
@@ -69,7 +70,7 @@ function setEdit(on) {
   U.edit = on;
   U.editSel = null;
   if (on) {
-    U.prevSpeed = s.speed || 1;
+    U.prevSpeed = s.speed;
     s.speed = 0;
     office.selected = null;
     $('#tip').hidden = true;
@@ -136,6 +137,20 @@ function boot() {
 // ---------------------------------------------------------------- bucle
 
 function loop(now) {
+  try {
+    frame(now);
+  } catch (err) {
+    // Un error no debe congelar el juego para siempre: se avisa y se sigue.
+    if (!loopError) {
+      loopError = true;
+      console.error(err);
+      toast('Algo ha fallado. Si se repite, exporta la partida desde el menú.', 'bad');
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const blocked = !!s.event || !!s.gameOver;
@@ -154,8 +169,8 @@ function loop(now) {
     if (n >= 4) acc = 0;
   }
   flushNotes();
-  if (s.event && !eventModal) showEvent();
-  if (s.gameOver && !overModal) showGameOver();
+  if (s.event && !eventModal?.wrap.isConnected) showEvent();
+  if (s.gameOver && !overModal?.wrap.isConnected) showGameOver();
   office.frame(s, dt, blocked ? 0 : s.speed);
   uiTimer -= dt;
   if (dirty || (ticked && uiTimer <= 0)) {
@@ -169,7 +184,6 @@ function loop(now) {
     lastSaveDay = s.day;
     if (save(s)) flashSaved();
   }
-  requestAnimationFrame(loop);
 }
 
 function flushNotes() {
@@ -284,6 +298,15 @@ function result(r, okSound = 'click') {
   dirty = true;
 }
 
+// Vuelve al principio del panel. En móvil la página entera hace scroll, así
+// que se sube hasta las pestañas si quedaron por encima.
+function panelToTop() {
+  $('#panel').scrollTop = 0;
+  if (!window.matchMedia('(max-width: 1000px)').matches) return;
+  const y = $('.side').getBoundingClientRect().top + window.scrollY;
+  if (window.scrollY > y) window.scrollTo({ top: y });
+}
+
 function setSpeed(n) {
   s.speed = n;
   dirty = true;
@@ -294,14 +317,13 @@ const ACTIONS = {
     U.tab = d.tab;
     if (d.tab !== 'products') U.pid = null;
     saveUI();
-    $('#panel').scrollTop = 0;
+    panelToTop();
     sfx('click');
   },
   speed: (d) => {
     setSpeed(+d.n);
     sfx('click');
   },
-  togglePause: () => setSpeed(s.speed ? 0 : 1),
   menu: () => settingsModal(),
   help: () => helpModal(),
   zoomIn: () => office.zoomBy(1),
@@ -389,7 +411,7 @@ const ACTIONS = {
   },
   openProduct: (d) => {
     U.pid = +d.id;
-    $('#panel').scrollTop = 0;
+    panelToTop();
   },
   backProducts: () => {
     U.pid = null;
@@ -514,13 +536,14 @@ function onInput(e) {
 }
 
 function onKey(e) {
-  if (e.target.matches('input, textarea, select')) return;
   if (e.key === 'Escape') {
     const m = topModal();
     if (m && m.closable) closeModal(m);
     else if (!m && U.edit) setEdit(false);
     return;
   }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.matches('input, textarea, select')) return;
   if (modalOpen()) return;
   if (e.key === 'e' || e.key === 'E') {
     setEdit(!U.edit);
@@ -575,11 +598,11 @@ function showGameOver() {
   });
   overModal.body.insertAdjacentHTML('beforeend', `<div class="row end gap">${btn('Nueva partida', 'newGame', {}, { kind: 'primary big' })}</div>`);
   ACTIONS.newGame = () => {
+    const founder = s.employees.find((e) => e.role === 'founder')?.name || 'Alex';
     clearSave();
-    closeAllModals();
-    start(G.newGame({ company: s.company, founder: s.employees.find((e) => e.role === 'founder')?.name || 'Alex' }));
+    start(G.newGame({ company: s.company, founder }));
     s.speed = 0;
-    newGameModal(false);
+    newGameModal(false, founder);
   };
 }
 
@@ -591,7 +614,7 @@ function summaryStats() {
     <div class="kpi"><span>Equipo</span><b>${s.employees.length}</b></div></div>`;
 }
 
-function newGameModal(closable) {
+function newGameModal(closable, founderName = 'Alex') {
   let looks = makeLooks({ rng: (Math.random() * 2 ** 31) | 0 });
   let previewId = 0;
   const m = openModal({
@@ -600,7 +623,7 @@ function newGameModal(closable) {
     body: `<p class="lg">De garaje a unicornio. Funda tu startup, contrata talento, lanza productos y conquista el mercado.</p>
       <div class="row gap"><div id="look"></div>
       <div class="grow"><label class="field">Tu startup<input id="ng-company" maxlength="18" value="${esc(s.company)}"></label>
-      <label class="field">Tu nombre<input id="ng-founder" maxlength="18" value="Alex"></label></div></div>
+      <label class="field">Tu nombre<input id="ng-founder" maxlength="18" value="${esc(founderName)}"></label></div></div>
       <div class="row gap wrap"><button class="btn" id="ng-look">🎲 Cambiar aspecto</button></div>
       <div class="row end gap">${closable ? '<button class="btn" data-close>Cancelar</button>' : ''}<button class="btn primary big" id="ng-go">¡Empezar!</button></div>`,
   });
@@ -665,7 +688,8 @@ function settingsModal() {
     if (!b) return;
     const k = b.dataset.m;
     if (k === 'save') {
-      toast(save(s) ? 'Partida guardada.' : 'No se pudo guardar (almacenamiento bloqueado).', 'good');
+      const ok = save(s);
+      toast(ok ? 'Partida guardada.' : 'No se pudo guardar (almacenamiento bloqueado).', ok ? 'good' : 'bad');
     } else if (k === 'sound') {
       s.settings.sound = !s.settings.sound;
       setSound(s.settings.sound);
