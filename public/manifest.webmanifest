@@ -1,0 +1,11 @@
+{
+  "name": "Pixel Unicorn",
+  "short_name": "Pixel Unicorn",
+  "description": "De garaje a unicornio: juego de gestión de startups en pixel art.",
+  "lang": "es",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#12152a",
+  "theme_color": "#1a1c2c",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

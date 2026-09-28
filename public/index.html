@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Pixel Unicorn: de garaje a unicornio</title>
+  <meta name="description" content="Juego de gestión de startups en pixel art. Contrata talento, lanza productos, investiga tecnología y convierte tu garaje en un unicornio.">
+  <meta name="theme-color" content="#1a1c2c">
+  <meta property="og:title" content="Pixel Unicorn">
+  <meta property="og:description" content="De garaje a unicornio: juego de gestión de startups en pixel art.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="hud px-box">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">🦄</span>
+        <div><b id="company">Pixel Unicorn</b><small id="date"></small></div>
+      </div>
+      <div class="stats">
+        <div class="stat" title="Caja y resultado mensual"><span data-icon="coin"></span><div><b id="money"></b><small id="net"></small></div></div>
+        <div class="stat" title="Usuarios totales"><span data-icon="user"></span><div><b id="users"></b><small>usuarios</small></div></div>
+        <div class="stat" title="Puntos de investigación"><span data-icon="flask"></span><div><b id="rp"></b><small>PI</small></div></div>
+        <div class="stat wide-only" title="Valoración de la empresa"><span data-icon="chart"></span><div><b id="val"></b><small>valoración</small></div></div>
+      </div>
+      <div class="controls">
+        <div class="speed" role="group" aria-label="Velocidad del juego">
+          <button data-act="speed" data-n="0" title="Pausa (Espacio)" aria-label="Pausa">❚❚</button>
+          <button data-act="speed" data-n="1" title="Normal (1)" aria-label="Velocidad normal">▶</button>
+          <button data-act="speed" data-n="2" title="Rápido (2)" aria-label="Velocidad rápida">▶▶</button>
+          <button data-act="speed" data-n="3" title="Muy rápido (3)" aria-label="Velocidad muy rápida">▶▶▶</button>
+        </div>
+        <button class="icon-btn menu-btn" data-act="menu" aria-label="Menú">☰</button>
+        <span id="saved" aria-hidden="true">💾</span>
+      </div>
+    </header>
+
+    <div class="strip">
+      <div id="quest"></div>
+      <div id="ticker" aria-live="polite"></div>
+    </div>
+
+    <main>
+      <section class="stage" aria-label="Oficina">
+        <div id="officeWrap" class="px-box">
+          <canvas id="office" aria-label="Vista de la oficina. Toca a una persona para ver su ficha."></canvas>
+          <div class="zoom">
+            <button data-act="zoomIn" aria-label="Acercar">+</button>
+            <button data-act="zoomOut" aria-label="Alejar">−</button>
+            <button data-act="zoomFit" aria-label="Ver toda la oficina">⤢</button>
+          </div>
+        </div>
+      </section>
+      <section class="side">
+        <nav id="tabs" class="tabs" role="tablist" aria-label="Secciones"></nav>
+        <div id="panel" class="panel px-box" role="tabpanel"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="modals"></div>
+  <div id="toasts" aria-live="polite"></div>
+  <div id="tip" hidden></div>
+  <noscript><p class="noscript">Pixel Unicorn necesita JavaScript para funcionar.</p></noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
