@@ -427,7 +427,9 @@ export function refreshCandidates(s) {
     const n = rint(s, 1, 2);
     for (let i = 0; i < n; i++) list.push(makePerson(s, pick(s, roles), { region: id }));
   }
-  s.candidates = list;
+  // Quien fichaste a un rival o vino por un evento se queda un mes en la lista.
+  const keep = (s.candidates || []).filter((c) => c.keepUntil > s.day);
+  s.candidates = [...keep, ...list];
   s.candidatesDay = s.day;
 }
 
@@ -455,6 +457,7 @@ export function hire(s, candId) {
   if (s.money < fee) return fail(`Necesitas ${fmtMoney(fee)} para la contratación.`);
   money(s, -fee, 'hiring');
   s.candidates = s.candidates.filter((x) => x !== c);
+  delete c.keepUntil;
   c.hired = s.day;
   c.mood = 75;
   if (atHQ(c)) c.desk = firstFreeDesk(s);
@@ -925,6 +928,7 @@ export function acquire(s, compId) {
   if (s.money < price) return fail(`Cuesta ${fmtMoney(price)}.`);
   money(s, -price, 'acquisitions');
   c.alive = false;
+  for (const p of s.products) if (p.war?.rival === c.id) p.war.until = s.day;
   const mine = s.products.filter((p) => p.launched && p.cat === c.cat).sort((a, b) => b.users - a.users)[0];
   if (mine) {
     mine.users += c.users * 0.35;
@@ -1221,6 +1225,7 @@ function products(s, tp) {
     const sat = satisfaction(s, p);
     const sh = share(s, p);
     if (isHW(p)) {
+      if (p.down > 0) p.down -= 1;
       const gain = (Math.sqrt(p.hype) * 0.00012 * growthMult(s) + 0.0015 * sat * sh) * (1 - p.awareness);
       p.awareness = clamp(p.awareness + gain - 0.0015 * p.awareness, 0, 1);
       p.hype *= 0.94;
@@ -1261,13 +1266,14 @@ function products(s, tp) {
 
 function infra(s, tp) {
   const st = infraStatus(s, tp);
-  for (const p of s.products) p.overload = st.overload;
+  // Los productos físicos no dependen de tus servidores.
+  for (const p of s.products) p.overload = isHW(p) ? 0 : st.overload;
   money(s, -st.cloudMonthly / 30, 'cloud');
   money(s, -st.rackMonthly / 30, 'servers');
   const uncovered = Math.max(0, s.infra.racks - st.coverage);
   const risk = Math.min(0.2, uncovered * 0.004) + (st.cloudUnits > 0 ? 0.0005 : 0);
   if (risk > 0 && chance(s, risk)) {
-    const live = s.products.filter((p) => p.launched && p.users > 100 && !p.down);
+    const live = s.products.filter((p) => !isHW(p) && p.launched && p.users > 100 && !p.down);
     if (live.length) {
       const p = pick(s, live);
       p.down = rint(s, 1, 3);

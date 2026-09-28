@@ -6,7 +6,7 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 
 ## Qué incluye
 
-- **Oficina en pixel art animada**: tu equipo trabaja, se toma cafés, juega al arcade y se va de vacaciones. Siete oficinas, desde el garaje hasta una estación orbital, con zoom y arrastre.
+- **Oficina en pixel art animada**: tu equipo trabaja, se toma cafés, juega al arcade y se va de vacaciones. Cada perfil tiene su estilo (cascos para quien programa, boina para diseño, bata en I+D, traje para abogados...). Siete oficinas con su propio suelo, paredes y vistas, desde el garaje de hormigón hasta una estación orbital con ojos de buey, con luz que entra por las ventanas, sombras, zoom y arrastre.
 - **Editor de oficina** (✏️ o tecla **E**): arrastra mesas y muebles donde quieras. La decoración cerca de una mesa (plantas, lámparas, alfombras, acuario, estatua) sube el ánimo de quien se sienta ahí; el arcade, el futbolín o el gimnasio pegados a las mesas restan productividad por el ruido. En el garaje puedes incluso vender el coche de tus padres.
 - **Equipo**: 10 perfiles para contratar (desarrollo, diseño, IA, DevOps, PM, marketing, ventas, I+D, RR.HH. y abogados), 12 rasgos de personalidad, niveles, ánimo, energía, sueldos, formación y renuncias.
 - **Productos**: 11 categorías de software (medio digital, tienda online, red social, app de citas, SaaS, streaming, videojuego, buscador, neobanco, asistente de IA y metaverso), 4 de hardware y 45 funciones con 10 niveles cada una.
@@ -88,7 +88,8 @@ public/
     hw.js       productos físicos: fabricación, stock y ventas
     state.js    guardado, exportación e importación
     layout.js   plano de la oficina: posiciones, colisiones y efectos de cercanía
-    sprites.js  pixel art dibujado con código y fuente de 3x5 px
+    sprites.js  pixel art dibujado con código (con contorno y caché) y fuente de 3x5 px
+    scenery.js  suelos, paredes, ventanas con el cielo de cada estación y luz ambiente
     office.js   vista animada de la oficina en canvas
     ui.js       parcheo del DOM, modales, avisos y avatares
     panels.js   contenido de cada pestaña

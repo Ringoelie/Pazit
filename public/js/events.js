@@ -4,6 +4,7 @@ import { PERKS } from './data.js';
 import { rint, chance, pick, dateOf, fmtMoney } from './util.js';
 import { has, findEmp, findProduct, news, money, addEffect, makePerson, expectedSalary } from './core.js';
 import { valuation, queueFeature, isAIProduct, featureAvailable, installPerk, teamPowers } from './sim.js';
+import { isHW } from './hw.js';
 
 const live = (s) => s.products.filter((p) => p.launched && p.users > 500);
 const best = (s) => live(s).sort((a, b) => b.users - a.users)[0];
@@ -297,7 +298,7 @@ export const EVENTS = {
   },
 
   cloudDown: {
-    weight: (s) => (s.infra.cloud && live(s).length ? 0.6 : 0),
+    weight: (s) => (s.infra.cloud && live(s).some((p) => !isHW(p)) ? 0.6 : 0),
     view: () => ({
       icon: '☁️',
       title: 'Caída mundial de la nube',
@@ -305,7 +306,7 @@ export const EVENTS = {
       choices: [{ label: 'Esperar y refrescar Twitter' }],
     }),
     resolve: (s) => {
-      for (const p of live(s)) p.down = Math.max(p.down, 1);
+      for (const p of live(s)) if (!isHW(p)) p.down = Math.max(p.down, 1);
       return 'Mañana todo vuelve a la normalidad.';
     },
   },
@@ -462,6 +463,7 @@ export const EVENTS = {
     resolve: (s) => {
       const e = makePerson(s, pick(s, ['dev', 'dev', 'design', 'research']), { skill: rint(s, 88, 96), traits: ['tenx', 'mentor'] });
       e.salary = Math.round((expectedSalary(e, s) * 1.1) / 50) * 50;
+      e.keepUntil = s.day + 30;
       s.candidates.unshift(e);
       return `${e.name} está en tu pestaña de contratación.`;
     },

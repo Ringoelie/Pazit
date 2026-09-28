@@ -8,6 +8,7 @@ import { seasonDemand, seasonTx, openRegion, regionMarket, complianceIssues, law
 import { ensureRivals, warFx, poachFrom, smear, rivalMonth } from '../public/js/rivals.js';
 import { orderUnits, unitCost, leadTime, hwPrice } from '../public/js/hw.js';
 import { makePerson } from '../public/js/core.js';
+import { fmtNum, fmtMoney } from '../public/js/util.js';
 
 const fresh = (seed = 1) => {
   const s = G.newGame({ seed });
@@ -45,8 +46,16 @@ function quickProduct(s, cat, features) {
   assert.equal(answerMail(s, m.id, 0).ok, true);
   assert.ok(e.salary > 1000, 'la subida se aplica');
   assert.equal(answerMail(s, m.id, 0).ok, false, 'no se contesta dos veces');
+  // Si ya cobra lo que pedía, que caduque no le baja el ánimo.
+  const paid = sendMail(s, 'raise', { eid: e.id });
+  let mood = e.mood;
+  s.day = paid.expires;
+  mailStep(s);
+  assert.equal(paid.done, 2);
+  assert.equal(e.mood, mood, 'sin castigo si ya cobra lo esperado');
+  e.salary = 1000;
   const m2 = sendMail(s, 'raise', { eid: e.id });
-  const mood = e.mood;
+  mood = e.mood;
   s.day = m2.expires;
   mailStep(s);
   assert.equal(m2.done, 2, 'al caducar se aplica la última opción');
@@ -155,5 +164,63 @@ function quickProduct(s, cat, features) {
   if (p.stock < 1) assert.ok(p.stockout, 'se avisa de la falta de stock');
   assert.equal(orderUnits(s, p.id, 1e9).ok, false, 'no se puede fabricar sin dinero');
 }
+
+// 7. Errores corregidos.
+{
+  // Un producto físico no se cae con la nube ni se queda caído para siempre.
+  const s = fresh(7);
+  s.money = 1e9;
+  for (const r of ['hardware', 'compliance']) s.research[r] = 0;
+  const p = quickProduct(s, 'phone', { hwdesign: 2, os: 2 });
+  p.users = 2e5;
+  p.stock = 1e6;
+  s.event = { id: 'cloudDown', ctx: {} };
+  G.resolveEvent(s, 0);
+  assert.equal(p.down, 0, 'la caída de la nube no afecta al hardware');
+  p.down = 1;
+  step(s, 2);
+  assert.equal(p.down, 0, 'una caída antigua se recupera');
+  assert.equal(p.overload, 0, 'el hardware no sufre la sobrecarga de servidores');
+  // Las leyes solo exigen funciones que el producto puede tener.
+  for (const law of ['privacy', 'aiact']) s.laws[law] = 0;
+  assert.deepEqual(complianceIssues(s, p), [], 'sin multas imposibles de evitar');
+}
+{
+  // Talento fichado a un rival: sigue en la lista tras refrescar candidatos.
+  const s = fresh(8);
+  s.money = 1e7;
+  const c = s.competitors.find((x) => x.alive);
+  assert.equal(poachFrom(s, c.id).ok, true);
+  const id = s.candidates[0].id;
+  G.refreshCandidates(s);
+  assert.ok(s.candidates.some((x) => x.id === id), 'el fichaje no desaparece');
+  // Comprar al rival termina su guerra de precios.
+  const p = quickProduct(s, c.cat, {});
+  p.war = { rival: c.id, until: s.day + 60, response: 'hold' };
+  assert.equal(warFx(s, p).conv, 0.7);
+  c.alive = false;
+  assert.equal(warFx(s, p).conv, 1, 'un rival que ya no existe no te hace la guerra');
+}
+{
+  // Partidas antiguas sin rivales de hardware los reciben al cargar.
+  const s = fresh(9);
+  s.competitors = s.competitors.filter((c) => c.cat !== 'phone');
+  ensureRivals(s);
+  assert.ok(s.competitors.some((c) => c.cat === 'phone' && c.alive));
+}
+{
+  // Aceptar una subida nunca baja el sueldo.
+  const s = fresh(10);
+  const e = makePerson(s, 'dev', { skill: 60 });
+  s.employees.push(e);
+  const m = sendMail(s, 'raise', { eid: e.id });
+  e.salary = 99999;
+  answerMail(s, m.id, 0);
+  assert.equal(e.salary, 99999);
+}
+assert.equal(fmtNum(999999), '1M');
+assert.equal(fmtNum(999.7), '1k');
+assert.equal(fmtMoney(999.6e6), '$1B');
+assert.equal(fmtNum(12345), '12.3k');
 
 console.log('OK');

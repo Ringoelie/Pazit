@@ -3,7 +3,7 @@ import { SEASONS, REGIONS, LAWS, FEATURES } from './data.js';
 import { chance, dateOf, fmtMoney, fmtPct } from './util.js';
 import { has, findProduct, news, money } from './core.js';
 import { registerMail, sendMail } from './mail.js';
-import { teamPowers, isAIProduct } from './sim.js';
+import { teamPowers, isAIProduct, featureAvailable } from './sim.js';
 
 // ---------------------------------------------------------------- temporadas
 
@@ -69,6 +69,8 @@ export function complianceIssues(s, p) {
   const out = [];
   for (const law of LAWS) {
     if (!law.require || !lawActive(s, law.id) || p.features[law.require]) continue;
+    // Si la función exigida no existe para este producto, la ley no le aplica.
+    if (!featureAvailable(s, p, law.require)) continue;
     if (law.minUsers && p.users < law.minUsers) continue;
     if (law.ai && !isAIProduct(p)) continue;
     out.push(law);

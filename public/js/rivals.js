@@ -3,13 +3,18 @@
 // intentar fichar a tu gente o copiar tus funciones. Tú también puedes atacar.
 import { RIVAL_STYLES, FEATURES, CATEGORIES, FIRST_NAMES, LAST_NAMES } from './data.js';
 import { rint, pick, chance, fmtMoney, fmtPct } from './util.js';
-import { findEmp, findProduct, news, money, makePerson } from './core.js';
+import { uid, findEmp, findProduct, news, money, makePerson } from './core.js';
 import { registerMail, sendMail } from './mail.js';
 import { legalWinChance } from './world.js';
 
 const STYLE_IDS = Object.keys(RIVAL_STYLES);
 
 export function ensureRivals(s) {
+  // Partidas antiguas: rivales para las categorías añadidas después.
+  for (const [cat, def] of Object.entries(CATEGORIES)) {
+    if (s.competitors.some((c) => c.cat === cat)) continue;
+    for (const [name, appeal] of def.rivals) s.competitors.push({ id: uid(s), cat, name, appeal, users: 0, alive: true, since: s.day });
+  }
   for (const c of s.competitors) {
     if (c.style) continue;
     c.style = pick(s, STYLE_IDS);
@@ -30,7 +35,7 @@ const bestProduct = (s, cat) => s.products.filter((p) => p.launched && p.cat ===
 // Efecto de una guerra de precios sobre un producto.
 export function warFx(s, p) {
   const w = p.war;
-  if (!w || w.until <= s.day) return { conv: 1, rev: 1, target: 1 };
+  if (!w || w.until <= s.day || !findComp(s, w.rival)) return { conv: 1, rev: 1, target: 1 };
   if (w.response === 'match') return { conv: 1, rev: 0.8, target: 1 };
   return { conv: 0.7, rev: 1, target: 0.93 };
 }
@@ -114,6 +119,7 @@ export function poachFrom(s, cid) {
   const roles = ['dev', 'dev', 'design', 'marketer', 'research'];
   const e = makePerson(s, pick(s, roles), { skill: rint(s, 68, 90) });
   e.salary = Math.round((e.salary * 1.2) / 50) * 50;
+  e.keepUntil = s.day + 30;
   s.candidates.unshift(e);
   c.appeal *= 0.97;
   c.rivalry = Math.min(100, c.rivalry + 15);
@@ -211,6 +217,7 @@ registerMail({
     },
     resolve: (s, { cid, amount }, i) => {
       const c = findComp(s, cid);
+      if (!c) return 'La empresa que te demandaba ya no existe: caso cerrado.';
       if (i === 0) {
         if (chance(s, legalWinChance(s, 0.35))) {
           s.reputation = Math.min(100, s.reputation + 3);
@@ -247,8 +254,9 @@ registerMail({
       const c = findComp(s, cid);
       const e = findEmp(s, eid);
       if (!e) return 'Ya no trabajaba aquí.';
+      if (!c) return `La empresa ya no existe: ${e.name} se queda.`;
       if (i === 0) {
-        e.salary = offer;
+        e.salary = Math.max(e.salary, offer);
         e.mood = Math.min(100, e.mood + 10);
         return `${e.name} se queda con su nuevo sueldo.`;
       }

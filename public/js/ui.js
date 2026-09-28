@@ -1,5 +1,5 @@
 // Piezas base de la interfaz: parcheo del DOM, modales, toasts y avatares.
-import { drawSeated } from './sprites.js';
+import { drawPortrait } from './sprites.js';
 import { ROLES } from './data.js';
 import { esc } from './util.js';
 
@@ -133,12 +133,9 @@ export function avatar(e) {
   let url = avatarCache.get(key);
   if (!url) {
     const c = document.createElement('canvas');
-    c.width = 14;
-    c.height = 14;
-    const g = c.getContext('2d');
-    g.fillStyle = '#29366f';
-    g.fillRect(0, 0, 14, 14);
-    drawSeated(g, 2, 2, e.looks, ROLES[e.role].color, 1, 60);
+    c.width = 16;
+    c.height = 16;
+    drawPortrait(c.getContext('2d'), e.looks, ROLES[e.role].color, e.role);
     url = c.toDataURL();
     avatarCache.set(key, url);
   }

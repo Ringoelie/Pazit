@@ -127,7 +127,7 @@ registerMail({
       const e = findEmp(s, eid);
       if (!e) return 'Esa persona ya no está en la empresa.';
       if (i === 0) {
-        e.salary = expectedSalary(e, s);
+        e.salary = Math.max(e.salary, expectedSalary(e, s));
         e.mood = Math.min(100, e.mood + 15);
         e.unhappy = 0;
         return `${e.name} está encantado/a con su nuevo sueldo.`;
@@ -137,6 +137,7 @@ registerMail({
         e.mood = Math.min(100, e.mood + 4);
         return `${e.name} acepta, aunque esperaba más.`;
       }
+      if (e.salary >= expectedSalary(e, s) * 0.92) return `${e.name} ya cobra lo que pedía.`;
       e.mood = Math.max(0, e.mood - 12);
       return `${e.name} se queda con mal sabor de boca.`;
     },
@@ -206,6 +207,7 @@ registerMail({
       const e = findEmp(s, eid);
       const p = findProduct(s, pid);
       if (i === 0 && p && e) {
+        if (p.queue.some((t) => t.f === f)) return `${FEATURES[f].name} ya estaba en la cola.`;
         const r = queueFeature(s, pid, f);
         if (!r.ok) return 'No se pudo añadir: ' + (r.msg || 'la cola está llena.');
         p.queue.unshift(p.queue.pop());

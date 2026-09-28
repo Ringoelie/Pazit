@@ -48,7 +48,7 @@ export function hwStep(s, p) {
   const returns = sold * (1 - quality(p)) * 0.15;
   const price = hwPrice(p);
   const cost = unitCost(s, p);
-  const revenue = (sold - returns) * price;
+  const revenue = (sold - returns) * price * warFx(s, p).rev;
   money(s, revenue, 'hardware');
   p.sold += sold - returns;
   p.demand = demand;

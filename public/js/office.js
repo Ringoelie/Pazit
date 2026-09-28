@@ -1,21 +1,11 @@
 // Vista de la oficina en canvas: fondo cacheado, empleados animados, cámara
 // con zoom y arrastre, y modo edición para recolocar mesas y muebles.
 import { OFFICES, ROLES, PAL, PERKS } from './data.js';
-import { dateOf } from './util.js';
 import * as S from './sprites.js';
+import { THEMES, paintBackground, paintWindows, paintVignette } from './scenery.js';
 import {
   WALL, FLAT, NEAR_RADIUS, isWall, deskRect, itemRect, serverRoom, loungeX, canPlace, snapPos, getRef, deskEffects,
 } from './layout.js';
-
-const THEMES = {
-  garage: { wall: '#566c86', trim: '#3e4c63', floor: ['#6f7d91', '#687689'], desk: ['#b4895f', '#8a6340'], chair: '#333c57', bg: '#20243a' },
-  cowork: { wall: '#e9d8b8', trim: '#cdb896', floor: ['#b98555', '#ae7a4b'], desk: ['#f4f4f4', '#c9d3dc'], chair: '#3b5dc9', bg: '#2a2437' },
-  small: { wall: '#c7d4e0', trim: '#94b0c2', floor: ['#3a4a8a', '#35447f'], desk: ['#e8e8e8', '#b8c4cf'], chair: '#1a1c2c', bg: '#1f2440' },
-  loft: { wall: '#9c4a3a', trim: '#6e3228', floor: ['#7a4a2a', '#704426'], desk: ['#3a3f58', '#2a2e44'], chair: '#ef7d57', bg: '#241a22' },
-  tower: { wall: '#29366f', trim: '#1f2a58', floor: ['#d6dee6', '#cad4de'], desk: ['#f4f4f4', '#94b0c2'], chair: '#333c57', bg: '#141a33' },
-  campus: { wall: '#e6efe0', trim: '#b9cbb0', floor: ['#a8dcae', '#9dd2a4'], desk: ['#fff4e0', '#e2cfae'], chair: '#38b764', bg: '#1d2b24' },
-  orbital: { wall: '#1a1c2c', trim: '#333c57', floor: ['#4a5470', '#454e69'], desk: ['#94b0c2', '#566c86'], chair: '#73eff7', bg: '#0b0c14' },
-};
 
 // Muebles a los que el equipo va a descansar.
 const BREAK = new Set(['coffee', 'snacks', 'arcade', 'sofa', 'foosball', 'ballpit', 'gym', 'nappods', 'chef', 'robot', 'library', 'cooler', 'aquarium', 'meeting']);
@@ -34,18 +24,18 @@ function drawItem(g, id, x, y, t) {
     case 'cooler': return S.drawCooler(g, x, y, t);
     case 'snacks': return S.drawVending(g, x, y, t);
     case 'sofa': return S.drawSofa(g, x, y);
-    case 'foosball': return S.drawFoosball(g, x + 1, y, t);
+    case 'foosball': return S.drawFoosball(g, x, y, t);
     case 'aquarium': return S.drawAquarium(g, x, y, t);
     case 'meeting': return S.drawMeeting(g, x, y);
     case 'arcade': return S.drawArcade(g, x, y, t);
     case 'library': return S.drawBookshelf(g, x, y);
     case 'ballpit': return S.drawBallpit(g, x, y);
-    case 'podcast': return S.drawPodcast(g, x, y + 8, t);
+    case 'podcast': return S.drawPodcast(g, x, y, t);
     case 'gym': return S.drawGym(g, x, y, t);
     case 'statue': return S.drawStatue(g, x, y, t);
-    case 'nappods': return S.drawNapPod(g, x, y);
+    case 'nappods': return S.drawNapPod(g, x, y, t);
     case 'chef': return S.drawChef(g, x, y, t);
-    case 'robot': return S.drawRobot(g, x + 1, y + 4, t);
+    case 'robot': return S.drawRobot(g, x, y, t);
     case 'whiteboard': return S.drawWhiteboard(g, x, y);
     case 'ac': return S.drawAC(g, x, y, t);
     case 'car': return S.drawCar(g, x, y);
@@ -61,6 +51,7 @@ export class OfficeView {
     this.world = document.createElement('canvas');
     this.wctx = this.world.getContext('2d');
     this.bg = document.createElement('canvas');
+    this.shadeLayer = document.createElement('canvas');
     this.bgKey = '';
     this.onPick = onPick;
     this.onHover = onHover;
@@ -359,6 +350,9 @@ export class OfficeView {
       this.world.height = this.L.H;
       this.bg.width = this.L.W;
       this.bg.height = this.L.H;
+      this.shadeLayer.width = this.L.W;
+      this.shadeLayer.height = this.L.H;
+      paintVignette(this.shadeLayer.getContext('2d'), this.L);
       this.bgKey = '';
       this.people.clear();
       this.canvas.parentElement?.style.setProperty('--office-ar', `${this.L.W} / ${this.L.H}`);
@@ -373,67 +367,9 @@ export class OfficeView {
   }
 
   drawBackground(s) {
-    const L = this.L;
-    const T = L.theme;
-    const g = this.bg.getContext('2d');
-    g.clearRect(0, 0, L.W, L.H);
-    for (let y = WALL; y < L.H; y += 8) {
-      for (let x = 0; x < L.W; x += 16) {
-        const alt = (x / 16 + y / 8) % 2 === 0;
-        S.R(g, x, y, 16, 8, T.floor[alt ? 0 : 1]);
-      }
-    }
-    if (L.o.theme === 'cowork' || L.o.theme === 'loft') {
-      for (let y = WALL; y < L.H; y += 8) S.R(g, 0, y, L.W, 1, S.shade(T.floor[0], -0.15));
-    }
-    if (L.o.theme === 'orbital') {
-      for (let y = WALL + 4; y < L.H; y += 16) for (let x = 4; x < L.W; x += 16) S.R(g, x, y, 1, 1, PAL.silver);
-    }
-    if (L.o.theme === 'campus') {
-      S.R(g, L.loungeX - 4, WALL + 30, L.W - L.loungeX, L.H - WALL - 68, '#f6c177');
-      S.R(g, L.loungeX - 2, WALL + 32, L.W - L.loungeX - 4, L.H - WALL - 72, '#f8d49a');
-    }
-    // Sala de servidores
-    const r = L.room;
-    S.R(g, r.x, r.y, r.w, r.h, '#262a3e');
-    for (let x = r.x; x < r.x + r.w; x += 8) S.R(g, x, r.y, 1, r.h, '#20243a');
-    S.R(g, r.x, r.y, r.w, 2, PAL.slate);
-    S.R(g, r.x, r.y, 2, r.h, PAL.slate);
-    S.drawText(g, 'SERVIDORES', r.x + 4, r.y + 4, PAL.slate);
-    // Pared
-    S.R(g, 0, 0, L.W, WALL, T.wall);
-    if (L.o.theme === 'loft') {
-      for (let y = 0; y < WALL; y += 4) {
-        const off = (y / 4) % 2 ? 4 : 0;
-        for (let x = -off; x < L.W; x += 8) S.R(g, x + 7, y, 1, 4, T.trim);
-        S.R(g, 0, y + 3, L.W, 1, T.trim);
-      }
-    }
-    S.R(g, 0, WALL - 3, L.W, 3, T.trim);
-    S.R(g, 0, WALL, L.W, 1, S.shade(T.floor[0], -0.3));
-    const name = s.company.slice(0, 18);
-    const tw = S.textWidth(name, 1);
-    const sx = Math.max(4, Math.round((14 + L.loungeX - 18) / 2 - tw / 2 - 4));
-    S.R(g, sx, 6, tw + 8, 11, PAL.ink);
-    S.R(g, sx + 1, 7, tw + 6, 9, PAL.navy);
-    S.drawText(g, name, sx + 4, 9, PAL.yellow);
-    this.windows = [];
-    if (L.o.theme === 'garage') {
-      const gx = L.loungeX + 8;
-      const gw = Math.min(90, L.W - gx - 10);
-      S.R(g, gx, 4, gw, WALL - 7, '#8a96a8');
-      for (let y = 6; y < WALL - 4; y += 4) S.R(g, gx, y, gw, 1, '#6f7b8e');
-      S.R(g, gx + gw / 2 - 4, WALL - 8, 8, 2, PAL.ink);
-    } else {
-      for (let x = L.loungeX + 4; x + 38 < L.W - 4; x += 48) this.windows.push({ x, y: 7, w: 38, h: 26 });
-    }
-    if (L.o.theme === 'garage' || L.o.theme === 'cowork') {
-      S.R(g, 4, 20, 22, 16, '#b86f50');
-      S.R(g, 6, 22, 5, 5, PAL.yellow);
-      S.R(g, 13, 23, 5, 5, PAL.cyan);
-      S.R(g, 19, 22, 5, 5, '#ff6b8b');
-      S.R(g, 8, 29, 5, 5, PAL.lime);
-    } else S.drawPoster(g, 6, 20);
+    const { windows, clock } = paintBackground(this.bg.getContext('2d'), this.L, s);
+    this.windows = windows;
+    this.clockPos = clock;
   }
 
   // ---------------------------------------------------------------- personas
@@ -443,7 +379,7 @@ export class OfficeView {
     if (st && st.mode !== 'desk') return { x: st.x, y: st.y };
     const d = this.s?.office.layout.desks[e.desk];
     if (!d) return null;
-    return { x: d.x + 9, y: d.y + 1 };
+    return { x: d.x + 10, y: d.y + 1 };
   }
 
   usePoints(layout) {
@@ -466,7 +402,7 @@ export class OfficeView {
       const d = layout.desks[e.desk];
       if (!d) continue;
       let st = this.people.get(e.id);
-      const home = { x: d.x + 9, y: d.y - 2 };
+      const home = { x: d.x + 10, y: d.y - 2 };
       if (!st) {
         st = { mode: 'desk', x: home.x, y: home.y, tx: 0, ty: 0, timer: 0, phase: Math.random() * 10 };
         this.people.set(e.id, st);
@@ -529,7 +465,7 @@ export class OfficeView {
     const t = this.t;
     const dragRef = this.drag?.moved ? this.drag.ref : null;
     g.drawImage(this.bg, 0, 0);
-    this.drawWindows(g, s, t);
+    paintWindows(g, L, s, t, this.windows);
     this.drawWallDecor(g, s, t);
     this.drawRacks(g, s, t);
     if (this.edit) this.drawGrid(g);
@@ -551,12 +487,16 @@ export class OfficeView {
     for (const it of layout.items) {
       if (isWall(it.id) || FLAT.has(it.id)) continue;
       const r = itemRect(it);
-      drawables.push({ y: r.y + r.h, ref: 'i:' + it.uid, rect: r, draw: () => drawItem(g, it.id, it.x, it.y, t) });
+      const draw = () => {
+        S.floorShadow(g, r.x, r.y + r.h - 1, r.w);
+        drawItem(g, it.id, it.x, it.y, t);
+      };
+      drawables.push({ y: r.y + r.h, ref: 'i:' + it.uid, rect: r, draw });
     }
     const byDesk = new Map();
     for (const e of s.employees) if (!e.traits.includes('remote') && !e.region) byDesk.set(e.desk, e);
     layout.desks.forEach((d, i) => {
-      drawables.push({ y: d.y + 24, ref: 'd:' + i, rect: deskRect(d), draw: () => this.drawDesk(g, d, byDesk.get(i), t) });
+      drawables.push({ y: d.y + 24, ref: 'd:' + i, rect: deskRect(d), draw: () => this.drawDesk(g, d, byDesk.get(i), t, i) });
     });
     for (const e of s.employees) {
       const st = this.people.get(e.id);
@@ -569,6 +509,7 @@ export class OfficeView {
       if (d.ref) this.editHits.push({ ref: d.ref, ...d.rect });
     }
 
+    this.drawLights(g, layout, t);
     if (this.edit) this.drawEditOverlay(g, layout, dragRef);
     this.drawEffects(g, dt);
     if (!this.edit) this.drawLabel(g, s);
@@ -580,7 +521,29 @@ export class OfficeView {
     const z = this.zoom;
     const sw = Math.min(L.W, this.viewW());
     const sh = Math.min(L.H, this.viewH());
-    c.drawImage(this.world, this.cam.x, this.cam.y, sw, sh, this.offX(), this.offY(), sw * z, sh * z);
+    const ox = this.offX();
+    const oy = this.offY();
+    // Si sobra hueco alrededor de la oficina: trama de puntos y sombra.
+    if (ox > 0 || oy > 0) {
+      c.fillStyle = this.dots();
+      c.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      const d = Math.max(3, Math.round(z * 3));
+      c.fillStyle = 'rgba(0,0,0,.35)';
+      c.fillRect(ox + d, oy + d, sw * z, sh * z);
+    }
+    c.drawImage(this.world, this.cam.x, this.cam.y, sw, sh, ox, oy, sw * z, sh * z);
+  }
+
+  dots() {
+    if (!this.pattern) {
+      const p = document.createElement('canvas');
+      p.width = p.height = 14;
+      const pg = p.getContext('2d');
+      pg.fillStyle = 'rgba(255,255,255,.06)';
+      pg.fillRect(0, 0, 2, 2);
+      this.pattern = this.ctx.createPattern(p, 'repeat');
+    }
+    return this.pattern;
   }
 
   drawGrid(g) {
@@ -631,112 +594,89 @@ export class OfficeView {
     this.outline(g, rect.x, rect.y, rect.w, rect.h);
   }
 
-  drawWindows(g, s, t) {
-    if (!this.windows?.length) return;
-    const L = this.L;
-    const m = dateOf(s.day).m;
-    const theme = L.o.theme;
-    const sky = theme === 'orbital' ? '#05060c' : m === 11 || m <= 1 ? '#b8cde0' : m >= 5 && m <= 7 ? '#41a6f6' : m >= 8 && m <= 10 ? '#f2a36b' : '#73cff7';
-    for (const w of this.windows) {
-      S.R(g, w.x - 2, w.y - 2, w.w + 4, w.h + 4, L.theme.trim);
-      S.R(g, w.x, w.y, w.w, w.h, sky);
-      if (theme === 'orbital') {
-        for (let i = 0; i < 9; i++) {
-          const sx = w.x + ((i * 13 + Math.floor(t * 2)) % w.w);
-          S.R(g, sx, w.y + ((i * 7) % w.h), 1, 1, i % 3 ? PAL.white : PAL.cyan);
-        }
-        const ex = w.x + ((w.x + t * 1.5) % (w.w + 20)) - 10;
-        S.R(g, ex, w.y + 14, 10, 8, PAL.blue);
-        S.R(g, ex + 2, w.y + 15, 4, 3, PAL.green);
-      } else {
-        const cx = w.x + ((w.x * 3 + t * 3) % (w.w + 16)) - 12;
-        g.save();
-        g.beginPath();
-        g.rect(w.x, w.y, w.w, w.h);
-        g.clip();
-        S.R(g, cx, w.y + 5, 12, 3, PAL.white);
-        S.R(g, cx + 3, w.y + 3, 6, 2, PAL.white);
-        if (theme === 'tower') {
-          for (let i = 0; i < 6; i++) S.R(g, w.x + i * 7, w.y + w.h - 6 - ((i * 5) % 9), 6, 20, i % 2 ? '#29366f' : '#333c57');
-          for (let i = 0; i < 6; i++) S.R(g, w.x + i * 7 + 2, w.y + w.h - 4 - ((i * 3) % 5), 1, 1, PAL.yellow);
-        } else if (theme === 'campus') {
-          S.R(g, w.x, w.y + w.h - 5, w.w, 5, PAL.green);
-          S.R(g, w.x + 6, w.y + w.h - 11, 5, 7, '#2a8c50');
-          S.R(g, w.x + 26, w.y + w.h - 9, 5, 5, '#2a8c50');
-        } else {
-          S.R(g, w.x, w.y + w.h - 4, w.w, 4, '#8fa5b8');
-        }
-        if (m === 11 || m <= 1) {
-          for (let i = 0; i < 6; i++) S.R(g, w.x + ((i * 11 + t * 4) % w.w), w.y + ((i * 9 + t * 8) % w.h), 1, 1, PAL.white);
-        }
-        g.restore();
-      }
-      S.R(g, w.x + w.w / 2, w.y, 1, w.h, L.theme.trim);
-    }
-  }
-
+  // Reloj y pantalla de videollamada con el equipo en remoto.
   drawWallDecor(g, s, t) {
-    const L = this.L;
-    S.drawClock(g, L.loungeX + 12, 20, t);
-    const remote = s.employees.filter((e) => e.traits.includes('remote') || e.region).length;
-    if (!remote) return;
+    if (this.clockPos) S.drawClock(g, this.clockPos.x, this.clockPos.y, t);
+    const remote = s.employees.filter((e) => e.traits.includes('remote') || e.region);
+    if (!remote.length) return;
     const x = 32;
-    S.R(g, x, 19, 30, 19, PAL.ink);
-    S.R(g, x + 1, 20, 28, 14, PAL.navy);
-    const shown = Math.min(remote, 6);
-    for (let i = 0; i < shown; i++) {
+    S.R(g, x - 1, 18, 32, 21, PAL.ink);
+    S.R(g, x, 18, 30, 1, PAL.slate);
+    S.R(g, x + 1, 20, 28, 14, '#10131f');
+    const shown = remote.slice(0, 6);
+    shown.forEach((e, i) => {
       const fx = x + 2 + (i % 3) * 9;
-      const fy = 21 + Math.floor(i / 3) * 7;
-      S.R(g, fx, fy, 8, 6, PAL.dark);
-      S.R(g, fx + 3, fy + 1, 3, 3, ['#f6d2b5', '#c98a60', '#9a5f3c'][i % 3]);
-      S.R(g, fx + 2, fy + 4, 5, 2, [PAL.sky, PAL.orange, PAL.lime][i % 3]);
-    }
-    S.drawText(g, String(remote), x + 12, 34, PAL.white);
+      const fy = 21 + Math.floor(i / 3) * 6;
+      S.R(g, fx, fy, 8, 5, i % 2 ? '#2b3a55' : '#33456a');
+      S.R(g, fx + 2, fy + 1, 4, 3, e.looks.skin);
+      S.R(g, fx + 2, fy, 4, 1, e.looks.hair);
+      S.R(g, fx + 1, fy + 4, 6, 1, ROLES[e.role].color);
+      if ((t + i) % 5 < 0.2) S.R(g, fx, fy, 8, 5, 'rgba(115,239,247,.35)');
+    });
+    S.R(g, x + 1, 34, 28, 4, PAL.dark);
+    S.drawText(g, String(remote.length), x + 3, 34, PAL.lime);
+    S.px(g, x + 26, 35, (t % 1) < 0.5 ? PAL.red : '#6b2233');
   }
 
+  // Halos de luz de las lámparas y viñeta final.
+  drawLights(g, layout, t) {
+    g.globalCompositeOperation = 'lighter';
+    for (const it of layout.items) {
+      if (it.id !== 'lamp' || (t + it.x) % 9 <= 0.15) continue;
+      g.drawImage(S.glowSprite('rgba(255,196,110,.38)', 26), it.x + 4 - 26, it.y + 5 - 26);
+    }
+    const r = this.L.room;
+    if (this.s.infra.racks) g.drawImage(S.glowSprite('rgba(65,166,246,.12)', 30), r.x + r.w - 50, r.y - 10);
+    g.globalCompositeOperation = 'source-over';
+    g.drawImage(this.shadeLayer, 0, 0);
+  }
+
+  // Racks alineados a la derecha; a la izquierda quedan el rótulo y el contador.
   drawRacks(g, s, t) {
     const n = s.infra.racks;
     if (!n) return;
     const r = this.L.room;
-    let max = Math.max(1, Math.floor((r.w - 10) / 14));
-    // Si no caben todos, deja sitio a la izquierda para el contador.
-    if (n > max) max = Math.max(1, Math.floor((r.w - 10 - S.textWidth('+' + n) - 4) / 14));
+    const label = S.textWidth('SERVIDORES') + 12;
+    const max = Math.max(1, Math.floor((r.w - label - 4) / 14));
     const shown = Math.min(n, max);
     const x0 = r.x + r.w - 4 - shown * 14;
     for (let i = 0; i < shown; i++) S.drawRack(g, x0 + i * 14, r.y + 8, t, i);
-    if (n > shown) S.drawText(g, '+' + (n - shown), r.x + 5, r.y + 16, PAL.lime);
+    if (n > shown) S.drawText(g, '+' + (n - shown), r.x + 6, r.y + 16, PAL.lime);
   }
 
-  drawDesk(g, d, e, t) {
+  drawDesk(g, d, e, t, i) {
     const T = this.L.theme;
     const cx = d.x;
     const cy = d.y;
     const st = e && this.people.get(e.id);
     const seated = e && e.off <= 0 && (!st || st.mode === 'desk');
     const phase = st?.phase || 0;
-    const working = e && !(MAKERS_VIEW.includes(e.role) && !e.assign);
-    S.drawChair(g, cx + 8, cy + 5, T.chair);
+    const working = !!e && !(MAKERS_VIEW.includes(e.role) && !e.assign);
+    const busy = seated && working && !this.edit;
+    S.floorShadow(g, cx + 2, cy + 27, 24);
+    // Con la mesa vacía la silla queda metida bajo el tablero.
+    S.drawChair(g, cx + 8, seated ? cy + 4 : cy + 8, T.chair);
     const roleColor = e ? ROLES[e.role].color : PAL.slate;
     if (seated) {
-      const bob = working && !this.edit && Math.sin(t * 6 + phase) > 0.7 ? 1 : 0;
-      S.drawSeated(g, cx + 9, cy + 1 + bob, e.looks, roleColor, t + phase, e.mood);
-      this.hits.push({ id: e.id, x: cx + 7, y: cy - 2, w: 14, h: 20 });
+      const bob = busy && Math.sin(t * 6 + phase) > 0.7 ? 1 : 0;
+      S.drawSeated(g, cx + 9, cy - 1 + bob, e.looks, roleColor, t + phase, e.mood, e.role);
+      this.hits.push({ id: e.id, x: cx + 8, y: cy - 2, w: 14, h: 20 });
     }
     S.drawDesk(g, cx + 2, cy + 14, T.desk[0], T.desk[1]);
-    S.drawMonitor(g, cx + 3, cy + 6, S.shade(roleColor, 0.25), !!seated);
+    S.drawMonitor(g, cx + 1, cy + 6, S.shade(roleColor, 0.25), !!seated, t + phase, i, busy);
+    S.drawDeskProp(g, cx + 22, cy + 11, i % 7, t + phase, busy);
     if (seated) {
-      S.R(g, cx + 10, cy + 14, 8, 2, PAL.silver);
-      const k = working && !this.edit ? Math.floor((t + phase) * 8) % 2 : 0;
-      S.R(g, cx + 9, cy + 13 - k, 2, 2, e.looks.skin);
-      S.R(g, cx + 17, cy + 12 + k, 2, 2, e.looks.skin);
-      S.R(g, cx + 20, cy + 12, 3, 3, PAL.white);
-      S.R(g, cx + 23, cy + 13, 1, 1, PAL.white);
+      S.R(g, cx + 11, cy + 14, 8, 2, '#c9d3dc');
+      S.R(g, cx + 11, cy + 15, 8, 1, PAL.slate);
+      const k = busy ? Math.floor((t + phase) * 8) % 2 : 0;
+      S.R(g, cx + 11, cy + 13 - k, 2, 2, e.looks.skin);
+      S.R(g, cx + 17, cy + 13 - (1 - k), 2, 2, S.shade(e.looks.skin, -0.12));
       const icon = !this.edit && this.statusIcon(e, t + phase);
-      if (icon) S.drawBubble(g, cx + 15, cy - 9, icon);
+      if (icon) S.drawBubble(g, cx + 17, cy - 10, icon);
     } else if (e && e.off > 0) {
-      S.drawBubble(g, cx + 11, cy + 2, 'palm');
+      S.drawBubble(g, cx + 12, cy + 2, 'palm');
     }
-    if (e && this.selected === e.id && !this.edit) this.outline(g, cx + 8, cy, 12, 18);
+    if (e && this.selected === e.id && !this.edit) this.outline(g, cx + 9, cy - 1, 12, 18);
   }
 
   statusIcon(e, t) {
@@ -750,12 +690,14 @@ export class OfficeView {
 
   drawWalker(g, e, st, t) {
     const moving = st.mode !== 'break';
-    const frame = moving ? Math.floor(t * 8) % 2 : 0;
+    const frame = moving ? Math.floor(t * 8) % 2 : 'idle';
     const x = Math.round(st.x);
     const y = Math.round(st.y);
-    S.R(g, x + 1, y + 18, 8, 1, 'rgba(26,28,44,.3)');
-    S.drawStanding(g, x, y, e.looks, ROLES[e.role].color, frame, t, e.mood);
-    if (st.mode === 'break' && t % 4 < 1.5) S.drawBubble(g, x + 6, y - 10, e.energy < 40 ? 'zz' : 'heart');
+    g.fillStyle = 'rgba(14,10,30,.28)';
+    g.fillRect(x, y + 19, 10, 1);
+    g.fillRect(x + 1, y + 20, 8, 1);
+    S.drawStanding(g, x - 1, y - 2, e.looks, ROLES[e.role].color, frame, t + (st.phase || 0), e.mood, e.role);
+    if (st.mode === 'break' && (t + (st.phase || 0)) % 4 < 1.5) S.drawBubble(g, x + 7, y - 11, e.energy < 40 ? 'zz' : 'heart');
     this.hits.push({ id: e.id, x: x - 1, y: y - 2, w: 12, h: 21 });
     if (this.selected === e.id) this.outline(g, x - 1, y - 2, 12, 21);
   }
