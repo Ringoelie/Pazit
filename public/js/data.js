@@ -54,31 +54,46 @@ export const TRAITS = {
 };
 
 export const OFFICES = [
-  { id: 'garage', name: 'Garaje de tus padres', desks: 4, rent: 0, move: 0, slots: 3, mood: -4, w: 256, h: 176, theme: 'garage' },
-  { id: 'cowork', name: 'Coworking', desks: 8, rent: 1800, move: 3000, slots: 5, mood: 0, w: 320, h: 200, theme: 'cowork' },
-  { id: 'small', name: 'Oficina pequeña', desks: 14, rent: 5500, move: 15000, slots: 7, mood: 2, w: 400, h: 232, theme: 'small' },
-  { id: 'loft', name: 'Loft industrial', desks: 24, rent: 14000, move: 45000, slots: 9, mood: 4, w: 480, h: 264, theme: 'loft' },
-  { id: 'tower', name: 'Planta en rascacielos', desks: 40, rent: 38000, move: 150000, slots: 11, mood: 6, w: 576, h: 300, theme: 'tower' },
-  { id: 'campus', name: 'Campus tecnológico', desks: 70, rent: 95000, move: 500000, slots: 13, mood: 9, w: 704, h: 336, theme: 'campus' },
-  { id: 'orbital', name: 'Estación orbital', desks: 120, rent: 320000, move: 3000000, slots: 15, mood: 12, w: 832, h: 368, theme: 'orbital', research: 'space' },
+  { id: 'garage', name: 'Garaje de tus padres', desks: 4, rent: 0, move: 0, mood: -4, w: 256, h: 176, theme: 'garage' },
+  { id: 'cowork', name: 'Coworking', desks: 8, rent: 1800, move: 3000, mood: 0, w: 320, h: 200, theme: 'cowork' },
+  { id: 'small', name: 'Oficina pequeña', desks: 14, rent: 5500, move: 15000, mood: 2, w: 400, h: 232, theme: 'small' },
+  { id: 'loft', name: 'Loft industrial', desks: 24, rent: 14000, move: 45000, mood: 4, w: 480, h: 264, theme: 'loft' },
+  { id: 'tower', name: 'Planta en rascacielos', desks: 40, rent: 38000, move: 150000, mood: 6, w: 576, h: 300, theme: 'tower' },
+  { id: 'campus', name: 'Campus tecnológico', desks: 70, rent: 95000, move: 500000, mood: 9, w: 704, h: 336, theme: 'campus' },
+  { id: 'orbital', name: 'Estación orbital', desks: 120, rent: 320000, move: 3000000, mood: 12, w: 832, h: 368, theme: 'orbital', research: 'space' },
 ];
 
+// near: ánimo extra para las mesas a menos de 48 px. noise: productividad que
+// resta a esas mesas. El resto de efectos son globales.
 export const PERKS = {
-  plant: { name: 'Plantas', icon: '🪴', cost: 250, upkeep: 10, mood: 2, max: 3, tier: 0, desc: '+2 ánimo cada una.' },
+  plant: { name: 'Plantas', icon: '🪴', cost: 250, upkeep: 10, mood: 1, near: 1, max: 4, tier: 0, desc: '+1 ánimo, y +1 más a las mesas cercanas.' },
+  rug: { name: 'Alfombra', icon: '🧶', cost: 300, near: 1, max: 4, tier: 0, desc: '+1 ánimo a las mesas cercanas. Se puede pisar.' },
+  lamp: { name: 'Lámpara de pie', icon: '💡', cost: 180, near: 1, max: 4, tier: 0, desc: '+1 ánimo a las mesas cercanas.' },
   coffee: { name: 'Cafetera', icon: '☕', cost: 900, upkeep: 60, energy: 3, max: 1, tier: 0, desc: '+3 energía diaria. Imprescindible para los cafeinómanos.' },
-  whiteboard: { name: 'Pizarra', icon: '📋', cost: 600, prod: 0.04, max: 1, tier: 0, desc: '+4% productividad.' },
+  cooler: { name: 'Fuente de agua', icon: '🚰', cost: 400, upkeep: 20, energy: 1, max: 2, tier: 0, desc: '+1 energía diaria.' },
+  whiteboard: { name: 'Pizarra', icon: '📋', cost: 600, prod: 0.04, max: 1, tier: 0, desc: '+4% productividad. Va en la pared.' },
   snacks: { name: 'Máquina de snacks', icon: '🍫', cost: 1800, upkeep: 150, energy: 2, mood: 1, max: 1, tier: 1, desc: '+2 energía, +1 ánimo.' },
   sofa: { name: 'Sofá chill', icon: '🛋️', cost: 1500, energy: 2, mood: 2, max: 2, tier: 1, desc: '+2 energía, +2 ánimo.' },
-  foosball: { name: 'Futbolín', icon: '⚽', cost: 1400, mood: 4, max: 1, tier: 1, desc: '+4 ánimo.' },
-  ac: { name: 'Aire acondicionado', icon: '❄️', cost: 4000, upkeep: 200, max: 1, tier: 1, desc: 'Evita la caída de productividad por olas de calor.' },
-  arcade: { name: 'Máquina arcade', icon: '🕹️', cost: 5000, mood: 4, max: 2, tier: 2, desc: '+4 ánimo (+10 a los gamers).' },
+  foosball: { name: 'Futbolín', icon: '⚽', cost: 1400, mood: 4, noise: 0.05, max: 1, tier: 1, desc: '+4 ánimo. Ruidoso: -5% a las mesas cercanas.' },
+  ac: { name: 'Aire acondicionado', icon: '❄️', cost: 4000, upkeep: 200, max: 1, tier: 1, desc: 'Evita la caída de productividad por olas de calor. Va en la pared.' },
+  aquarium: { name: 'Acuario', icon: '🐠', cost: 2500, upkeep: 50, near: 2, max: 2, tier: 1, desc: '+2 ánimo a las mesas cercanas. Muy relajante.' },
+  meeting: { name: 'Mesa de reuniones', icon: '🗣️', cost: 3000, prod: 0.03, max: 1, tier: 1, desc: '+3% productividad.' },
+  arcade: { name: 'Máquina arcade', icon: '🕹️', cost: 5000, mood: 4, noise: 0.05, max: 2, tier: 2, desc: '+4 ánimo (+10 a los gamers). Ruidosa: -5% a las mesas cercanas.' },
   library: { name: 'Biblioteca técnica', icon: '📚', cost: 3500, xp: 0.25, max: 1, tier: 2, desc: 'El equipo aprende un 25% más rápido.' },
-  ballpit: { name: 'Piscina de bolas', icon: '🎈', cost: 15000, mood: 6, max: 1, tier: 3, desc: '+6 ánimo. Muy startup.' },
+  ballpit: { name: 'Piscina de bolas', icon: '🎈', cost: 15000, mood: 6, noise: 0.04, max: 1, tier: 3, desc: '+6 ánimo. Muy startup. Algo ruidosa.' },
   podcast: { name: 'Estudio de podcast', icon: '🎙️', cost: 20000, upkeep: 600, hype: 2, max: 1, tier: 3, desc: '+2 hype diario para cada producto lanzado.' },
-  gym: { name: 'Gimnasio', icon: '🏋️', cost: 30000, upkeep: 1500, energy: 4, mood: 3, max: 1, tier: 3, desc: '+4 energía, +3 ánimo.' },
+  gym: { name: 'Gimnasio', icon: '🏋️', cost: 30000, upkeep: 1500, energy: 4, mood: 3, noise: 0.03, max: 1, tier: 3, desc: '+4 energía, +3 ánimo. Algo ruidoso.' },
+  statue: { name: 'Estatua de unicornio', icon: '🦄', cost: 25000, near: 2, max: 1, tier: 3, desc: '+2 ánimo a las mesas cercanas. Pura vanidad dorada.' },
   nappods: { name: 'Cápsulas de siesta', icon: '😴', cost: 45000, upkeep: 800, energy: 7, max: 1, tier: 4, desc: '+7 energía diaria.' },
   chef: { name: 'Chef privado', icon: '🍣', cost: 10000, upkeep: 12000, mood: 7, energy: 3, max: 1, tier: 4, desc: '+7 ánimo, +3 energía.' },
   robot: { name: 'Robot barista IA', icon: '🤖', cost: 150000, upkeep: 2500, energy: 6, mood: 4, max: 1, tier: 5, research: 'robots', desc: '+6 energía, +4 ánimo. Nunca se equivoca con tu café.' },
+};
+
+// Objetos que ya estaban en el garaje. Se pueden mover o quitar, no comprar.
+export const FIXTURES = {
+  car: { name: 'Coche de tus padres', icon: '🚗', sell: 1500, desc: 'Ocupa medio garaje. Tus padres preferirían que no lo vendieras.' },
+  boxes: { name: 'Cajas de mudanza', icon: '📦', sell: 0, desc: 'Nadie sabe qué hay dentro.' },
+  bike: { name: 'Bici vieja', icon: '🚲', sell: 80, desc: 'Le falta una rueda... no, están las dos.' },
 };
 
 export const POLICIES = {

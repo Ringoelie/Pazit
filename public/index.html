@@ -50,11 +50,13 @@
         <div id="officeWrap" class="px-box">
           <canvas id="office" aria-label="Vista de la oficina. Toca a una persona para ver su ficha."></canvas>
           <div class="zoom">
+            <button data-act="editToggle" class="edit-btn" aria-label="Editar la oficina" title="Editar la oficina">✏️</button>
             <button data-act="zoomIn" aria-label="Acercar">+</button>
             <button data-act="zoomOut" aria-label="Alejar">−</button>
             <button data-act="zoomFit" aria-label="Ver toda la oficina">⤢</button>
           </div>
         </div>
+        <div id="editBar" class="px-box" hidden></div>
       </section>
       <section class="side">
         <nav id="tabs" class="tabs" role="tablist" aria-label="Secciones"></nav>

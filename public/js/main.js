@@ -9,7 +9,7 @@ import { sfx, setSound } from './audio.js';
 import {
   patch, openModal, closeModal, closeAllModals, topModal, modalOpen, refreshModals, confirmModal, toast, avatar, pixIcon, btn,
 } from './ui.js';
-import { TABS, renderPanel, hireModal, employeeModal, newProductModal } from './panels.js';
+import { TABS, renderPanel, hireModal, employeeModal, newProductModal, editBar, perkCards } from './panels.js';
 
 const DAYS_PER_SEC = [0, 0.625, 1.6, 4];
 const UI_KEY = 'pixel-unicorn:ui';
@@ -28,7 +28,7 @@ let tickerIdx = 0;
 let tickerTime = 0;
 let lastNewsDay = -1;
 
-const U = { tab: 'office', pid: null, mktPid: null, cat: null, hireRole: 'all', newCat: 'blog', newName: '', empModal: null };
+const U = { tab: 'office', pid: null, mktPid: null, cat: null, hireRole: 'all', newCat: 'blog', newName: '', empModal: null, edit: false, editSel: null, prevSpeed: 1 };
 try {
   Object.assign(U, JSON.parse(localStorage.getItem(UI_KEY) || '{}'), { pid: null, empModal: null });
 } catch {
@@ -54,8 +54,31 @@ function start(state) {
   eventModal = null;
   overModal = null;
   closeAllModals();
+  if (U.edit) setEdit(false);
   office.tier = -1;
   office.selected = null;
+  dirty = true;
+}
+
+// Modo edición de la oficina: pausa el juego mientras recolocas.
+function setEdit(on) {
+  U.edit = on;
+  U.editSel = null;
+  if (on) {
+    U.prevSpeed = s.speed || 1;
+    s.speed = 0;
+    office.selected = null;
+    $('#tip').hidden = true;
+  } else if (s.speed === 0) s.speed = U.prevSpeed;
+  office.setEdit(on);
+  document.body.classList.toggle('editing', on);
+  $('#editBar').hidden = !on;
+  dirty = true;
+}
+
+function selectEdit(ref) {
+  U.editSel = ref;
+  office.editSel = ref;
   dirty = true;
 }
 
@@ -67,6 +90,21 @@ function boot() {
       if (id != null) openEmployee(id);
     },
     onHover: showTip,
+    onEditPick: (ref) => {
+      selectEdit(ref);
+      if (ref) sfx('click');
+    },
+    onEditDrop: (ref, x, y, valid) => {
+      if (!valid) {
+        toast('No cabe ahí.', 'bad');
+        sfx('error');
+        return;
+      }
+      const r = G.moveObject(s, ref, x, y);
+      if (!r.ok) result(r);
+      else sfx('click');
+      selectEdit(ref);
+    },
   });
   window.addEventListener('resize', () => office.resize());
   new ResizeObserver(() => office.resize()).observe($('#officeWrap'));
@@ -193,6 +231,7 @@ function render() {
     tickerTime = 0;
   }
   patch($('#panel'), renderPanel(s, U));
+  if (U.edit) patch($('#editBar'), editBar(s, U));
   refreshModals();
 }
 
@@ -260,6 +299,28 @@ const ACTIONS = {
   zoomIn: () => office.zoomBy(1),
   zoomOut: () => office.zoomBy(-1),
   zoomFit: () => office.fit(),
+  editToggle: () => {
+    closeAllModals();
+    setEdit(!U.edit);
+    sfx('click');
+  },
+  editDeselect: () => selectEdit(null),
+  editAdd: () => {
+    openModal({ title: '➕ Añadir a la oficina', wide: true, render: () => `<p class="muted">Se coloca en el primer hueco libre; después arrástralo donde quieras.</p><div class="cards">${perkCards(s, 'editBuy', false)}</div>` });
+  },
+  editBuy: (d) => {
+    const r = G.buyPerk(s, d.id);
+    result(r, 'coin');
+    if (r.ok) {
+      closeAllModals();
+      if (!U.edit) setEdit(true);
+      selectEdit(r.ref);
+    }
+  },
+  editSell: (d) => {
+    result(G.sellItem(s, +d.uid), 'coin');
+    selectEdit(null);
+  },
 
   hireOpen: () => {
     openModal({ title: 'Contratar talento', wide: true, render: () => hireModal(s, U) });
@@ -435,9 +496,14 @@ function onKey(e) {
   if (e.key === 'Escape') {
     const m = topModal();
     if (m && m.closable) closeModal(m);
+    else if (!m && U.edit) setEdit(false);
     return;
   }
   if (modalOpen()) return;
+  if (e.key === 'e' || e.key === 'E') {
+    setEdit(!U.edit);
+    return;
+  }
   if (e.key === ' ') {
     e.preventDefault();
     setSpeed(s.speed ? 0 : 1);
@@ -550,7 +616,7 @@ function helpModal(first = false) {
       <li>📣 <b>Marketing, 🖥️ servidores y 📈 inversores:</b> haz crecer tu producto, mantenlo en pie y busca financiación.</li>
       <li>🏢 <b>Oficina:</b> compra mejoras para que el equipo esté feliz y con energía, y múdate cuando te falte espacio.</li>
       </ol>
-      <p class="muted">Controles: <b>Espacio</b> pausa · <b>1-3</b> velocidad · arrastra la oficina para moverte · rueda o pellizco para zoom · toca a alguien para ver su ficha.</p>
+      <p class="muted">Controles: <b>Espacio</b> pausa · <b>1-3</b> velocidad · <b>E</b> o ✏️ editar la oficina · arrastra la oficina para moverte · rueda o pellizco para zoom · toca a alguien para ver su ficha.</p>
       <p class="muted">Si te quedas sin dinero durante 45 días, quiebras. ¡Vigila tus finanzas!</p>
       <div class="row end"><button class="btn primary" data-close>¡A por ello!</button></div>`,
   });
@@ -619,4 +685,4 @@ hudIcons();
 boot();
 
 // Exponer el estado ayuda a depurar desde la consola.
-window.__pixelUnicorn = { get state() { return s; }, G };
+window.__pixelUnicorn = { get state() { return s; }, get office() { return office; }, G };

@@ -1,5 +1,5 @@
 // Guardado en localStorage, exportación/importación y migraciones.
-import { newGame } from './sim.js';
+import { newGame, ensureLayout } from './sim.js';
 
 const KEY = 'pixel-unicorn:save';
 
@@ -52,5 +52,6 @@ function migrate(s) {
     for (const [kk, vv] of Object.entries(base[k])) if (s[k][kk] === undefined) s[k][kk] = vv;
   }
   s.notes = [];
+  ensureLayout(s);
   return s;
 }

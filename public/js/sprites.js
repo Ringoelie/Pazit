@@ -375,3 +375,119 @@ export function drawPoster(ctx, x, y) {
   R(ctx, x + 3, y + 7, 1, 2, PAL.cyan);
   R(ctx, x + 2, y + 8, 1, 2, '#ff6b8b');
 }
+
+// ---------------------------------------------------------------- decoración
+
+export function drawRug(ctx, x, y) {
+  R(ctx, x, y, 32, 20, '#8a2f41');
+  R(ctx, x + 2, y + 2, 28, 16, PAL.red);
+  R(ctx, x + 4, y + 4, 24, 12, '#c9566b');
+  for (let i = 0; i < 4; i++) R(ctx, x + 7 + i * 6, y + 9, 2, 2, PAL.yellow);
+  for (let i = 0; i < 8; i++) {
+    R(ctx, x + 1 + i * 4, y - 1, 1, 1, PAL.yellow);
+    R(ctx, x + 1 + i * 4, y + 20, 1, 1, PAL.yellow);
+  }
+}
+
+export function drawLamp(ctx, x, y, t) {
+  const on = (t + x) % 9 > 0.15;
+  if (on) R(ctx, x - 2, y + 7, 12, 2, 'rgba(255,205,117,.25)');
+  R(ctx, x, y, 8, 6, on ? PAL.yellow : '#b8925a');
+  R(ctx, x + 1, y, 6, 1, PAL.white);
+  R(ctx, x + 3, y + 6, 2, 14, PAL.slate);
+  R(ctx, x + 1, y + 20, 6, 2, PAL.ink);
+}
+
+export function drawCooler(ctx, x, y, t) {
+  R(ctx, x + 2, y, 6, 8, 'rgba(115,239,247,.8)');
+  R(ctx, x + 3, y + 1, 1, 5, PAL.white);
+  const b = Math.floor(t * 2) % 6;
+  R(ctx, x + 5, y + 6 - b, 1, 1, PAL.white);
+  R(ctx, x + 1, y + 8, 8, 12, PAL.white);
+  R(ctx, x + 1, y + 8, 8, 1, PAL.silver);
+  R(ctx, x + 3, y + 11, 4, 2, PAL.sky);
+  R(ctx, x + 2, y + 18, 6, 2, PAL.silver);
+}
+
+export function drawAquarium(ctx, x, y, t) {
+  R(ctx, x, y, 24, 12, PAL.ink);
+  R(ctx, x + 1, y + 1, 22, 10, '#2a6fbf');
+  R(ctx, x + 1, y + 8, 22, 3, '#d9b86a');
+  R(ctx, x + 4, y + 5, 1, 4, PAL.green);
+  R(ctx, x + 18, y + 4, 1, 5, PAL.green);
+  const fx = x + 3 + Math.floor((t * 6) % 16);
+  R(ctx, fx, y + 4, 3, 2, PAL.orange);
+  R(ctx, fx - 1, y + 4, 1, 1, PAL.yellow);
+  const gx = x + 18 - Math.floor((t * 4) % 14);
+  R(ctx, gx, y + 7, 2, 1, PAL.yellow);
+  R(ctx, x + 12, y + 2 + Math.floor((t * 3) % 6), 1, 1, PAL.white);
+  R(ctx, x + 2, y + 12, 20, 6, '#7a4a2a');
+  R(ctx, x + 2, y + 12, 20, 1, '#9a6a44');
+}
+
+export function drawStatue(ctx, x, y, t) {
+  const gold = '#f2c14e';
+  const dark = '#b8862a';
+  R(ctx, x + 4, y + 8, 8, 5, gold);
+  R(ctx, x + 10, y + 4, 4, 5, gold);
+  R(ctx, x + 13, y + 1, 1, 3, PAL.white);
+  R(ctx, x + 3, y + 7, 2, 3, dark);
+  R(ctx, x + 5, y + 13, 1, 5, dark);
+  R(ctx, x + 10, y + 13, 1, 5, dark);
+  if (t % 3 < 0.3) R(ctx, x + 7, y + 9, 1, 1, PAL.white);
+  R(ctx, x + 1, y + 18, 14, 8, PAL.silver);
+  R(ctx, x + 1, y + 18, 14, 1, PAL.white);
+  R(ctx, x + 3, y + 21, 10, 2, PAL.slate);
+}
+
+export function drawMeeting(ctx, x, y) {
+  for (let i = 0; i < 3; i++) {
+    R(ctx, x + 6 + i * 12, y, 8, 5, PAL.dark);
+    R(ctx, x + 6 + i * 12, y + 17, 8, 5, PAL.dark);
+  }
+  R(ctx, x, y + 5, 40, 10, '#a86f45');
+  R(ctx, x, y + 5, 40, 2, '#c98a60');
+  R(ctx, x + 2, y + 15, 2, 3, '#6b4024');
+  R(ctx, x + 36, y + 15, 2, 3, '#6b4024');
+  R(ctx, x + 8, y + 8, 5, 3, PAL.white);
+  R(ctx, x + 24, y + 8, 6, 3, PAL.silver);
+}
+
+export function drawCar(ctx, x, y) {
+  R(ctx, x + 4, y + 25, 50, 3, 'rgba(26,28,44,.35)');
+  R(ctx, x + 10, y, 32, 10, PAL.red);
+  R(ctx, x + 13, y + 2, 11, 7, PAL.cyan);
+  R(ctx, x + 26, y + 2, 11, 7, PAL.cyan);
+  R(ctx, x + 14, y + 3, 3, 2, PAL.white);
+  R(ctx, x, y + 10, 54, 11, PAL.red);
+  R(ctx, x, y + 10, 54, 2, '#d0566b');
+  R(ctx, x, y + 17, 54, 2, '#8a2f41');
+  R(ctx, x, y + 12, 4, 3, PAL.yellow);
+  R(ctx, x + 50, y + 12, 4, 3, PAL.orange);
+  for (const wx of [x + 6, x + 38]) {
+    R(ctx, wx, y + 18, 10, 9, PAL.ink);
+    R(ctx, wx + 3, y + 21, 4, 3, PAL.slate);
+  }
+}
+
+export function drawBoxes(ctx, x, y) {
+  for (const [dx, dy, w, h] of [[0, 12, 16, 12], [16, 14, 14, 10], [3, 0, 12, 12]]) {
+    R(ctx, x + dx, y + dy, w, h, '#c98a60');
+    R(ctx, x + dx, y + dy, w, 2, '#e0a878');
+    R(ctx, x + dx + w / 2 - 1, y + dy, 2, h, '#e8d0a0');
+  }
+}
+
+export function drawBike(ctx, x, y) {
+  const ky = y + 2;
+  for (const wx of [x, x + 16]) {
+    R(ctx, wx, ky + 4, 9, 1, PAL.ink);
+    R(ctx, wx, ky + 11, 9, 1, PAL.ink);
+    R(ctx, wx, ky + 5, 1, 6, PAL.ink);
+    R(ctx, wx + 8, ky + 5, 1, 6, PAL.ink);
+  }
+  R(ctx, x + 4, ky + 3, 17, 1, PAL.sky);
+  R(ctx, x + 11, ky, 1, 8, PAL.sky);
+  R(ctx, x + 9, ky - 1, 5, 2, PAL.ink);
+  R(ctx, x + 20, ky - 2, 1, 6, PAL.sky);
+}

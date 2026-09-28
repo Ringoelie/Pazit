@@ -3,7 +3,7 @@
 import { PERKS } from './data.js';
 import { rint, chance, pick, dateOf, fmtMoney } from './util.js';
 import { has, findEmp, findProduct, news, money, addEffect, makePerson, expectedSalary } from './core.js';
-import { valuation, queueFeature, isAIProduct, featureAvailable } from './sim.js';
+import { valuation, queueFeature, isAIProduct, featureAvailable, installPerk } from './sim.js';
 
 const live = (s) => s.products.filter((p) => p.launched && p.users > 500);
 const best = (s) => live(s).sort((a, b) => b.users - a.users)[0];
@@ -90,7 +90,7 @@ export const EVENTS = {
     resolve: (s, ctx, i) => {
       if (i === 0 && s.money >= PERKS.ac.cost) {
         money(s, -PERKS.ac.cost, 'office');
-        s.office.perks.ac = 1;
+        installPerk(s, 'ac');
         return '❄️ Aire acondicionado instalado. ¡Qué gloria!';
       }
       addEffect(s, 'heat', 20, { heat: 0.8 });

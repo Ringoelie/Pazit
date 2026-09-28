@@ -1,7 +1,7 @@
 // Contenido HTML de cada pestaña. Solo lee el estado; las acciones viajan
 // por atributos data-act que main.js enruta a la simulación.
 import {
-  ROLES, TRAITS, OFFICES, PERKS, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID, CAMPAIGNS, ROUNDS,
+  ROLES, TRAITS, OFFICES, PERKS, FIXTURES, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID, CAMPAIGNS, ROUNDS,
   QUESTS, ACHIEVEMENTS, POINT_TYPES, PREMIUM_PRICES, MAX_FEATURE_LEVEL, LEVELS,
 } from './data.js';
 import * as G from './sim.js';
@@ -59,23 +59,27 @@ export function renderPanel(s, U) {
 
 // ---------------------------------------------------------------- oficina
 
-function officePanel(s) {
-  const o = G.officeOf(s);
-  const ps = perkStats(s);
-  const used = G.perkCount(s);
-  const perks = Object.entries(PERKS)
+// Tienda de mejoras; `act` cambia si se compra desde el editor.
+export function perkCards(s, act = 'buyPerk', sell = true) {
+  return Object.entries(PERKS)
     .map(([id, p]) => {
       const n = s.office.perks[id] || 0;
       const st = G.perkState(s, id);
-      const locked = !st.ok && n === 0 && st.why !== 'Sin espacio libre';
+      const locked = !st.ok && n === 0;
       return `<div class="card perk ${n ? 'owned' : ''} ${locked ? 'locked' : ''}" data-key="perk-${id}">
         <div class="card-icon">${p.icon}</div>
         <div class="grow"><b>${p.name}${n ? ` <span class="tag">x${n}</span>` : ''}</b><small>${p.desc}</small>
         <small class="muted">${fmtMoney(p.cost)}${p.upkeep ? ` · ${fmtMoney(p.upkeep)}/mes` : ''}</small></div>
-        <div class="col-btns">${btn(st.ok ? 'Comprar' : st.why, 'buyPerk', { id }, { kind: st.ok ? 'primary' : '', disabled: !st.ok || s.money < p.cost })}
-        ${n ? btn('Vender', 'sellPerk', { id }, { kind: 'ghost' }) : ''}</div></div>`;
+        <div class="col-btns">${btn(st.ok ? 'Comprar' : st.why, act, { id }, { kind: st.ok ? 'primary' : '', disabled: !st.ok || s.money < p.cost })}
+        ${n && sell ? btn('Vender', 'sellPerk', { id }, { kind: 'ghost' }) : ''}</div></div>`;
     })
     .join('');
+}
+
+function officePanel(s) {
+  const o = G.officeOf(s);
+  const ps = perkStats(s);
+  const items = s.office.layout.items.length;
   const policies = Object.entries(POLICIES)
     .map(([id, p]) => {
       const locked = p.research && !G.has(s, p.research);
@@ -91,7 +95,7 @@ function officePanel(s) {
     .map(({ x, i }) => {
       const locked = x.research && !G.has(s, x.research);
       return `<div class="card" data-key="move-${i}"><div class="card-icon">🚚</div><div class="grow"><b>${x.name}</b>
-        <small>${x.desks} escritorios · ${x.slots} huecos para mejoras · alquiler ${fmtMoney(x.rent)}/mes · ánimo ${x.mood >= 0 ? '+' : ''}${x.mood}</small>
+        <small>${x.desks} escritorios · ${x.w}×${x.h} px de planta · alquiler ${fmtMoney(x.rent)}/mes · ánimo ${x.mood >= 0 ? '+' : ''}${x.mood}</small>
         ${locked ? `<small class="muted">🔒 Requiere ${RESEARCH_BY_ID[x.research].name}</small>` : ''}</div>
         ${btn(`Mudarse · ${fmtMoney(x.move)}`, 'moveOffice', { tier: i }, { kind: 'primary', disabled: locked || s.money < x.move })}</div>`;
     })
@@ -100,9 +104,12 @@ function officePanel(s) {
       ${kpi('Oficina', o.name)}
       ${kpi('Escritorios', `${G.onsite(s)}/${o.desks}`, G.freeDesks(s) <= 0 ? '¡Llena!' : `${G.freeDesks(s)} libres`, G.freeDesks(s) <= 0 ? 'warn' : '')}
       ${kpi('Alquiler', fmtMoney(o.rent) + '/mes')}
-      ${kpi('Mejoras', `${used}/${o.slots}`, `+${ps.mood} ánimo · +${ps.energy} energía`)}
+      ${kpi('Muebles', items, `+${ps.mood} ánimo · +${ps.energy} energía`)}
     </div>
-    <h3>Mejoras de oficina</h3><div class="cards">${perks}</div>
+    <div class="banner"><span>🛠️ Coloca mesas y muebles donde quieras. La decoración cerca de las mesas sube el ánimo y los juegos hacen ruido.</span>
+      ${btn('✏️ Editar la oficina', 'editToggle', {}, { kind: 'primary' })}</div>
+    <h3>Mejoras de oficina</h3><div class="cards">${perkCards(s)}</div>
+    <p class="muted">Al mudarte te llevas las mejoras, pero el coche y las cajas se quedan en el garaje.</p>
     <h3>Políticas de empresa</h3><div class="cards">${policies}</div>
     <h3>Mudanza</h3><div class="cards">${moves || '<p class="muted">Ya estás en la mejor oficina del sistema solar.</p>'}</div>`;
 }
@@ -196,9 +203,40 @@ export function hireModal(s, U) {
     <div class="row end">${btn(`🔎 Headhunter · ${fmtMoney(G.headhunterCost(s))}`, 'refreshCands', {}, { disabled: s.money < G.headhunterCost(s) })}</div>`;
 }
 
+// Barra inferior del modo edición: qué hay seleccionado y qué se puede hacer.
+export function editBar(s, U) {
+  const L = s.office.layout;
+  const ref = U.editSel;
+  const done = btn('➕', 'editAdd', {}, { kind: 'small', title: 'Añadir muebles' }) + btn('✔ Listo', 'editToggle', {}, { kind: 'primary small' });
+  if (!ref) {
+    return `<div class="eb-info"><b>🛠️ Modo edición</b><small>Arrastra mesas y muebles. Verde: cabe · rojo: no cabe.</small></div>
+      <div class="eb-btns">${done}</div>`;
+  }
+  const [k, v] = ref.split(':');
+  if (k === 'd') {
+    const i = +v;
+    const e = s.employees.find((x) => x.desk === i && !x.traits.includes('remote'));
+    const fx = G.deskFx(s, e || { desk: i, traits: [] });
+    const env = [fx.comfort ? `+${fx.comfort} ánimo` : '', fx.noise ? `-${Math.round(fx.noise * 100)}% por ruido` : ''].filter(Boolean).join(' · ');
+    return `<div class="eb-info"><b>🪑 Mesa ${i + 1}</b><small>${e ? esc(e.name) : 'Libre'}${env ? ' · ' + env : ' · sin decoración cerca'}</small></div>
+      <div class="eb-btns">${btn('✕', 'editDeselect', {}, { kind: 'small ghost', title: 'Deseleccionar' })}${done}</div>`;
+  }
+  const it = L.items.find((x) => x.uid === +v);
+  if (!it) return `<div class="eb-info"><b>🛠️ Modo edición</b></div><div class="eb-btns">${done}</div>`;
+  const def = PERKS[it.id] || FIXTURES[it.id];
+  const val = G.sellValue(it.id);
+  return `<div class="eb-info"><b>${def.icon} ${def.name}</b><small>${def.desc}</small></div>
+    <div class="eb-btns">${btn(val ? `Vender · +${fmtMoney(val)}` : 'Quitar', 'editSell', { uid: it.uid }, { kind: 'small danger' })}
+    ${btn('✕', 'editDeselect', {}, { kind: 'small ghost', title: 'Deseleccionar' })}${done}</div>`;
+}
+
 export function employeeModal(s, id) {
   const e = G.findEmp(s, id);
   if (!e) return '<p>Esta persona ya no trabaja aquí.</p>';
+  const fx = G.deskFx(s, e);
+  const env = e.traits.includes('remote')
+    ? '🏠 Trabaja desde casa.'
+    : [`🪑 Mesa ${e.desk + 1}`, fx.comfort ? `+${fx.comfort} ánimo por la decoración cercana` : 'sin decoración cerca', fx.noise ? `-${Math.round(fx.noise * 100)}% productividad por ruido` : ''].filter(Boolean).join(' · ');
   const exp = G.expectedSalary(e, s);
   const out = G.output(s, e);
   const role = ROLES[e.role];
@@ -213,6 +251,7 @@ export function employeeModal(s, id) {
       ${kpi('Sueldo', e.role === 'founder' ? '—' : fmtMoney(e.salary), e.role === 'founder' ? '' : `Mercado: ${fmtMoney(exp)}`, e.salary < exp * 0.95 ? 'warn' : '')}
     </div>
     <div class="xp"><small>Experiencia hasta el siguiente punto de habilidad</small>${bar(e.xp / need, 'var(--lime)')}</div>
+    <p class="muted">${env}</p>
     ${e.traits.length ? `<h4>Rasgos</h4><ul class="traits">${e.traits.map((t) => `<li>${TRAITS[t].icon} <b>${TRAITS[t].name}:</b> ${TRAITS[t].desc}</li>`).join('')}</ul>` : ''}
     ${G.isAssignable(e) && e.off <= 0 ? `<h4>Asignación</h4>${assignSelect(s, e)}` : ''}
     ${

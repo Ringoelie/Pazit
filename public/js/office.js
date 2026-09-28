@@ -1,13 +1,11 @@
 // Vista de la oficina en canvas: fondo cacheado, empleados animados, cámara
-// con zoom entero (píxeles nítidos) y arrastre.
-import { OFFICES, ROLES, PAL } from './data.js';
+// con zoom y arrastre, y modo edición para recolocar mesas y muebles.
+import { OFFICES, ROLES, PAL, PERKS } from './data.js';
 import { dateOf } from './util.js';
 import * as S from './sprites.js';
-
-const COLS = [2, 4, 7, 8, 10, 14, 20];
-const CW = 28;
-const CH = 30;
-const WALL = 44;
+import {
+  WALL, FLAT, NEAR_RADIUS, isWall, deskRect, itemRect, serverRoom, loungeX, canPlace, snapPos, getRef, deskEffects,
+} from './layout.js';
 
 const THEMES = {
   garage: { wall: '#566c86', trim: '#3e4c63', floor: ['#6f7d91', '#687689'], desk: ['#b4895f', '#8a6340'], chair: '#333c57', bg: '#20243a' },
@@ -19,27 +17,45 @@ const THEMES = {
   orbital: { wall: '#1a1c2c', trim: '#333c57', floor: ['#4a5470', '#454e69'], desk: ['#94b0c2', '#566c86'], chair: '#73eff7', bg: '#0b0c14' },
 };
 
-const WALL_ITEMS = { coffee: 12, snacks: 14, arcade: 14, library: 22, robot: 14 };
-const FLOOR_ITEMS = { sofa: [30, 14], foosball: [26, 17], ballpit: [34, 16], gym: [35, 14], nappods: [30, 16], chef: [34, 18], podcast: [26, 20] };
-const BREAK_PERKS = ['coffee', 'snacks', 'arcade', 'sofa', 'foosball', 'ballpit', 'gym', 'nappods', 'chef', 'robot', 'library'];
+// Muebles a los que el equipo va a descansar.
+const BREAK = new Set(['coffee', 'snacks', 'arcade', 'sofa', 'foosball', 'ballpit', 'gym', 'nappods', 'chef', 'robot', 'library', 'cooler', 'aquarium', 'meeting']);
+const MAKERS_VIEW = ['founder', 'dev', 'design', 'ai', 'marketer', 'pm'];
 const GLYPH = {
   code: ['</>', PAL.sky], design: ['~', PAL.orange], ai: ['01', PAL.silver], flex: ['*', PAL.yellow],
   hype: ['!', '#ff6b8b'], rp: ['?', PAL.lime], ops: ['%', PAL.green], sales: ['$', PAL.cyan], people: ['♥', '#ff6b8b'], lead: ['>', PAL.cyan],
 };
 
-function layout(tier) {
-  const o = OFFICES[tier];
-  const cols = COLS[tier];
-  const x0 = 14;
-  const y0 = WALL + 30;
-  const desks = [];
-  for (let i = 0; i < o.desks; i++) desks.push({ x: x0 + (i % cols) * CW, y: y0 + Math.floor(i / cols) * CH });
-  const loungeX = x0 + cols * CW + 18;
-  return { o, cols, desks, x0, y0, loungeX, W: o.w, H: o.h, theme: THEMES[o.theme] };
+function drawItem(g, id, x, y, t) {
+  switch (id) {
+    case 'plant': return S.drawPlant(g, x, y, t);
+    case 'rug': return S.drawRug(g, x, y);
+    case 'lamp': return S.drawLamp(g, x, y, t);
+    case 'coffee': return S.drawCoffee(g, x, y, t);
+    case 'cooler': return S.drawCooler(g, x, y, t);
+    case 'snacks': return S.drawVending(g, x, y, t);
+    case 'sofa': return S.drawSofa(g, x, y);
+    case 'foosball': return S.drawFoosball(g, x + 1, y, t);
+    case 'aquarium': return S.drawAquarium(g, x, y, t);
+    case 'meeting': return S.drawMeeting(g, x, y);
+    case 'arcade': return S.drawArcade(g, x, y, t);
+    case 'library': return S.drawBookshelf(g, x, y);
+    case 'ballpit': return S.drawBallpit(g, x, y);
+    case 'podcast': return S.drawPodcast(g, x, y + 8, t);
+    case 'gym': return S.drawGym(g, x, y, t);
+    case 'statue': return S.drawStatue(g, x, y, t);
+    case 'nappods': return S.drawNapPod(g, x, y);
+    case 'chef': return S.drawChef(g, x, y, t);
+    case 'robot': return S.drawRobot(g, x + 1, y + 4, t);
+    case 'whiteboard': return S.drawWhiteboard(g, x, y);
+    case 'ac': return S.drawAC(g, x, y, t);
+    case 'car': return S.drawCar(g, x, y);
+    case 'boxes': return S.drawBoxes(g, x, y);
+    case 'bike': return S.drawBike(g, x, y);
+  }
 }
 
 export class OfficeView {
-  constructor(canvas, { onPick, onHover } = {}) {
+  constructor(canvas, { onPick, onHover, onEditPick, onEditDrop } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.world = document.createElement('canvas');
@@ -48,6 +64,8 @@ export class OfficeView {
     this.bgKey = '';
     this.onPick = onPick;
     this.onHover = onHover;
+    this.onEditPick = onEditPick;
+    this.onEditDrop = onEditDrop;
     this.zoom = 2;
     this.cam = { x: 0, y: 0 };
     this.userZoom = false;
@@ -58,7 +76,12 @@ export class OfficeView {
     this.selected = null;
     this.hover = null;
     this.hits = [];
+    this.editHits = [];
+    this.edit = false;
+    this.editSel = null;
+    this.drag = null;
     this.tier = -1;
+    this.s = null;
     this.pointers = new Map();
     this.bindInput();
   }
@@ -127,7 +150,7 @@ export class OfficeView {
     const my = Math.max(0, this.L.H - this.viewH());
     this.cam.x = Math.max(0, Math.min(mx, this.cam.x));
     this.cam.y = Math.max(0, Math.min(my, this.cam.y));
-    this.canvas.style.touchAction = mx > 0 || my > 0 ? 'none' : 'pan-y';
+    this.canvas.style.touchAction = this.edit || mx > 0 || my > 0 ? 'none' : 'pan-y';
   }
 
   toWorld(clientX, clientY) {
@@ -137,17 +160,55 @@ export class OfficeView {
     return { x: this.cam.x + (px - this.offX()) / this.zoom, y: this.cam.y + (py - this.offY()) / this.zoom, px, py };
   }
 
+  // ---------------------------------------------------------------- edición
+
+  setEdit(on) {
+    this.edit = on;
+    this.drag = null;
+    this.editSel = null;
+    this.hover = null;
+    this.onHover?.(null);
+    this.clampCam();
+  }
+
+  // El plano tal y como se ve ahora: con el objeto arrastrado en su sitio provisional.
+  viewLayout() {
+    const L = this.s.office.layout;
+    const d = this.drag;
+    if (!d || !d.moved) return L;
+    return {
+      ...L,
+      desks: L.desks.map((k, i) => ('d:' + i === d.ref ? { x: d.x, y: d.y } : k)),
+      items: L.items.map((it) => ('i:' + it.uid === d.ref ? { ...it, x: d.x, y: d.y } : it)),
+    };
+  }
+
+  // ---------------------------------------------------------------- entrada
+
   bindInput() {
     const c = this.canvas;
-    let drag = null;
+    let pan = null;
     let pinch = null;
     c.addEventListener('pointerdown', (e) => {
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.pointers.size === 2) {
         const [a, b] = [...this.pointers.values()];
         pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) };
-        drag = null;
-      } else drag = { x: e.clientX, y: e.clientY, cx: this.cam.x, cy: this.cam.y, moved: false };
+        pan = null;
+        this.drag = null;
+        return;
+      }
+      if (this.edit && this.s) {
+        const w = this.toWorld(e.clientX, e.clientY);
+        const ref = this.editHitTest(w.x, w.y);
+        const r = ref && getRef(this.s.office.layout, ref);
+        if (r) {
+          this.drag = { ref, id: r.id, ox: w.x - r.obj.x, oy: w.y - r.obj.y, x: r.obj.x, y: r.obj.y, sx: e.clientX, sy: e.clientY, moved: false, valid: true };
+          c.setPointerCapture?.(e.pointerId);
+          return;
+        }
+      }
+      pan = { x: e.clientX, y: e.clientY, cx: this.cam.x, cy: this.cam.y, moved: false };
     });
     c.addEventListener('pointermove', (e) => {
       if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -163,15 +224,32 @@ export class OfficeView {
         }
         return;
       }
-      if (drag && e.buttons) {
-        const dx = e.clientX - drag.x;
-        const dy = e.clientY - drag.y;
-        if (Math.abs(dx) + Math.abs(dy) > 5) drag.moved = true;
-        if (drag.moved) {
-          this.cam.x = drag.cx - (dx * this.dpr) / this.zoom;
-          this.cam.y = drag.cy - (dy * this.dpr) / this.zoom;
+      const d = this.drag;
+      if (d) {
+        if (Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) > 4) d.moved = true;
+        if (d.moved) {
+          const w = this.toWorld(e.clientX, e.clientY);
+          const p = snapPos(d.id, w.x - d.ox, w.y - d.oy);
+          d.x = p.x;
+          d.y = p.y;
+          d.valid = canPlace(this.s.office.layout, this.s.office.tier, d.id, p.x, p.y, d.ref);
+        }
+        return;
+      }
+      if (pan && e.buttons) {
+        const dx = e.clientX - pan.x;
+        const dy = e.clientY - pan.y;
+        if (Math.abs(dx) + Math.abs(dy) > 5) pan.moved = true;
+        if (pan.moved) {
+          this.cam.x = pan.cx - (dx * this.dpr) / this.zoom;
+          this.cam.y = pan.cy - (dy * this.dpr) / this.zoom;
           this.clampCam();
         }
+        return;
+      }
+      if (this.edit) {
+        const w = this.toWorld(e.clientX, e.clientY);
+        c.style.cursor = this.editHitTest(w.x, w.y) ? 'move' : 'grab';
         return;
       }
       const w = this.toWorld(e.clientX, e.clientY);
@@ -185,12 +263,22 @@ export class OfficeView {
     const end = (e) => {
       this.pointers.delete(e.pointerId);
       if (this.pointers.size < 2) pinch = null;
-      if (drag && !drag.moved && e.type === 'pointerup') {
-        const w = this.toWorld(e.clientX, e.clientY);
-        const hit = this.hitTest(w.x, w.y);
-        this.onPick?.(hit);
+      const d = this.drag;
+      if (d) {
+        this.drag = null;
+        if (e.type !== 'pointerup') return;
+        if (d.moved) this.onEditDrop?.(d.ref, d.x, d.y, d.valid);
+        else this.onEditPick?.(d.ref);
+        return;
       }
-      drag = null;
+      if (pan && !pan.moved && e.type === 'pointerup') {
+        if (this.edit) this.onEditPick?.(null);
+        else {
+          const w = this.toWorld(e.clientX, e.clientY);
+          this.onPick?.(this.hitTest(w.x, w.y));
+        }
+      }
+      pan = null;
     };
     c.addEventListener('pointerup', end);
     c.addEventListener('pointercancel', end);
@@ -219,10 +307,18 @@ export class OfficeView {
     return null;
   }
 
+  editHitTest(x, y) {
+    for (let i = this.editHits.length - 1; i >= 0; i--) {
+      const h = this.editHits[i];
+      if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) return h.ref;
+    }
+    return null;
+  }
+
   // ---------------------------------------------------------------- efectos
 
   onDay(s) {
-    if (!this.L) return;
+    if (!this.L || this.edit) return;
     const working = s.employees.filter((e) => e.off <= 0 && !e.traits.includes('remote'));
     const n = Math.min(6, Math.ceil(working.length / 3));
     for (let i = 0; i < n; i++) {
@@ -254,10 +350,11 @@ export class OfficeView {
 
   // ---------------------------------------------------------------- fondo
 
-  ensureLayout(s) {
+  ensureView(s) {
     if (s.office.tier !== this.tier) {
       this.tier = s.office.tier;
-      this.L = layout(this.tier);
+      const o = OFFICES[this.tier];
+      this.L = { o, W: o.w, H: o.h, theme: THEMES[o.theme], loungeX: loungeX(this.tier), room: serverRoom(this.tier) };
       this.world.width = this.L.W;
       this.world.height = this.L.H;
       this.bg.width = this.L.W;
@@ -268,55 +365,10 @@ export class OfficeView {
       this.userZoom = false;
       this.resize();
     }
-    const key = JSON.stringify([this.tier, s.office.perks, s.company]);
+    const key = this.tier + ':' + s.company;
     if (key !== this.bgKey) {
       this.bgKey = key;
-      this.placePerks(s);
       this.drawBackground(s);
-    }
-  }
-
-  placePerks(s) {
-    const L = this.L;
-    const P = s.office.perks;
-    const pos = {};
-    let x = L.loungeX + 30;
-    for (const id of Object.keys(WALL_ITEMS)) {
-      const n = id === 'arcade' ? P.arcade || 0 : P[id] ? 1 : 0;
-      for (let i = 0; i < n; i++) {
-        (pos[id] ||= []).push({ x, y: WALL + 24 - (id === 'coffee' ? 20 : id === 'robot' ? 20 : 24) });
-        x += WALL_ITEMS[id] + 5;
-      }
-    }
-    const plants = [{ x: 2, y: WALL + 12 }, { x: L.loungeX + 12, y: WALL + 12 }, { x: L.W - 14, y: WALL + 12 }];
-    pos.plant = plants.slice(0, P.plant || 0);
-    let fx = L.loungeX + 4;
-    let fy = WALL + 40;
-    let rowH = 0;
-    for (const id of Object.keys(FLOOR_ITEMS)) {
-      if (!P[id]) continue;
-      const [w, h] = FLOOR_ITEMS[id];
-      const n = P[id];
-      for (let i = 0; i < n; i++) {
-        if (fx + w > L.W - 6) {
-          fx = L.loungeX + 4;
-          fy += rowH + 12;
-          rowH = 0;
-        }
-        (pos[id] ||= []).push({ x: fx, y: fy + (id === 'podcast' ? 8 : 0) });
-        fx += w + 8;
-        rowH = Math.max(rowH, h + (id === 'podcast' ? 8 : 0));
-      }
-    }
-    this.perkPos = pos;
-    this.usePoints = [];
-    for (const id of BREAK_PERKS) {
-      for (const p of pos[id] || []) {
-        const w = WALL_ITEMS[id] || FLOOR_ITEMS[id]?.[0] || 12;
-        const h = FLOOR_ITEMS[id]?.[1] || 24;
-        const floor = !!FLOOR_ITEMS[id];
-        this.usePoints.push({ x: p.x + w / 2 - 5, y: floor ? p.y + h - 6 : WALL + 24 });
-      }
     }
   }
 
@@ -325,10 +377,9 @@ export class OfficeView {
     const T = L.theme;
     const g = this.bg.getContext('2d');
     g.clearRect(0, 0, L.W, L.H);
-    // Suelo
     for (let y = WALL; y < L.H; y += 8) {
       for (let x = 0; x < L.W; x += 16) {
-        const alt = ((x / 16) + (y / 8)) % 2 === 0;
+        const alt = (x / 16 + y / 8) % 2 === 0;
         S.R(g, x, y, 16, 8, T.floor[alt ? 0 : 1]);
       }
     }
@@ -339,9 +390,16 @@ export class OfficeView {
       for (let y = WALL + 4; y < L.H; y += 16) for (let x = 4; x < L.W; x += 16) S.R(g, x, y, 1, 1, PAL.silver);
     }
     if (L.o.theme === 'campus') {
-      S.R(g, L.loungeX - 4, WALL + 30, L.W - L.loungeX, L.H - WALL - 34, '#f6c177');
-      S.R(g, L.loungeX - 2, WALL + 32, L.W - L.loungeX - 4, L.H - WALL - 38, '#f8d49a');
+      S.R(g, L.loungeX - 4, WALL + 30, L.W - L.loungeX, L.H - WALL - 68, '#f6c177');
+      S.R(g, L.loungeX - 2, WALL + 32, L.W - L.loungeX - 4, L.H - WALL - 72, '#f8d49a');
     }
+    // Sala de servidores
+    const r = L.room;
+    S.R(g, r.x, r.y, r.w, r.h, '#262a3e');
+    for (let x = r.x; x < r.x + r.w; x += 8) S.R(g, x, r.y, 1, r.h, '#20243a');
+    S.R(g, r.x, r.y, r.w, 2, PAL.slate);
+    S.R(g, r.x, r.y, 2, r.h, PAL.slate);
+    S.drawText(g, 'SERVIDORES', r.x + 4, r.y + 4, PAL.slate);
     // Pared
     S.R(g, 0, 0, L.W, WALL, T.wall);
     if (L.o.theme === 'loft') {
@@ -353,27 +411,22 @@ export class OfficeView {
     }
     S.R(g, 0, WALL - 3, L.W, 3, T.trim);
     S.R(g, 0, WALL, L.W, 1, S.shade(T.floor[0], -0.3));
-    // Rótulo de la empresa sobre la zona de mesas
     const name = s.company.slice(0, 18);
     const tw = S.textWidth(name, 1);
-    const sx = Math.max(4, L.x0 + (L.cols * CW) / 2 - tw / 2 - 4);
+    const sx = Math.max(4, Math.round((14 + L.loungeX - 18) / 2 - tw / 2 - 4));
     S.R(g, sx, 6, tw + 8, 11, PAL.ink);
     S.R(g, sx + 1, 7, tw + 6, 9, PAL.navy);
     S.drawText(g, name, sx + 4, 9, PAL.yellow);
+    this.windows = [];
     if (L.o.theme === 'garage') {
-      this.drawGarageStuff(g);
-      // Puerta de garaje
       const gx = L.loungeX + 8;
       const gw = Math.min(90, L.W - gx - 10);
       S.R(g, gx, 4, gw, WALL - 7, '#8a96a8');
       for (let y = 6; y < WALL - 4; y += 4) S.R(g, gx, y, gw, 1, '#6f7b8e');
       S.R(g, gx + gw / 2 - 4, WALL - 8, 8, 2, PAL.ink);
     } else {
-      this.windows = [];
-      const start = L.loungeX + 4;
-      for (let x = start; x + 38 < L.W - 4; x += 48) this.windows.push({ x, y: 7, w: 38, h: 26 });
+      for (let x = L.loungeX + 4; x + 38 < L.W - 4; x += 48) this.windows.push({ x, y: 7, w: 38, h: 26 });
     }
-    // Tablón de corcho con notas en garaje/coworking; póster en el resto
     if (L.o.theme === 'garage' || L.o.theme === 'cowork') {
       S.R(g, 4, 20, 22, 16, '#b86f50');
       S.R(g, 6, 22, 5, 5, PAL.yellow);
@@ -383,66 +436,34 @@ export class OfficeView {
     } else S.drawPoster(g, 6, 20);
   }
 
-  // El garaje de tus padres: coche, cajas y una bici. Solo decorado.
-  drawGarageStuff(g) {
-    const L = this.L;
-    const cx = L.loungeX + 44;
-    const cy = WALL + 62;
-    S.R(g, cx + 6, cy + 26, 50, 3, 'rgba(26,28,44,.35)');
-    S.R(g, cx + 14, cy + 20, 10, 4, 'rgba(26,28,44,.25)');
-    S.R(g, cx + 12, cy, 32, 10, PAL.red);
-    S.R(g, cx + 15, cy + 2, 11, 7, PAL.cyan);
-    S.R(g, cx + 28, cy + 2, 11, 7, PAL.cyan);
-    S.R(g, cx + 16, cy + 3, 3, 2, PAL.white);
-    S.R(g, cx + 2, cy + 10, 54, 11, PAL.red);
-    S.R(g, cx + 2, cy + 10, 54, 2, '#d0566b');
-    S.R(g, cx + 2, cy + 17, 54, 2, '#8a2f41');
-    S.R(g, cx + 2, cy + 12, 4, 3, PAL.yellow);
-    S.R(g, cx + 52, cy + 12, 4, 3, PAL.orange);
-    for (const wx of [cx + 8, cx + 40]) {
-      S.R(g, wx, cy + 18, 10, 9, PAL.ink);
-      S.R(g, wx + 3, cy + 21, 4, 3, PAL.slate);
-    }
-    // Cajas de mudanza apiladas
-    const bx = 2;
-    const by = L.H - 28;
-    for (const [dx, dy, w, h] of [[0, 12, 16, 12], [16, 14, 14, 10], [3, 0, 12, 12]]) {
-      S.R(g, bx + dx, by + dy, w, h, '#c98a60');
-      S.R(g, bx + dx, by + dy, w, 2, '#e0a878');
-      S.R(g, bx + dx + w / 2 - 1, by + dy, 2, h, '#e8d0a0');
-    }
-    // Bici apoyada en la pared
-    const kx = L.W - 34;
-    const ky = WALL + 8;
-    for (const wx of [kx, kx + 16]) {
-      S.R(g, wx, ky + 4, 9, 1, PAL.ink);
-      S.R(g, wx, ky + 12, 9, 1, PAL.ink);
-      S.R(g, wx, ky + 5, 1, 7, PAL.ink);
-      S.R(g, wx + 8, ky + 5, 1, 7, PAL.ink);
-    }
-    S.R(g, kx + 4, ky + 3, 17, 1, PAL.sky);
-    S.R(g, kx + 11, ky, 1, 8, PAL.sky);
-    S.R(g, kx + 9, ky - 1, 5, 2, PAL.ink);
-    S.R(g, kx + 20, ky - 2, 1, 6, PAL.sky);
-  }
-
   // ---------------------------------------------------------------- personas
 
   personPos(e) {
     const st = this.people.get(e.id);
     if (st && st.mode !== 'desk') return { x: st.x, y: st.y };
-    const d = this.L.desks[e.desk];
+    const d = this.s?.office.layout.desks[e.desk];
     if (!d) return null;
     return { x: d.x + 9, y: d.y + 1 };
   }
 
-  updatePeople(s, dt, speed) {
+  usePoints(layout) {
+    const pts = [];
+    for (const it of layout.items) {
+      if (!BREAK.has(it.id)) continue;
+      const r = itemRect(it);
+      pts.push({ x: r.x + r.w / 2 - 5, y: Math.max(WALL + 2, r.y + r.h - 14) });
+    }
+    return pts;
+  }
+
+  updatePeople(s, layout, dt, speed) {
     const alive = new Set();
     const mult = [0, 1, 1.5, 2.2][speed] || 1;
+    const points = this.usePoints(layout);
     for (const e of s.employees) {
       if (e.traits.includes('remote')) continue;
       alive.add(e.id);
-      const d = this.L.desks[e.desk];
+      const d = layout.desks[e.desk];
       if (!d) continue;
       let st = this.people.get(e.id);
       const home = { x: d.x + 9, y: d.y - 2 };
@@ -450,13 +471,13 @@ export class OfficeView {
         st = { mode: 'desk', x: home.x, y: home.y, tx: 0, ty: 0, timer: 0, phase: Math.random() * 10 };
         this.people.set(e.id, st);
       }
-      if (e.off > 0) {
+      if (e.off > 0 || this.edit) {
         st.mode = 'desk';
         continue;
       }
       if (st.mode === 'desk') {
-        if (speed > 0 && this.usePoints.length && e.energy < 88 && Math.random() < dt * 0.025 * mult) {
-          const p = this.usePoints[Math.floor(Math.random() * this.usePoints.length)];
+        if (speed > 0 && points.length && e.energy < 88 && Math.random() < dt * 0.025 * mult) {
+          const p = points[Math.floor(Math.random() * points.length)];
           st.mode = 'walk';
           st.x = home.x;
           st.y = home.y + 8;
@@ -471,6 +492,10 @@ export class OfficeView {
           st.ty = home.y + 8;
         }
       } else {
+        if (st.mode === 'return') {
+          st.tx = home.x;
+          st.ty = home.y + 8;
+        }
         const dx = st.tx - st.x;
         const dy = st.ty - st.y;
         const dist = Math.hypot(dx, dy);
@@ -494,39 +519,44 @@ export class OfficeView {
   // ---------------------------------------------------------------- dibujo
 
   frame(s, dt, speed) {
+    this.s = s;
     this.t += dt;
-    this.ensureLayout(s);
-    this.updatePeople(s, dt, speed);
+    this.ensureView(s);
+    const layout = this.viewLayout();
+    this.updatePeople(s, layout, dt, speed);
     const L = this.L;
     const g = this.wctx;
     const t = this.t;
+    const dragRef = this.drag?.moved ? this.drag.ref : null;
     g.drawImage(this.bg, 0, 0);
     this.drawWindows(g, s, t);
     this.drawWallDecor(g, s, t);
+    this.drawRacks(g, s, t);
+    if (this.edit) this.drawGrid(g);
     this.hits = [];
+    this.editHits = [];
 
-    // Objetos de pared (de pie contra la pared)
-    const P = this.perkPos;
-    for (const p of P.coffee || []) S.drawCoffee(g, p.x, p.y, t);
-    for (const p of P.snacks || []) S.drawVending(g, p.x, p.y, t);
-    for (const p of P.arcade || []) S.drawArcade(g, p.x, p.y, t);
-    for (const p of P.library || []) S.drawBookshelf(g, p.x, p.y);
-    for (const p of P.robot || []) S.drawRobot(g, p.x, p.y, t);
-    for (const p of P.plant || []) S.drawPlant(g, p.x, p.y, t);
-
-    // Objetos de suelo y servidores ordenados por profundidad junto a la gente
-    const drawables = [];
-    for (const [id, list] of Object.entries(P)) {
-      if (!FLOOR_ITEMS[id]) continue;
-      for (const p of list) drawables.push({ y: p.y + FLOOR_ITEMS[id][1], draw: () => this.drawFloorItem(g, id, p, t) });
+    for (const it of layout.items) {
+      if (!isWall(it.id)) continue;
+      drawItem(g, it.id, it.x, it.y, t);
+      this.editHits.push({ ref: 'i:' + it.uid, ...itemRect(it) });
     }
-    this.queueRacks(s, drawables, t);
+    for (const it of layout.items) {
+      if (!FLAT.has(it.id)) continue;
+      drawItem(g, it.id, it.x, it.y, t);
+      this.editHits.push({ ref: 'i:' + it.uid, ...itemRect(it) });
+    }
 
+    const drawables = [];
+    for (const it of layout.items) {
+      if (isWall(it.id) || FLAT.has(it.id)) continue;
+      const r = itemRect(it);
+      drawables.push({ y: r.y + r.h, ref: 'i:' + it.uid, rect: r, draw: () => drawItem(g, it.id, it.x, it.y, t) });
+    }
     const byDesk = new Map();
     for (const e of s.employees) if (!e.traits.includes('remote')) byDesk.set(e.desk, e);
-    L.desks.forEach((d, i) => {
-      const e = byDesk.get(i);
-      drawables.push({ y: d.y + 24, draw: () => this.drawDesk(g, s, d, e, t) });
+    layout.desks.forEach((d, i) => {
+      drawables.push({ y: d.y + 24, ref: 'd:' + i, rect: deskRect(d), draw: () => this.drawDesk(g, d, byDesk.get(i), t) });
     });
     for (const e of s.employees) {
       const st = this.people.get(e.id);
@@ -534,12 +564,15 @@ export class OfficeView {
       drawables.push({ y: st.y + 18, draw: () => this.drawWalker(g, e, st, t) });
     }
     drawables.sort((a, b) => a.y - b.y);
-    for (const d of drawables) d.draw();
+    for (const d of drawables) {
+      d.draw();
+      if (d.ref) this.editHits.push({ ref: d.ref, ...d.rect });
+    }
 
+    if (this.edit) this.drawEditOverlay(g, layout, dragRef);
     this.drawEffects(g, dt);
-    this.drawLabel(g, s);
+    if (!this.edit) this.drawLabel(g, s);
 
-    // Volcado al canvas visible
     const c = this.ctx;
     c.imageSmoothingEnabled = false;
     c.fillStyle = L.theme.bg;
@@ -550,8 +583,56 @@ export class OfficeView {
     c.drawImage(this.world, this.cam.x, this.cam.y, sw, sh, this.offX(), this.offY(), sw * z, sh * z);
   }
 
+  drawGrid(g) {
+    const L = this.L;
+    g.fillStyle = 'rgba(244,244,244,.18)';
+    for (let y = WALL + 4; y < L.H; y += 8) for (let x = 4; x < L.W; x += 8) g.fillRect(x, y, 1, 1);
+    const r = L.room;
+    g.fillStyle = 'rgba(177,62,83,.35)';
+    for (let y = r.y; y < r.y + r.h; y += 2) for (let x = r.x; x < r.x + r.w; x += 2) if ((x + y) % 8 === 0) g.fillRect(x, y, 2, 2);
+  }
+
+  // Ánimo y ruido de cada mesa, selección, radio de efecto y vista previa.
+  drawEditOverlay(g, layout, dragRef) {
+    layout.desks.forEach((d, i) => {
+      const fx = deskEffects(layout, i);
+      let x = d.x + 3;
+      if (fx.comfort) {
+        const txt = '+' + fx.comfort;
+        S.R(g, x - 1, d.y - 8, S.textWidth(txt) + 2, 7, PAL.ink);
+        S.drawText(g, txt, x, d.y - 7, PAL.lime);
+        x += S.textWidth(txt) + 4;
+      }
+      if (fx.noise) {
+        const txt = '-' + Math.round(fx.noise * 100) + '%';
+        S.R(g, x - 1, d.y - 8, S.textWidth(txt) + 2, 7, PAL.ink);
+        S.drawText(g, txt, x, d.y - 7, '#ff6b8b');
+      }
+    });
+    const ref = dragRef || this.editSel;
+    const r = ref && getRef(layout, ref);
+    if (!r) return;
+    const rect = r.kind === 'desk' ? deskRect(r.obj) : itemRect(r.obj);
+    const p = PERKS[r.id];
+    if (p && (p.near || p.noise)) {
+      g.save();
+      g.strokeStyle = p.noise ? '#ff6b8b' : PAL.lime;
+      g.lineWidth = 1;
+      g.setLineDash([2, 3]);
+      g.beginPath();
+      g.arc(rect.x + rect.w / 2, rect.y + rect.h / 2, NEAR_RADIUS, 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
+    }
+    if (dragRef) {
+      g.fillStyle = this.drag.valid ? 'rgba(167,240,112,.3)' : 'rgba(177,62,83,.45)';
+      g.fillRect(rect.x, rect.y, rect.w, rect.h);
+    }
+    this.outline(g, rect.x, rect.y, rect.w, rect.h);
+  }
+
   drawWindows(g, s, t) {
-    if (!this.windows) return;
+    if (!this.windows?.length) return;
     const L = this.L;
     const m = dateOf(s.day).m;
     const theme = L.o.theme;
@@ -596,68 +677,48 @@ export class OfficeView {
 
   drawWallDecor(g, s, t) {
     const L = this.L;
-    if (s.office.perks.whiteboard) S.drawWhiteboard(g, L.x0 + L.cols * CW - 34, 20);
-    if (s.office.perks.ac) S.drawAC(g, L.W - 30, 2, t);
     S.drawClock(g, L.loungeX + 12, 20, t);
     const remote = s.employees.filter((e) => e.traits.includes('remote')).length;
-    if (remote) {
-      const x = 32;
-      S.R(g, x, 19, 30, 19, PAL.ink);
-      S.R(g, x + 1, 20, 28, 14, PAL.navy);
-      const shown = Math.min(remote, 6);
-      for (let i = 0; i < shown; i++) {
-        const fx = x + 2 + (i % 3) * 9;
-        const fy = 21 + Math.floor(i / 3) * 7;
-        S.R(g, fx, fy, 8, 6, PAL.dark);
-        S.R(g, fx + 3, fy + 1, 3, 3, ['#f6d2b5', '#c98a60', '#9a5f3c'][i % 3]);
-        S.R(g, fx + 2, fy + 4, 5, 2, [PAL.sky, PAL.orange, PAL.lime][i % 3]);
-      }
-      S.drawText(g, String(remote), x + 12, 34, PAL.white);
+    if (!remote) return;
+    const x = 32;
+    S.R(g, x, 19, 30, 19, PAL.ink);
+    S.R(g, x + 1, 20, 28, 14, PAL.navy);
+    const shown = Math.min(remote, 6);
+    for (let i = 0; i < shown; i++) {
+      const fx = x + 2 + (i % 3) * 9;
+      const fy = 21 + Math.floor(i / 3) * 7;
+      S.R(g, fx, fy, 8, 6, PAL.dark);
+      S.R(g, fx + 3, fy + 1, 3, 3, ['#f6d2b5', '#c98a60', '#9a5f3c'][i % 3]);
+      S.R(g, fx + 2, fy + 4, 5, 2, [PAL.sky, PAL.orange, PAL.lime][i % 3]);
     }
+    S.drawText(g, String(remote), x + 12, 34, PAL.white);
   }
 
-  drawFloorItem(g, id, p, t) {
-    switch (id) {
-      case 'sofa': return S.drawSofa(g, p.x, p.y);
-      case 'foosball': return S.drawFoosball(g, p.x, p.y, t);
-      case 'ballpit': return S.drawBallpit(g, p.x, p.y);
-      case 'gym': return S.drawGym(g, p.x, p.y, t);
-      case 'nappods': return S.drawNapPod(g, p.x, p.y);
-      case 'chef': return S.drawChef(g, p.x, p.y, t);
-      case 'podcast': return S.drawPodcast(g, p.x, p.y, t);
-    }
-  }
-
-  queueRacks(s, drawables, t) {
+  drawRacks(g, s, t) {
     const n = s.infra.racks;
     if (!n) return;
-    const L = this.L;
-    const max = Math.max(2, Math.floor((L.W - L.loungeX - 30) / 14));
+    const r = this.L.room;
+    let max = Math.max(1, Math.floor((r.w - 10) / 14));
+    // Si no caben todos, deja sitio a la izquierda para el contador.
+    if (n > max) max = Math.max(1, Math.floor((r.w - 10 - S.textWidth('+' + n) - 4) / 14));
     const shown = Math.min(n, max);
-    const y = L.H - 30;
-    const x0 = L.W - 8 - shown * 14;
-    drawables.push({
-      y: L.H,
-      draw: () => {
-        S.R(this.wctx, x0 - 3, y - 3, shown * 14 + 4, 29, 'rgba(26,28,44,.35)');
-        for (let i = 0; i < shown; i++) S.drawRack(this.wctx, x0 + i * 14, y, t, i);
-        if (n > shown) S.drawText(this.wctx, '+' + (n - shown), x0 - 3, y - 9, PAL.lime);
-      },
-    });
+    const x0 = r.x + r.w - 4 - shown * 14;
+    for (let i = 0; i < shown; i++) S.drawRack(g, x0 + i * 14, r.y + 8, t, i);
+    if (n > shown) S.drawText(g, '+' + (n - shown), r.x + 5, r.y + 16, PAL.lime);
   }
 
-  drawDesk(g, s, d, e, t) {
+  drawDesk(g, d, e, t) {
     const T = this.L.theme;
     const cx = d.x;
     const cy = d.y;
     const st = e && this.people.get(e.id);
     const seated = e && e.off <= 0 && (!st || st.mode === 'desk');
+    const phase = st?.phase || 0;
+    const working = e && !(MAKERS_VIEW.includes(e.role) && !e.assign);
     S.drawChair(g, cx + 8, cy + 5, T.chair);
     const roleColor = e ? ROLES[e.role].color : PAL.slate;
     if (seated) {
-      const working = !(['founder', 'dev', 'design', 'ai', 'marketer', 'pm'].includes(e.role) && !e.assign);
-      const phase = st?.phase || 0;
-      const bob = working && Math.sin(t * 6 + phase) > 0.7 ? 1 : 0;
+      const bob = working && !this.edit && Math.sin(t * 6 + phase) > 0.7 ? 1 : 0;
       S.drawSeated(g, cx + 9, cy + 1 + bob, e.looks, roleColor, t + phase, e.mood);
       this.hits.push({ id: e.id, x: cx + 7, y: cy - 2, w: 14, h: 20 });
     }
@@ -665,25 +726,23 @@ export class OfficeView {
     S.drawMonitor(g, cx + 3, cy + 6, S.shade(roleColor, 0.25), !!seated);
     if (seated) {
       S.R(g, cx + 10, cy + 14, 8, 2, PAL.silver);
-      const working = !(['founder', 'dev', 'design', 'ai', 'marketer', 'pm'].includes(e.role) && !e.assign);
-      const phase = st?.phase || 0;
-      const k = working ? Math.floor((t + phase) * 8) % 2 : 0;
+      const k = working && !this.edit ? Math.floor((t + phase) * 8) % 2 : 0;
       S.R(g, cx + 9, cy + 13 - k, 2, 2, e.looks.skin);
       S.R(g, cx + 17, cy + 12 + k, 2, 2, e.looks.skin);
       S.R(g, cx + 20, cy + 12, 3, 3, PAL.white);
       S.R(g, cx + 23, cy + 13, 1, 1, PAL.white);
-      const icon = this.statusIcon(e, t + phase);
+      const icon = !this.edit && this.statusIcon(e, t + phase);
       if (icon) S.drawBubble(g, cx + 15, cy - 9, icon);
     } else if (e && e.off > 0) {
       S.drawBubble(g, cx + 11, cy + 2, 'palm');
     }
-    if (e && this.selected === e.id) this.outline(g, cx + 8, cy, 12, 18);
+    if (e && this.selected === e.id && !this.edit) this.outline(g, cx + 8, cy, 12, 18);
   }
 
   statusIcon(e, t) {
     if (e.energy < 25) return 'zz';
     if (e.mood < 30) return 'bang';
-    if (['founder', 'dev', 'design', 'ai', 'marketer', 'pm'].includes(e.role) && !e.assign) return (t % 3) < 2 ? 'q' : null;
+    if (MAKERS_VIEW.includes(e.role) && !e.assign) return t % 3 < 2 ? 'q' : null;
     if (e.role === 'research' && t % 7 < 1.2) return 'bulb';
     if (e.mood > 85 && t % 9 < 1) return 'heart';
     return null;

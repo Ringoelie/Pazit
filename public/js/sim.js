@@ -11,6 +11,7 @@ import {
   expectedSalary, makeLooks, makePerson, perkStats,
 } from './core.js';
 import { EVENTS } from './events.js';
+import { defaultLayout, addItem, canPlace, getRef, snapPos, deskEffects, itemDef } from './layout.js';
 
 export { has, officeOf, findEmp, findProduct, perkStats, expectedSalary, levelOf };
 
@@ -48,7 +49,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     products: [],
     contracts: { offers: [], active: [], next: 3, failed: 0 },
     research: {},
-    office: { tier: 0, perks: {} },
+    office: { tier: 0, perks: {}, layout: defaultLayout(0, {}, { fixtures: true }) },
     policies: {},
     infra: { cloud: true, racks: 0, outages: 0 },
     competitors: [],
@@ -132,7 +133,23 @@ export function productivity(s, e, ps = perkStats(s)) {
   if (has(s, 'agi')) m *= 1.5;
   if (!s.office.perks.ac) m *= effectMult(s, 'heat');
   m *= effectMult(s, 'prod');
+  m *= 1 - deskFx(s, e).noise;
   return m;
+}
+
+// Efectos del sitio donde se sienta alguien: decoración cercana y ruido.
+export function deskFx(s, e) {
+  if (e.desk == null || isRemote(e)) return { comfort: 0, noise: 0 };
+  return deskEffects(s.office.layout, e.desk);
+}
+
+// El plano pertenece a una oficina concreta; si no cuadra, se regenera.
+export function ensureLayout(s) {
+  const L = s.office.layout;
+  if (!L || L.tier !== s.office.tier || L.desks.length !== officeOf(s).desks) {
+    s.office.layout = defaultLayout(s.office.tier, s.office.perks, { fixtures: s.office.tier === 0 && !L });
+  }
+  return s.office.layout;
 }
 export const output = (s, e, ps) => (e.skill / 10) * productivity(s, e, ps);
 
@@ -671,15 +688,12 @@ export function doResearch(s, id) {
   return ok(`Investigación completada: ${r.name}.`);
 }
 
-export const perkCount = (s) => Object.values(s.office.perks).reduce((a, b) => a + b, 0);
-
 export function perkState(s, id) {
   const p = PERKS[id];
   const n = s.office.perks[id] || 0;
   if (p.research && !has(s, p.research)) return { ok: false, why: `Requiere ${RESEARCH_BY_ID[p.research].name}` };
   if (s.office.tier < p.tier) return { ok: false, why: `Requiere ${OFFICES[p.tier].name}` };
   if (n >= p.max) return { ok: false, why: 'Máximo alcanzado' };
-  if (perkCount(s) >= officeOf(s).slots) return { ok: false, why: 'Sin espacio libre' };
   return { ok: true };
 }
 
@@ -689,18 +703,60 @@ export function buyPerk(s, id) {
   const st = perkState(s, id);
   if (!st.ok) return fail(st.why);
   if (s.money < p.cost) return fail(`Cuesta ${fmtMoney(p.cost)}.`);
+  const it = addItem(ensureLayout(s), s.office.tier, id);
+  if (!it) return fail('No hay hueco libre. Reorganiza la oficina en el editor o múdate.');
   money(s, -p.cost, 'office');
   s.office.perks[id] = (s.office.perks[id] || 0) + 1;
-  return ok(`${p.icon} ${p.name} instalado.`);
+  return { ok: true, msg: `${p.icon} ${p.name} instalado.`, ref: 'i:' + it.uid };
+}
+
+// Instalación gratuita (por ejemplo, desde un evento).
+export function installPerk(s, id) {
+  addItem(ensureLayout(s), s.office.tier, id);
+  s.office.perks[id] = (s.office.perks[id] || 0) + 1;
 }
 
 export function sellPerk(s, id) {
+  const L = ensureLayout(s);
+  const it = [...L.items].reverse().find((x) => x.id === id);
+  if (it) return sellItem(s, it.uid);
+  if (!s.office.perks[id]) return fail();
+  return removePerk(s, id);
+}
+
+function removePerk(s, id) {
   const p = PERKS[id];
-  if (!p || !s.office.perks[id]) return fail();
   s.office.perks[id] -= 1;
   if (!s.office.perks[id]) delete s.office.perks[id];
   money(s, Math.round(p.cost * 0.3), 'other');
   return ok(`${p.name} vendido por ${fmtMoney(p.cost * 0.3)}.`);
+}
+
+export const sellValue = (id) => (PERKS[id] ? Math.round(PERKS[id].cost * 0.3) : itemDef(id)?.sell ?? 0);
+
+// Vende o quita un objeto concreto del plano.
+export function sellItem(s, uid) {
+  const L = ensureLayout(s);
+  const it = L.items.find((x) => x.uid === uid);
+  if (!it) return fail('Ese objeto ya no está.');
+  L.items = L.items.filter((x) => x !== it);
+  if (PERKS[it.id]) return removePerk(s, it.id);
+  const f = itemDef(it.id);
+  if (f.sell) money(s, f.sell, 'other');
+  if (it.id === 'car') news(s, `Los padres de ${s.company.split(' ')[0]} buscan su coche desesperadamente.`, 'bad');
+  return ok(f.sell ? `${f.icon} ${f.name}: +${fmtMoney(f.sell)}.` : `${f.icon} ${f.name} fuera.`);
+}
+
+// Mueve una mesa ('d:i') o un objeto ('i:uid') a otra posición del plano.
+export function moveObject(s, ref, x, y) {
+  const L = ensureLayout(s);
+  const r = getRef(L, ref);
+  if (!r) return fail();
+  const pos = snapPos(r.id, x, y);
+  if (!canPlace(L, s.office.tier, r.id, pos.x, pos.y, ref)) return fail('No cabe ahí.');
+  r.obj.x = pos.x;
+  r.obj.y = pos.y;
+  return ok();
 }
 
 export function moveOffice(s, tier) {
@@ -710,6 +766,7 @@ export function moveOffice(s, tier) {
   if (s.money < o.move) return fail(`La mudanza cuesta ${fmtMoney(o.move)}.`);
   money(s, -o.move, 'office');
   s.office.tier = tier;
+  s.office.layout = defaultLayout(tier, s.office.perks, { fixtures: false });
   news(s, `🏢 ${s.company} se muda a: ${o.name}.`, 'good');
   s.reputation = Math.min(100, s.reputation + 2);
   return ok(`¡Bienvenido a tu nueva oficina: ${o.name}!`);
@@ -989,6 +1046,7 @@ function workAndPeople(s, ps, tp) {
       target += clamp((ratio - 1) * 60, e.traits.includes('ambitious') ? -40 : -30, 12);
     }
     if (crowded && !isRemote(e)) target -= 3;
+    target += deskFx(s, e).comfort;
     target += effectMult(s, 'mood') * 10 - 10;
     e.mood = clamp(e.mood + (target - e.mood) * 0.08, 0, 100);
     if (e.role !== 'founder' && !e.traits.includes('loyal')) {

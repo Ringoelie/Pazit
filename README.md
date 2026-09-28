@@ -7,6 +7,7 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 ## Qué incluye
 
 - **Oficina en pixel art animada**: tu equipo trabaja, se toma cafés, juega al arcade y se va de vacaciones. Siete oficinas, desde el garaje hasta una estación orbital, con zoom y arrastre.
+- **Editor de oficina** (✏️ o tecla **E**): arrastra mesas y muebles donde quieras. La decoración cerca de una mesa (plantas, lámparas, alfombras, acuario, estatua) sube el ánimo de quien se sienta ahí; el arcade, el futbolín o el gimnasio pegados a las mesas restan productividad por el ruido. En el garaje puedes incluso vender el coche de tus padres.
 - **Equipo**: 9 perfiles para contratar (desarrollo, diseño, IA, DevOps, PM, marketing, ventas, I+D y RR.HH.), 12 rasgos de personalidad, niveles, ánimo, energía, sueldos, formación y renuncias.
 - **Productos**: 11 categorías (medio digital, tienda online, red social, app de citas, SaaS, streaming, videojuego, buscador, neobanco, asistente de IA y metaverso) y 34 funciones con 10 niveles cada una.
 - **Economía**: publicidad, suscripciones premium con precio ajustable, comisiones y API. Usuarios, cuota de mercado, satisfacción, bugs, hype y conocimiento de marca.
@@ -14,7 +15,7 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 - **Infraestructura**: nube con autoescalado o racks propios, DevOps y caídas de servicio.
 - **Mercado vivo**: competidores que crecen, reaccionan cuando les quitas cuota, cierran o aparecen. Puedes comprarlos.
 - **Dinero**: rondas de inversión (business angel → IPO), préstamos, bolsa y bancarrota.
-- **Más cosas**: 15 mejoras de oficina, 7 políticas de empresa (semana de 4 días, crunch, copilotos de IA...), 23 eventos aleatorios con decisiones, 15 objetivos, 23 logros, gráficos, sonido chiptune y guardado automático.
+- **Más cosas**: 21 muebles y mejoras de oficina, 7 políticas de empresa (semana de 4 días, crunch, copilotos de IA...), 23 eventos aleatorios con decisiones, 15 objetivos, 23 logros, gráficos, sonido chiptune y guardado automático.
 - Funciona en **móvil y escritorio**, sin dependencias ni paso de build.
 
 ## Jugar en local
@@ -29,7 +30,7 @@ npx wrangler pages dev public
 
 Abre http://localhost:8080.
 
-Controles: **Espacio** pausa, **1-3** velocidad, arrastra la oficina para moverte, rueda o pellizco para el zoom y toca a alguien para ver su ficha.
+Controles: **Espacio** pausa, **1-3** velocidad, **E** editar la oficina, arrastra la oficina para moverte, rueda o pellizco para el zoom y toca a alguien para ver su ficha.
 
 ## Pruebas
 
@@ -77,6 +78,7 @@ public/
     sim.js      motor: cálculos, acciones y el paso diario (sin DOM)
     events.js   eventos aleatorios con decisiones
     state.js    guardado, exportación e importación
+    layout.js   plano de la oficina: posiciones, colisiones y efectos de cercanía
     sprites.js  pixel art dibujado con código y fuente de 3x5 px
     office.js   vista animada de la oficina en canvas
     ui.js       parcheo del DOM, modales, avisos y avatares
@@ -86,6 +88,7 @@ public/
 tests/
   bot.js        bot que juega solo
   sim.test.js   prueba de varios años de partida
+  layout.test.js pruebas del plano y del editor
 ```
 
 La partida se guarda en el `localStorage` del navegador cada semana de juego. Desde el menú (☰) puedes exportarla como código e importarla en otro dispositivo.
