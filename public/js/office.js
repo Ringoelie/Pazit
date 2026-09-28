@@ -721,7 +721,11 @@ export class OfficeView {
     const w = S.textWidth(name) + 4;
     const x = Math.max(1, Math.min(this.L.W - w - 1, Math.round(pos.x + 5 - w / 2)));
     const y = Math.max(1, Math.round(pos.y) - 17);
-    S.R(g, x, y, w, 8, PAL.ink);
+    S.R(g, x + 1, y, w - 2, 8, PAL.ink);
+    S.R(g, x, y + 1, w, 6, PAL.ink);
+    const tx = Math.max(x + 2, Math.min(x + w - 3, Math.round(pos.x + 5)));
+    S.R(g, tx - 1, y + 8, 3, 1, PAL.ink);
+    S.px(g, tx, y + 9, PAL.ink);
     S.drawText(g, name, x + 2, y + 2, PAL.white);
   }
 
@@ -730,7 +734,7 @@ export class OfficeView {
       f.life -= dt;
       f.y -= dt * 9;
       g.globalAlpha = Math.max(0, Math.min(1, f.life));
-      S.drawText(g, f.txt, f.x, f.y, f.color);
+      S.drawTextShadow(g, f.txt, f.x, f.y, f.color, PAL.ink);
     }
     g.globalAlpha = 1;
     this.floaters = this.floaters.filter((f) => f.life > 0);
