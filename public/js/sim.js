@@ -46,6 +46,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     reputation: 5,
     equity: 100,
     speed: 1,
+    tutorial: -1,
     nextId: 1,
     employees: [],
     candidates: [],
@@ -77,7 +78,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     notes: [],
     redDays: 0,
     gameOver: null,
-    settings: { sound: true },
+    settings: { sound: true, music: true },
   };
   const f = makePerson(s, 'founder', { skill: 45, traits: [] });
   f.name = founder;

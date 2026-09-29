@@ -185,9 +185,9 @@ export function drawText(ctx, str, x, y, color, scale = 1) {
 }
 
 // Texto con sombra de 1 px debajo, para rótulos.
-export function drawTextShadow(ctx, str, x, y, color, shadow) {
-  drawText(ctx, str, x, y + 1, shadow);
-  drawText(ctx, str, x, y, color);
+export function drawTextShadow(ctx, str, x, y, color, shadow, scale = 1) {
+  drawText(ctx, str, x, y + scale, shadow, scale);
+  drawText(ctx, str, x, y, color, scale);
 }
 
 // ---------------------------------------------------------------- personas
@@ -526,8 +526,11 @@ const ICONS = {
   q: ['01110', '00010', '00100', '00000', '00100'],
   bulb: ['01110', '11111', '01110', '01110', '00100'],
   palm: ['11011', '01110', '00100', '00100', '01110'],
+  star: ['00100', '01110', '11111', '01110', '01010'],
+  money: ['01111', '10100', '01110', '00101', '11110'],
+  sweat: ['00100', '00100', '01110', '11111', '01110'],
 };
-const ICON_COLOR = { zz: PAL.blue, bang: PAL.red, heart: BLUSH, q: PAL.slate, bulb: '#f2a531', palm: PAL.green };
+const ICON_COLOR = { zz: PAL.blue, bang: PAL.red, heart: BLUSH, q: PAL.slate, bulb: '#f2a531', palm: PAL.green, star: '#f2a531', money: PAL.green, sweat: PAL.sky };
 
 export function drawBubble(ctx, x, y, icon) {
   const spr = sprite('bubble|' + icon, 9, 9, (g) => {
@@ -668,6 +671,118 @@ export function drawDeskProp(ctx, x, y, kind, t, steaming) {
       break;
     default:
       break;
+  }
+}
+
+// ---------------------------------------------------------------- mascota
+
+export const DOG_COATS = ['#d9a441', '#8a5a36', '#3a3440', '#e8dcc8'];
+
+// Perro de 13x9 visto de lado. pose: 'w0' y 'w1' al andar, 'sit' sentado.
+function dogArt(g, coat, pose) {
+  const d = shade(coat, -0.28);
+  const l = shade(coat, 0.25);
+  if (pose === 'sit') {
+    R(g, 3, 4, 6, 4, coat);
+    R(g, 3, 4, 6, 1, l);
+    R(g, 8, 5, 1, 3, d);
+    R(g, 7, 0, 4, 4, coat);
+    R(g, 7, 0, 3, 1, l);
+    R(g, 11, 2, 2, 2, l);
+    px(g, 12, 2, PAL.ink);
+    px(g, 9, 1, PAL.ink);
+    R(g, 7, 0, 1, 3, d);
+    R(g, 8, 4, 2, 1, PAL.red);
+    R(g, 8, 8, 1, 1, d);
+    R(g, 3, 8, 3, 1, d);
+    R(g, 1, 6, 2, 1, coat);
+    return;
+  }
+  const step = pose === 'w1';
+  R(g, 2, 3, 8, 4, coat);
+  R(g, 2, 3, 8, 1, l);
+  R(g, 3, 6, 6, 1, l);
+  R(g, 9, 1, 4, 4, coat);
+  R(g, 9, 1, 3, 1, l);
+  R(g, 12, 3, 1, 2, l);
+  px(g, 12, 3, PAL.ink);
+  px(g, 11, 2, PAL.ink);
+  R(g, 9, 0, 2, 3, d);
+  R(g, 9, 5, 1, 2, PAL.red);
+  // Patas
+  for (const [x, up] of [[3, step], [5, !step], [7, step], [9, !step]]) R(g, x, 7, 1, up ? 1 : 2, x % 4 === 1 ? d : coat);
+  // Cola
+  if (step) {
+    px(g, 1, 2, coat);
+    px(g, 0, 1, coat);
+  } else {
+    px(g, 1, 3, coat);
+    px(g, 0, 3, coat);
+  }
+}
+
+export function drawDog(ctx, x, y, coat, pose, left) {
+  const key = `dog|${coat}|${pose}|${left ? 1 : 0}`;
+  blit(ctx, sprite(key, 13, 9, (g) => {
+    if (left) {
+      g.translate(13, 0);
+      g.scale(-1, 1);
+    }
+    dogArt(g, coat, pose);
+  }), x, y);
+}
+
+// Cama con el perro dormido (o vacía si ha salido a pasear).
+export function drawDogBed(ctx, x, y, coat, sleeping, t) {
+  blit(ctx, sprite(`dogbed|${sleeping ? coat : ''}`, 16, 10, (g) => {
+    blob(g, 8, 5, 8, 4, PAL.plum);
+    R(g, 2, 2, 12, 1, shade(PAL.plum, 0.3));
+    blob(g, 8, 6, 6, 2, '#c9a2d6');
+    if (sleeping) {
+      const d = shade(coat, -0.28);
+      blob(g, 8, 5, 5, 2, coat);
+      R(g, 4, 4, 5, 1, shade(coat, 0.25));
+      R(g, 10, 4, 3, 3, coat);
+      R(g, 10, 4, 1, 2, d);
+      R(g, 11, 6, 2, 1, PAL.ink);
+      R(g, 3, 6, 2, 1, d);
+    }
+    R(g, 13, 8, 3, 1, WHITE);
+    px(g, 13, 7, WHITE);
+    px(g, 15, 7, WHITE);
+  }), x, y);
+  if (sleeping && t % 3 < 1.6) {
+    const k = Math.floor((t % 3) * 2);
+    drawText(ctx, 'Z', x + 12 + k, y - 5 - k, PAL.white);
+  }
+}
+
+// ---------------------------------------------------------------- fiesta
+
+export function drawBalloon(ctx, x, y, c, t) {
+  const sway = Math.round(Math.sin(t * 2 + x) * 1);
+  blit(ctx, sprite('balloon|' + c, 5, 7, (g) => {
+    R(g, 1, 0, 3, 1, c);
+    R(g, 0, 1, 5, 4, c);
+    R(g, 1, 5, 3, 1, c);
+    px(g, 2, 6, shade(c, -0.3));
+    px(g, 1, 1, shade(c, 0.5));
+  }), x + sway, y);
+  ctx.fillStyle = 'rgba(244,244,244,.6)';
+  for (let i = 0; i < 6; i++) ctx.fillRect(Math.round(x + 2 + sway * (1 - i / 6)), y + 8 + i, 1, 1);
+}
+
+// Guirnalda de banderines a lo ancho de la pared.
+export function drawGarland(ctx, w, y, t) {
+  const colors = [PAL.red, PAL.yellow, PAL.sky, PAL.lime, BLUSH, PAL.orange];
+  ctx.fillStyle = 'rgba(244,244,244,.7)';
+  for (let x = 0; x < w; x += 2) ctx.fillRect(x, y + Math.round(Math.sin(x / 20) * 1.5), 1, 1);
+  for (let x = 4, i = 0; x < w - 4; x += 10, i++) {
+    const yy = y + 1 + Math.round(Math.sin(x / 20) * 1.5);
+    const c = colors[(i + Math.floor(t * 2)) % colors.length];
+    R(ctx, x, yy, 5, 1, c);
+    R(ctx, x + 1, yy + 1, 3, 1, c);
+    px(ctx, x + 2, yy + 2, c);
   }
 }
 

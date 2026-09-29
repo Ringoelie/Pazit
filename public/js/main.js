@@ -10,6 +10,8 @@ import { poachFrom, smear } from './rivals.js';
 import { orderUnits, setHwPrice } from './hw.js';
 import { OfficeView } from './office.js';
 import { sfx, setSound } from './audio.js';
+import { setMusic, setMusicMood, unlockMusic } from './music.js';
+import { renderTutorial } from './tutorial.js';
 import {
   patch, openModal, closeModal, closeAllModals, topModal, modalOpen, refreshModals, confirmModal, toast, avatar, pixIcon, btn,
 } from './ui.js';
@@ -32,6 +34,8 @@ let tickerIdx = 0;
 let tickerTime = 0;
 let lastNewsDay = -1;
 let loopError = false;
+// Partida de relleno mientras se elige nombre: no se guarda hasta empezar.
+let draft = false;
 
 const U = { tab: 'office', pid: null, mktPid: null, cat: null, hireRole: 'all', newCat: 'blog', newName: '', empModal: null, edit: false, editSel: null, prevSpeed: 1 };
 try {
@@ -54,10 +58,12 @@ const $ = (sel) => document.querySelector(sel);
 function start(state) {
   s = state;
   setSound(s.settings.sound);
+  setMusic(s.settings.music !== false);
   acc = 0;
   lastSaveDay = s.day;
   eventModal = null;
   overModal = null;
+  draft = false;
   closeAllModals(true);
   if (U.edit) setEdit(false);
   office.tier = -1;
@@ -70,6 +76,7 @@ function setEdit(on) {
   U.edit = on;
   U.editSel = null;
   if (on) {
+    U.tutEdited = true;
     U.prevSpeed = s.speed;
     s.speed = 0;
     office.selected = null;
@@ -91,6 +98,11 @@ function boot() {
   buildTabs();
   office = new OfficeView($('#office'), {
     onPick: (id) => {
+      if (id === 'pet') {
+        office.petLove();
+        sfx('good');
+        return;
+      }
       office.selected = id;
       if (id != null) openEmployee(id);
     },
@@ -117,10 +129,12 @@ function boot() {
   document.addEventListener('change', onChange);
   document.addEventListener('input', onInput);
   document.addEventListener('keydown', onKey);
+  // El audio solo puede arrancar tras un gesto de la persona.
+  for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, unlockMusic, { passive: true });
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && s) save(s);
+    if (document.hidden && s && !draft) save(s);
   });
-  window.addEventListener('pagehide', () => s && save(s));
+  window.addEventListener('pagehide', () => s && !draft && save(s));
 
   const saved = load();
   if (saved) {
@@ -129,10 +143,25 @@ function boot() {
   } else {
     start(G.newGame({ company: 'Pixel Startup', founder: 'Alex' }));
     s.speed = 0;
+    draft = true;
     newGameModal(false);
   }
   requestAnimationFrame(loop);
+  registerSW();
 }
+
+// Se puede instalar como app y jugar sin conexión (no dentro de un iframe).
+let installPrompt = null;
+function registerSW() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installPrompt = e;
+  });
+  if (!('serviceWorker' in navigator) || !window.isSecureContext || window.self !== window.top) return;
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone;
 
 // ---------------------------------------------------------------- bucle
 
@@ -178,6 +207,7 @@ function frame(now) {
     uiTimer = 0.25;
     dirty = false;
   }
+  renderTutorial(s, U);
   tickerTime -= dt;
   if (tickerTime <= 0) rotateTicker();
   if (s.day - lastSaveDay >= 7) {
@@ -191,7 +221,9 @@ function flushNotes() {
   const now = performance.now();
   for (const n of s.notes) {
     toast(n.text, n.kind);
-    if (n.kind === 'achievement' || n.text.startsWith('🚀') || n.text.startsWith('🎯')) office.burst(n.kind === 'achievement' ? 60 : 30);
+    if (n.kind === 'achievement') office.party('achievement');
+    else if (n.text.startsWith('🚀')) office.party('launch');
+    else if (n.text.startsWith('🎯')) office.burst(30);
     if (now - lastSfx > 250) {
       sfx(n.kind === 'achievement' ? 'achievement' : n.kind === 'bad' ? 'bad' : n.kind === 'good' ? 'coin' : n.kind === 'mail' ? 'event' : 'click');
       lastSfx = now;
@@ -235,6 +267,8 @@ function render() {
   $('#rp').textContent = fmtNum(Math.floor(s.rp));
   $('#date').textContent = fmtDate(s.day);
   $('#val').textContent = fmtMoney(sm.val);
+  const partying = office.partyUntil > office.t;
+  setMusicMood(s.money < 0 ? 'crisis' : partying || (sm.val >= 1e9 && sm.net > 0) ? 'success' : 'normal', s.office.tier);
   for (const b of document.querySelectorAll('[data-act=speed]')) b.classList.toggle('on', +b.dataset.n === s.speed);
   const q = G.currentQuest(s);
   $('#quest').innerHTML = q ? `🎯 <b>Objetivo:</b> ${esc(q.text)}${q.reward ? ` <small>(+${fmtMoney(q.reward)})</small>` : ''}` : '🦄 ¡Has cumplido todos los objetivos! Sigue creciendo.';
@@ -275,15 +309,24 @@ function flashSaved() {
 
 function showTip(id, x, y) {
   const tip = $('#tip');
-  const e = id != null && G.findEmp(s, id);
-  if (!e) {
+  const e = id != null && id !== 'pet' && G.findEmp(s, id);
+  if (!e && id !== 'pet') {
     tip.hidden = true;
     return;
   }
   tip.hidden = false;
+  if (id === 'pet') {
+    tip.innerHTML = '<b>🐕 Bit</b><br>El perro de la oficina. Tócalo para darle mimos.';
+    placeTip(tip, x, y);
+    return;
+  }
   const target = e.assign?.startsWith('p:') ? G.findProduct(s, +e.assign.slice(2))?.name : e.assign?.startsWith('c:') ? 'Contrato' : e.assign === 'rd' ? 'I+D' : e.assign === 'brand' ? 'Marca' : null;
   tip.innerHTML = `<b>${esc(e.name)}</b><br>${ROLES[e.role].icon} ${ROLES[e.role].name}${target ? ` · ${esc(target)}` : ''}<br>
     ánimo ${Math.round(e.mood)} · energía ${Math.round(e.energy)}${e.off > 0 ? `<br>${e.offReason}` : ''}`;
+  placeTip(tip, x, y);
+}
+
+function placeTip(tip, x, y) {
   const r = tip.getBoundingClientRect();
   tip.style.left = Math.min(window.innerWidth - r.width - 8, x + 14) + 'px';
   tip.style.top = Math.max(8, y - r.height - 10) + 'px';
@@ -325,6 +368,18 @@ const ACTIONS = {
     sfx('click');
   },
   menu: () => settingsModal(),
+  tutStart: () => {
+    s.tutorial = 0;
+    U.tutEdited = false;
+    closeAllModals();
+  },
+  tutNext: () => {
+    s.tutorial += 1;
+    sfx('click');
+  },
+  tutSkip: () => {
+    s.tutorial = -1;
+  },
   help: () => helpModal(),
   zoomIn: () => office.zoomBy(1),
   zoomOut: () => office.zoomBy(-1),
@@ -423,7 +478,7 @@ const ACTIONS = {
     const r = G.launch(s, +d.pid);
     if (r.ok) {
       sfx('launch');
-      office.burst(80);
+      office.party('launch');
       toast(r.msg, 'good');
       dirty = true;
     } else result(r);
@@ -458,7 +513,7 @@ const ACTIONS = {
   moveOffice: (d) => {
     const r = G.moveOffice(s, +d.tier);
     result(r, 'good');
-    if (r.ok) office.burst(60);
+    if (r.ok) office.party('move');
   },
   policy: (d) => result(G.togglePolicy(s, d.id)),
   cloud: () => result(G.setCloud(s, !s.infra.cloud)),
@@ -471,7 +526,10 @@ const ACTIONS = {
   acceptOffer: () => {
     const r = G.acceptOffer(s);
     result(r, 'achievement');
-    if (r.ok) office.burst(80);
+    if (r.ok) {
+      office.party(s.funding.ipo && r.msg.startsWith('🔔') ? 'ipo' : 'funding');
+      office.visit();
+    }
   },
   rejectOffer: () => result(G.rejectOffer(s)),
   issueShares: () => result(G.issueShares(s), 'coin'),
@@ -486,7 +544,7 @@ const ACTIONS = {
     confirmModal('Comprar competidor', `¿Comprar ${c.name} por ${fmtMoney(G.competitorPrice(c))}? Desaparece del mercado y parte de sus usuarios se pasan a tu producto.`, 'Comprar', () => {
       const r = G.acquire(s, c.id);
       result(r, 'achievement');
-      if (r.ok) office.burst(60);
+      if (r.ok) office.party('acquire');
     });
   },
   answerMail: (d) => {
@@ -602,6 +660,7 @@ function showGameOver() {
     clearSave();
     start(G.newGame({ company: s.company, founder }));
     s.speed = 0;
+    draft = true;
     newGameModal(false, founder);
   };
 }
@@ -644,6 +703,7 @@ function newGameModal(closable, founderName = 'Alex') {
     closeModal(m);
     start(G.newGame({ company, founder, looks }));
     s.speed = 1;
+    draft = false;
     save(s);
     sfx('good');
     helpModal(true);
@@ -665,7 +725,7 @@ function helpModal(first = false) {
       </ol>
       <p class="muted">Controles: <b>Espacio</b> pausa · <b>1-3</b> velocidad · <b>E</b> o ✏️ editar la oficina · arrastra la oficina para moverte · rueda o pellizco para zoom · toca a alguien para ver su ficha.</p>
       <p class="muted">Si te quedas sin dinero durante 45 días, quiebras. ¡Vigila tus finanzas!</p>
-      <div class="row end"><button class="btn primary" data-close>¡A por ello!</button></div>`,
+      <div class="row end gap">${first ? '<button class="btn" data-close>Ya sé jugar</button><button class="btn primary" data-act="tutStart">🧭 Guíame paso a paso</button>' : '<button class="btn primary" data-close>¡A por ello!</button>'}</div>`,
   });
 }
 
@@ -675,10 +735,14 @@ function settingsModal() {
     body: `<div class="menu">
       <button class="btn" data-m="save">💾 Guardar ahora</button>
       <button class="btn" data-act="help">❓ Cómo jugar</button>
+      <button class="btn" data-act="tutStart">🧭 Tutorial guiado</button>
       <button class="btn" data-m="sound">${s.settings.sound ? '🔊 Sonido: activado' : '🔇 Sonido: desactivado'}</button>
+      <button class="btn" data-m="music">${s.settings.music !== false ? '🎵 Música: activada' : '🎵 Música: desactivada'}</button>
       <button class="btn" data-m="export">📤 Exportar partida</button>
       <button class="btn" data-m="import">📥 Importar partida</button>
-      <button class="btn danger" data-m="new">🆕 Nueva partida</button></div>
+      <button class="btn danger" data-m="new">🆕 Nueva partida</button>
+      ${installPrompt ? '<button class="btn primary" data-m="install">📲 Instalar la app</button>' : ''}</div>
+      ${isIOS() ? '<p class="muted small">📲 Para instalarla en el iPhone: botón Compartir → «Añadir a pantalla de inicio».</p>' : ''}
       <div id="menu-extra"></div>
       <p class="muted small">Pixel Unicorn · se guarda solo en este navegador cada semana de juego.</p>`,
   });
@@ -694,6 +758,15 @@ function settingsModal() {
       s.settings.sound = !s.settings.sound;
       setSound(s.settings.sound);
       b.textContent = s.settings.sound ? '🔊 Sonido: activado' : '🔇 Sonido: desactivado';
+    } else if (k === 'install') {
+      installPrompt?.prompt();
+      installPrompt = null;
+      b.remove();
+    } else if (k === 'music') {
+      s.settings.music = s.settings.music === false;
+      setMusic(s.settings.music);
+      unlockMusic();
+      b.textContent = s.settings.music ? '🎵 Música: activada' : '🎵 Música: desactivada';
     } else if (k === 'export') {
       extra.innerHTML = `<label class="field">Copia este código y guárdalo<textarea readonly rows="4">${exportSave(s)}</textarea></label>
         <button class="btn" id="copy">📋 Copiar</button>`;

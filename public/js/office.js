@@ -10,6 +10,10 @@ import {
 // Muebles a los que el equipo va a descansar.
 const BREAK = new Set(['coffee', 'snacks', 'arcade', 'sofa', 'foosball', 'ballpit', 'gym', 'nappods', 'chef', 'robot', 'library', 'cooler', 'aquarium', 'meeting']);
 const MAKERS_VIEW = ['founder', 'dev', 'design', 'ai', 'marketer', 'pm'];
+const strHash = (str) => [...String(str)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+const PARTY_TEXT = {
+  launch: 'LANZAMIENTO!', funding: 'RONDA CERRADA!', ipo: 'SALIMOS A BOLSA!', move: 'OFICINA NUEVA!', acquire: 'COMPRADA!', achievement: 'LOGRO!',
+};
 const GLYPH = {
   code: ['</>', PAL.sky], design: ['~', PAL.orange], ai: ['01', PAL.silver], flex: ['*', PAL.yellow],
   hype: ['!', '#ff6b8b'], rp: ['?', PAL.lime], ops: ['%', PAL.green], sales: ['$', PAL.cyan], people: ['♥', '#ff6b8b'], lead: ['>', PAL.cyan],
@@ -74,6 +78,13 @@ export class OfficeView {
     this.tier = -1;
     this.s = null;
     this.pointers = new Map();
+    this.partyUntil = 0;
+    this.banner = null;
+    this.balloons = [];
+    this.visitors = [];
+    this.pet = null;
+    this.petCoat = S.DOG_COATS[0];
+    this.crisis = false;
     this.bindInput();
   }
 
@@ -346,6 +357,159 @@ export class OfficeView {
     }
   }
 
+  // ---------------------------------------------------------------- fiestas y visitas
+
+  // Celebración: confeti, globos, guirnalda, cartel y el equipo de pie.
+  party(kind) {
+    if (!this.L) return;
+    this.partyUntil = this.t + 5;
+    this.banner = { text: PARTY_TEXT[kind] || 'BIEN!', until: this.t + 4 };
+    this.burst(kind === 'achievement' ? 50 : 90);
+    const colors = [PAL.red, PAL.yellow, PAL.sky, PAL.lime, '#ff6b8b', PAL.orange];
+    const n = kind === 'achievement' ? 3 : 8;
+    for (let i = 0; i < n; i++) {
+      this.balloons.push({ x: 8 + Math.random() * (this.L.W - 16), y: this.L.H - 12 - Math.random() * 30, c: colors[i % colors.length], v: 10 + Math.random() * 8 });
+    }
+  }
+
+  // Un inversor entra junto a la pared, se sienta a la mesa de reuniones y se va.
+  visit() {
+    if (!this.L || !this.s) return;
+    const meet = this.s.office.layout.items.find((it) => it.id === 'meeting');
+    const tx = meet ? meet.x + 14 : this.L.loungeX + 20;
+    const ty = meet ? meet.y + 12 : WALL + 30;
+    const pick = (a) => a[Math.floor(Math.random() * a.length)];
+    this.visitors.push({
+      x: -12,
+      y: WALL + 6,
+      path: [{ x: tx, y: WALL + 6 }, { x: tx, y: ty }],
+      mode: 'in',
+      timer: 0,
+      looks: { skin: pick(['#f6d2b5', '#e8b48f', '#c98a60', '#9a5f3c']), hair: pick(['#94b0c2', PAL.ink, PAL.white, '#4a2f1f']), style: pick([0, 4]), pants: PAL.ink, glasses: Math.random() < 0.5, beard: false },
+    });
+  }
+
+  updateVisitors(dt) {
+    const step = 26 * dt;
+    for (const v of this.visitors) {
+      if (v.mode === 'stay') {
+        v.timer -= dt;
+        if (v.timer <= 0) {
+          v.mode = 'out';
+          v.path = [{ x: v.x, y: WALL + 6 }, { x: -14, y: WALL + 6 }];
+        }
+        continue;
+      }
+      const p = v.path[0];
+      const dx = p.x - v.x;
+      const dy = p.y - v.y;
+      const d = Math.hypot(dx, dy);
+      if (d <= step) {
+        v.x = p.x;
+        v.y = p.y;
+        v.path.shift();
+        if (!v.path.length) {
+          if (v.mode === 'in') {
+            v.mode = 'stay';
+            v.timer = 6;
+          } else v.gone = true;
+        }
+      } else {
+        v.x += (dx / d) * step;
+        v.y += (dy / d) * step;
+      }
+    }
+    this.visitors = this.visitors.filter((v) => !v.gone);
+  }
+
+  drawVisitor(g, v, t) {
+    const x = Math.round(v.x);
+    const y = Math.round(v.y);
+    g.fillStyle = 'rgba(14,10,30,.28)';
+    g.fillRect(x, y + 19, 10, 1);
+    g.fillRect(x + 1, y + 20, 8, 1);
+    S.drawStanding(g, x - 1, y - 2, v.looks, PAL.white, v.mode === 'stay' ? 'idle' : Math.floor(t * 8) % 2, t, 90, 'legal');
+    S.R(g, x + 9, y + 13, 4, 3, '#6b4024');
+    S.R(g, x + 10, y + 12, 2, 1, PAL.ink);
+    if (v.mode === 'stay' && t % 2 < 1.2) S.drawBubble(g, x + 7, y - 11, 'money');
+  }
+
+  // ---------------------------------------------------------------- mascota
+
+  updatePet(s, layout, dt, speed) {
+    const bed = layout.items.find((it) => it.id === 'pet');
+    if (!bed) {
+      this.pet = null;
+      return;
+    }
+    const home = { x: bed.x + 2, y: bed.y };
+    let p = this.pet;
+    if (!p || p.bed !== bed.uid) p = this.pet = { bed: bed.uid, x: home.x, y: home.y, mode: 'sleep', timer: 4 + Math.random() * 6, left: false, love: 0 };
+    p.love = Math.max(0, p.love - dt);
+    if (this.edit) {
+      Object.assign(p, { mode: 'sleep', x: home.x, y: home.y, timer: 3 });
+      return;
+    }
+    if (speed === 0) return;
+    const mult = [0, 1, 1.4, 1.8][speed] || 1;
+    if (p.mode === 'walk') {
+      const dx = p.tx - p.x;
+      const dy = p.ty - p.y;
+      const d = Math.hypot(dx, dy);
+      const v = 22 * mult * dt;
+      if (d <= v) {
+        p.x = p.tx;
+        p.y = p.ty;
+        p.mode = p.home ? 'sleep' : 'sit';
+        p.timer = p.home ? 8 + Math.random() * 8 : 3 + Math.random() * 4;
+      } else {
+        p.x += (dx / d) * v;
+        p.y += (dy / d) * v;
+        p.left = dx < 0;
+      }
+      return;
+    }
+    p.timer -= dt * mult;
+    if (p.timer > 0) return;
+    // Siguiente paseo: visitar a alguien, dar una vuelta o volver a la cama.
+    const r = Math.random();
+    const busy = new Set(s.employees.filter((e) => !e.region && !e.traits.includes('remote')).map((e) => e.desk));
+    const desks = layout.desks.filter((_, i) => busy.has(i));
+    let to;
+    p.home = false;
+    if (p.mode !== 'sleep' && r < 0.3) {
+      to = home;
+      p.home = true;
+    } else if (desks.length && r < 0.8) {
+      const d = desks[Math.floor(Math.random() * desks.length)];
+      to = { x: d.x + 8, y: d.y + 20 };
+    } else {
+      to = { x: this.L.loungeX + Math.random() * Math.max(10, this.L.W - this.L.loungeX - 24), y: WALL + 8 + Math.random() * 60 };
+    }
+    p.tx = to.x;
+    p.ty = to.y;
+    p.mode = 'walk';
+  }
+
+  // Tocar al perro: se despierta y pide mimos.
+  petLove() {
+    if (!this.pet) return;
+    this.pet.love = 1.8;
+    if (this.pet.mode === 'sleep') this.pet.timer = 0;
+  }
+
+  drawPet(g, t) {
+    const p = this.pet;
+    const x = Math.round(p.x);
+    const y = Math.round(p.y);
+    g.fillStyle = 'rgba(14,10,30,.25)';
+    g.fillRect(x + 2, y + 9, 10, 1);
+    const pose = p.mode === 'walk' ? (Math.floor(t * 8) % 2 ? 'w1' : 'w0') : 'sit';
+    S.drawDog(g, x, y, this.petCoat, pose, p.left);
+    this.hits.push({ id: 'pet', x: x - 1, y: y - 1, w: 15, h: 11 });
+    if (p.love > 0) S.drawBubble(g, x + 6, y - 10, 'heart');
+  }
+
   // ---------------------------------------------------------------- fondo
 
   ensureView(s) {
@@ -362,6 +526,8 @@ export class OfficeView {
       paintVignette(this.shadeLayer.getContext('2d'), this.L);
       this.bgKey = '';
       this.people.clear();
+      this.pet = null;
+      this.visitors = [];
       this.canvas.parentElement?.style.setProperty('--office-ar', `${this.L.W} / ${this.L.H}`);
       this.userZoom = false;
       this.resize();
@@ -369,6 +535,7 @@ export class OfficeView {
     const key = this.tier + ':' + s.company;
     if (key !== this.bgKey) {
       this.bgKey = key;
+      this.petCoat = S.DOG_COATS[strHash(s.company) % S.DOG_COATS.length];
       this.drawBackground(s);
     }
   }
@@ -467,6 +634,9 @@ export class OfficeView {
     this.ensureView(s);
     const layout = this.viewLayout();
     this.updatePeople(s, layout, dt, speed);
+    this.updatePet(s, layout, dt, speed);
+    this.updateVisitors(dt);
+    this.crisis = s.money < 0;
     const L = this.L;
     const g = this.wctx;
     const t = this.t;
@@ -475,6 +645,7 @@ export class OfficeView {
     paintWindows(g, L, s, t, this.windows);
     this.drawWallDecor(g, s, t);
     this.drawRacks(g, s, t);
+    if (this.partyUntil > t) S.drawGarland(g, L.W, 3, t);
     if (this.edit) this.drawGrid(g);
     this.hits = [];
     this.editHits = [];
@@ -496,7 +667,12 @@ export class OfficeView {
       const r = itemRect(it);
       const draw = () => {
         S.floorShadow(g, r.x, r.y + r.h - 1, r.w);
-        drawItem(g, it.id, it.x, it.y, t);
+        if (it.id === 'pet') {
+          const asleep = !this.pet || this.pet.mode === 'sleep';
+          S.drawDogBed(g, it.x, it.y, this.petCoat, asleep, t);
+          if (asleep && this.pet) this.hits.push({ id: 'pet', x: r.x, y: r.y, w: r.w, h: r.h });
+          if (asleep && this.pet?.love > 0) S.drawBubble(g, it.x + 8, it.y - 10, 'heart');
+        } else drawItem(g, it.id, it.x, it.y, t);
       };
       drawables.push({ y: r.y + r.h, ref: 'i:' + it.uid, rect: r, draw });
     }
@@ -510,6 +686,8 @@ export class OfficeView {
       if (!st || st.mode === 'desk' || e.off > 0) continue;
       drawables.push({ y: st.y + 18, draw: () => this.drawWalker(g, e, st, t) });
     }
+    if (this.pet && this.pet.mode !== 'sleep' && !this.edit) drawables.push({ y: this.pet.y + 9, draw: () => this.drawPet(g, t) });
+    for (const v of this.visitors) drawables.push({ y: v.y + 18, draw: () => this.drawVisitor(g, v, t) });
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) {
       d.draw();
@@ -664,8 +842,9 @@ export class OfficeView {
     // Con la mesa vacía la silla queda metida bajo el tablero.
     S.drawChair(g, cx + 8, seated ? cy + 4 : cy + 8, T.chair);
     const roleColor = e ? ROLES[e.role].color : PAL.slate;
+    const cheer = seated && this.partyUntil > t && !this.edit;
     if (seated) {
-      const bob = busy && Math.sin(t * 6 + phase) > 0.7 ? 1 : 0;
+      const bob = cheer ? (Math.sin(t * 10 + phase * 3) > 0 ? 2 : 0) : busy && Math.sin(t * 6 + phase) > 0.7 ? 1 : 0;
       S.drawSeated(g, cx + 9, cy - 1 + bob, e.looks, roleColor, t + phase, e.mood, e.role);
       this.hits.push({ id: e.id, x: cx + 8, y: cy - 2, w: 14, h: 20 });
     }
@@ -678,7 +857,7 @@ export class OfficeView {
       const k = busy ? Math.floor((t + phase) * 8) % 2 : 0;
       S.R(g, cx + 11, cy + 13 - k, 2, 2, e.looks.skin);
       S.R(g, cx + 17, cy + 13 - (1 - k), 2, 2, S.shade(e.looks.skin, -0.12));
-      const icon = !this.edit && this.statusIcon(e, t + phase);
+      const icon = cheer ? (phase % 2 < 1 ? 'star' : 'heart') : !this.edit && this.statusIcon(e, t + phase);
       if (icon) S.drawBubble(g, cx + 17, cy - 10, icon);
     } else if (e && e.off > 0) {
       S.drawBubble(g, cx + 12, cy + 2, 'palm');
@@ -689,6 +868,8 @@ export class OfficeView {
   statusIcon(e, t) {
     if (e.energy < 25) return 'zz';
     if (e.mood < 30) return 'bang';
+    // Con la empresa en números rojos, el equipo suda.
+    if (this.crisis && (t + e.id) % 7 < 1.2) return 'sweat';
     if (MAKERS_VIEW.includes(e.role) && !e.assign) return t % 3 < 2 ? 'q' : null;
     if (e.role === 'research' && t % 7 < 1.2) return 'bulb';
     if (e.mood > 85 && t % 9 < 1) return 'heart';
@@ -704,7 +885,8 @@ export class OfficeView {
     g.fillRect(x, y + 19, 10, 1);
     g.fillRect(x + 1, y + 20, 8, 1);
     S.drawStanding(g, x - 1, y - 2, e.looks, ROLES[e.role].color, frame, t + (st.phase || 0), e.mood, e.role);
-    if (st.mode === 'break' && (t + (st.phase || 0)) % 4 < 1.5) S.drawBubble(g, x + 7, y - 11, e.energy < 40 ? 'zz' : 'heart');
+    if (this.partyUntil > t) S.drawBubble(g, x + 7, y - 11, 'star');
+    else if (st.mode === 'break' && (t + (st.phase || 0)) % 4 < 1.5) S.drawBubble(g, x + 7, y - 11, e.energy < 40 ? 'zz' : 'heart');
     this.hits.push({ id: e.id, x: x - 1, y: y - 2, w: 12, h: 21 });
     if (this.selected === e.id) this.outline(g, x - 1, y - 2, 12, 21);
   }
@@ -753,6 +935,22 @@ export class OfficeView {
       S.R(g, c.x, c.y, 2, 2, c.c);
     }
     this.confetti = this.confetti.filter((c) => c.life > 0 && c.y < this.L.H);
+    for (const b of this.balloons) {
+      b.y -= b.v * dt;
+      S.drawBalloon(g, Math.round(b.x), Math.round(b.y), b.c, this.t);
+    }
+    this.balloons = this.balloons.filter((b) => b.y > -20);
+    const bn = this.banner;
+    if (bn && bn.until > this.t && !this.edit) {
+      const tw = S.textWidth(bn.text, 2);
+      const x = Math.round(this.L.W / 2 - tw / 2);
+      const y = WALL + 8 + (Math.sin(this.t * 6) > 0 ? 0 : 1);
+      S.R(g, x - 7, y - 5, tw + 14, 20, PAL.ink);
+      S.R(g, x - 6, y - 4, tw + 12, 18, PAL.plum);
+      S.R(g, x - 6, y - 4, tw + 12, 1, PAL.yellow);
+      S.R(g, x - 6, y + 13, tw + 12, 1, PAL.orange);
+      S.drawTextShadow(g, bn.text, x, y, PAL.yellow, PAL.ink, 2);
+    } else if (bn) this.banner = null;
   }
 }
 

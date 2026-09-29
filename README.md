@@ -20,7 +20,11 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 - **Productos físicos**: smartphones, relojes, gafas VR y robots domésticos. Fabricas por lotes que tardan en llegar, gestionas el stock, fijas el precio, pagas almacenaje y sufres devoluciones si la calidad es mala.
 - **Temporadas**: San Valentín, verano, vuelta al cole, Black Friday y Navidades cambian la demanda de cada tipo de producto.
 - **Dinero**: rondas de inversión (business angel → IPO), préstamos, bolsa y bancarrota.
-- **Más cosas**: 21 muebles y mejoras de oficina, 7 políticas de empresa (semana de 4 días, crunch, copilotos de IA...), 23 eventos aleatorios con decisiones, 15 objetivos, 23 logros, gráficos, sonido chiptune y guardado automático.
+- **Vida en la oficina**: fiestas con guirnaldas, globos y confeti cuando lanzas un producto, cierras una ronda o sales a bolsa; inversores que vienen de visita; un perro de oficina que se pasea y visita a la gente (tócalo para darle mimos), y un equipo que suda cuando la empresa está en números rojos.
+- **Música chiptune** generada al momento: cambia de ritmo y tonalidad si todo va bien, si hay crisis y con cada oficina. Se puede apagar en el menú.
+- **Tutorial guiado** para la primera partida: señala cada botón y avanza cuando haces lo que te pide. Se puede repetir desde el menú.
+- **App instalable**: se puede instalar en el móvil o el ordenador y jugar sin conexión.
+- **Más cosas**: 22 muebles y mejoras de oficina, 7 políticas de empresa (semana de 4 días, crunch, copilotos de IA...), 23 eventos aleatorios con decisiones, 15 objetivos, 23 logros, gráficos, sonido chiptune y guardado automático.
 - Funciona en **móvil y escritorio**, sin dependencias ni paso de build.
 
 ## Jugar en local
@@ -76,7 +80,7 @@ npm run deploy
 
 ```
 public/
-  index.html, style.css, favicon.svg, manifest.webmanifest, _headers
+  index.html, style.css, favicon.svg, icon-*.png, manifest.webmanifest, sw.js, _headers
   js/
     data.js     tablas del juego (roles, funciones, investigación...)
     core.js     helpers de estado compartidos
@@ -94,12 +98,15 @@ public/
     ui.js       parcheo del DOM, modales, avisos y avatares
     panels.js   contenido de cada pestaña
     audio.js    efectos chiptune con WebAudio
+    music.js    música chiptune generada al momento
+    tutorial.js tutorial guiado con anillo y bocadillo
     main.js     bucle del juego, HUD y acciones
 tests/
   bot.js        bot que juega solo
   sim.test.js   prueba de varios años de partida
   layout.test.js pruebas del plano y del editor
   depth.test.js pruebas de correo, temporadas, regiones, leyes, rivales y hardware
+  pwa.test.js   el service worker guarda todos los archivos y los iconos existen
 ```
 
 La partida se guarda en el `localStorage` del navegador cada semana de juego. Desde el menú (☰) puedes exportarla como código e importarla en otro dispositivo.

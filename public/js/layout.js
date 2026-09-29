@@ -14,7 +14,7 @@ export const SIZES = {
   plant: [10, 14], rug: [32, 20], lamp: [8, 22], coffee: [12, 20], cooler: [10, 20], snacks: [14, 22],
   sofa: [30, 14], foosball: [28, 17], aquarium: [24, 18], meeting: [40, 22], arcade: [14, 24], library: [22, 24],
   ballpit: [34, 16], podcast: [26, 28], gym: [36, 14], statue: [16, 26], nappods: [30, 16], chef: [34, 18],
-  robot: [16, 24], whiteboard: [28, 16], ac: [22, 7], car: [58, 28], boxes: [30, 24], bike: [26, 14],
+  robot: [16, 24], whiteboard: [28, 16], ac: [22, 7], car: [58, 28], boxes: [30, 24], bike: [26, 14], pet: [16, 10],
 };
 // Objetos de pared: solo se mueven en horizontal, a esta altura.
 export const WALL_ITEMS = { whiteboard: 20, ac: 2 };

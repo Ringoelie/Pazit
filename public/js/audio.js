@@ -6,6 +6,11 @@ export function setSound(on) {
   enabled = on;
 }
 
+// Contexto de audio compartido con la música. Solo se crea tras un gesto.
+export function audioCtx() {
+  return ac();
+}
+
 function ac() {
   if (!ctx) {
     const AC = window.AudioContext || window.webkitAudioContext;

@@ -72,6 +72,7 @@ export const PERKS = {
   lamp: { name: 'Lámpara de pie', icon: '💡', cost: 180, near: 1, max: 4, tier: 0, desc: '+1 ánimo a las mesas cercanas.' },
   coffee: { name: 'Cafetera', icon: '☕', cost: 900, upkeep: 60, energy: 3, max: 1, tier: 0, desc: '+3 energía diaria. Imprescindible para los cafeinómanos.' },
   cooler: { name: 'Fuente de agua', icon: '🚰', cost: 400, upkeep: 20, energy: 1, max: 2, tier: 0, desc: '+1 energía diaria.' },
+  pet: { name: 'Perro de oficina', icon: '🐕', cost: 700, upkeep: 50, mood: 2, near: 1, max: 1, tier: 0, desc: '+2 ánimo, y +1 a las mesas cerca de su cama. Se pasea por la oficina y visita a la gente.' },
   whiteboard: { name: 'Pizarra', icon: '📋', cost: 600, prod: 0.04, max: 1, tier: 0, desc: '+4% productividad. Va en la pared.' },
   snacks: { name: 'Máquina de snacks', icon: '🍫', cost: 1800, upkeep: 150, energy: 2, mood: 1, max: 1, tier: 1, desc: '+2 energía, +1 ánimo.' },
   sofa: { name: 'Sofá chill', icon: '🛋️', cost: 1500, energy: 2, mood: 2, max: 2, tier: 1, desc: '+2 energía, +2 ánimo.' },
