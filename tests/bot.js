@@ -1,11 +1,30 @@
 // Bot sencillo que juega solo. Lo usan las pruebas del motor para comprobar
 // que la economía aguanta varios años de partida.
 import * as G from '../public/js/sim.js';
-import { FEATURES, CATEGORIES, RESEARCH, OFFICES, PERKS, CAMPAIGNS } from '../public/js/data.js';
+import { FEATURES, CATEGORIES, RESEARCH, OFFICES, PERKS, CAMPAIGNS, REGIONS } from '../public/js/data.js';
+import { pendingMail, answerMail } from '../public/js/mail.js';
+import { openRegion, complianceIssues } from '../public/js/world.js';
+import { isHW, orderUnits, incoming, unitCost } from '../public/js/hw.js';
 
 export function botDay(s) {
   // Eventos: primera opción salvo vender la empresa.
   if (s.event) G.resolveEvent(s, s.event.id === 'buyout' ? 0 : 0);
+  // Correo: primera opción, salvo antimonopolio (colaborar).
+  for (const m of pendingMail(s)) answerMail(s, m.id, m.type === 'antitrust' ? m.choices.length - 1 : 0);
+  // Sedes internacionales cuando sobra el dinero.
+  for (const id of ['latam', 'na', 'africa', 'asia']) {
+    if (s.regions[id] == null && s.money > REGIONS[id].open * 12) {
+      openRegion(s, id);
+      break;
+    }
+  }
+  // Hardware: mantener stock para unos 60 días.
+  for (const p of s.products) {
+    if (!isHW(p) || !G.coreDone(p)) continue;
+    const need = Math.max(p.launched ? p.demand * 60 : 2000, 1000) - p.stock - incoming(p);
+    const qty = Math.ceil(need / 1000) * 1000;
+    if (qty > 0 && qty * unitCost(s, p) < s.money * 0.4) orderUnits(s, p.id, qty);
+  }
 
   // Contratos mientras no haya ingresos recurrentes fuertes.
   const m = G.mrr(s);
@@ -27,6 +46,7 @@ export function botDay(s) {
 
   for (const p of s.products) {
     if (!p.launched && G.coreDone(p)) G.launch(s, p.id);
+    for (const law of complianceIssues(s, p)) if (!p.queue.some((q) => q.f === law.require)) G.queueFeature(s, p.id, law.require);
     if (p.features.ads && !p.ads) G.toggleAds(s, p.id);
     if (p.queue.length < 2) {
       const opts = Object.keys(CATEGORIES[p.cat].features)
@@ -54,6 +74,7 @@ export function botDay(s) {
     if (G.roleUnlocked(s, 'devops') && count('devops') * 6 < s.infra.racks) wants.push('devops');
     if (G.roleUnlocked(s, 'sales') && count('sales') < s.employees.length / 10) wants.push('sales');
     if (G.roleUnlocked(s, 'pm') && count('pm') < s.products.length) wants.push('pm');
+    if (G.roleUnlocked(s, 'legal') && count('legal') < 1 + Math.floor(s.employees.length / 50)) wants.push('legal');
     if (count('marketer') < s.products.filter((p) => p.launched).length) wants.push('marketer');
     wants.push('dev');
     for (const role of wants) {

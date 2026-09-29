@@ -1,5 +1,7 @@
 // Guardado en localStorage, exportación/importación y migraciones.
-import { newGame } from './sim.js';
+import { newGame, ensureLayout, stepDay, summary } from './sim.js';
+import { ensureRivals } from './rivals.js';
+import { ROLES } from './data.js';
 
 const KEY = 'pixel-unicorn:save';
 
@@ -14,12 +16,22 @@ export function save(s) {
 }
 
 export function load() {
+  let raw = null;
   try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? migrate(JSON.parse(raw)) : null;
+    raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    const s = migrate(JSON.parse(raw));
+    if (s) return s;
   } catch {
-    return null;
+    // Partida ilegible: se guarda aparte más abajo.
   }
+  // No se pudo cargar: se aparta una copia para no perderla al empezar otra.
+  try {
+    if (raw) localStorage.setItem(KEY + ':rota', raw);
+  } catch {
+    // Sin almacenamiento.
+  }
+  return null;
 }
 
 export function clearSave() {
@@ -52,5 +64,30 @@ function migrate(s) {
     for (const [kk, vv] of Object.entries(base[k])) if (s[k][kk] === undefined) s[k][kk] = vv;
   }
   s.notes = [];
-  return s;
+  if (!Array.isArray(s.products) || !Array.isArray(s.competitors)) return null;
+  s.employees = s.employees.filter((e) => e && typeof e === 'object' && ROLES[e.role]);
+  const founder = base.employees[0];
+  for (const e of s.employees) {
+    if (!Array.isArray(e.traits)) e.traits = [];
+    if (!e.looks || typeof e.looks !== 'object') e.looks = { ...founder.looks };
+  }
+  try {
+    ensureLayout(s);
+    ensureRivals(s);
+  } catch {
+    return null;
+  }
+  return playable(s) ? s : null;
+}
+
+// Prueba la partida en una copia: si no aguanta un día de juego, no se carga.
+function playable(s) {
+  try {
+    const c = structuredClone(s);
+    stepDay(c);
+    summary(c);
+    return true;
+  } catch {
+    return false;
+  }
 }

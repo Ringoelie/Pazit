@@ -1,5 +1,5 @@
 // Piezas base de la interfaz: parcheo del DOM, modales, toasts y avatares.
-import { drawSeated } from './sprites.js';
+import { drawPortrait } from './sprites.js';
 import { ROLES } from './data.js';
 import { esc } from './util.js';
 
@@ -76,8 +76,16 @@ export function openModal({ title, body, render, wide = false, closable = true, 
   });
   root.appendChild(wrap);
   stack.push(m);
+  syncInert();
   setTimeout(() => wrap.querySelector('input, [autofocus]')?.focus(), 30);
   return m;
+}
+
+// Con un modal abierto, el resto de la página no recibe foco ni teclas: así
+// Intro o Espacio no pulsan botones que hay detrás.
+function syncInert() {
+  const app = document.getElementById('app');
+  if (app) app.inert = stack.length > 0;
 }
 
 export function closeModal(m = stack[stack.length - 1]) {
@@ -85,11 +93,14 @@ export function closeModal(m = stack[stack.length - 1]) {
   const i = stack.indexOf(m);
   if (i >= 0) stack.splice(i, 1);
   m.wrap.remove();
+  syncInert();
   m.onClose?.();
 }
 
-export function closeAllModals() {
-  while (stack.length) closeModal();
+// Cierra los modales que se pueden cerrar. `force` cierra también los que
+// esperan una decisión (eventos, fin de partida): solo al cambiar de partida.
+export function closeAllModals(force = false) {
+  for (const m of [...stack].reverse()) if (force || m.closable) closeModal(m);
 }
 
 export const topModal = () => stack[stack.length - 1] || null;
@@ -129,16 +140,13 @@ export function toast(text, kind = 'info') {
 
 const avatarCache = new Map();
 export function avatar(e) {
-  const key = e.id + ':' + e.role;
+  const key = e.role + JSON.stringify(e.looks);
   let url = avatarCache.get(key);
   if (!url) {
     const c = document.createElement('canvas');
-    c.width = 14;
-    c.height = 14;
-    const g = c.getContext('2d');
-    g.fillStyle = '#29366f';
-    g.fillRect(0, 0, 14, 14);
-    drawSeated(g, 2, 2, e.looks, ROLES[e.role].color, 1, 60);
+    c.width = 16;
+    c.height = 16;
+    drawPortrait(c.getContext('2d'), e.looks, ROLES[e.role].color, e.role);
     url = c.toDataURL();
     avatarCache.set(key, url);
   }

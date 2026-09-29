@@ -3,7 +3,7 @@
 import {
   ROLES, HIRABLE, MAKERS, OFFICES, PERKS, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID,
   CAMPAIGNS, ROUNDS, CLIENTS, JOBS, QUESTS, ACHIEVEMENTS, MAX_FEATURE_LEVEL, LEVEL_COST, LEVEL_APPEAL,
-  PREMIUM_PRICES, STARTUP_SUFFIX, PRODUCT_NAMES,
+  PREMIUM_PRICES, STARTUP_SUFFIX, PRODUCT_NAMES, REGIONS, UNIVERSAL_WEIGHT,
 } from './data.js';
 import { rnd, rint, rfloat, pick, chance, gauss, clamp, dateOf, fmtMoney, fmtNum, MONTHS } from './util.js';
 import {
@@ -11,6 +11,11 @@ import {
   expectedSalary, makeLooks, makePerson, perkStats,
 } from './core.js';
 import { EVENTS } from './events.js';
+import { defaultLayout, addItem, canPlace, getRef, snapPos, deskEffects, itemDef } from './layout.js';
+import { sendMail, mailStep } from './mail.js';
+import { worldDay, seasonDemand, seasonTx, regionMarket, regionArpu, regionRent, regionStaff } from './world.js';
+import { ensureRivals, rivalMonth, onShip, warFx } from './rivals.js';
+import { isHW, hwStep } from './hw.js';
 
 export { has, officeOf, findEmp, findProduct, perkStats, expectedSalary, levelOf };
 
@@ -41,6 +46,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     reputation: 5,
     equity: 100,
     speed: 1,
+    tutorial: -1,
     nextId: 1,
     employees: [],
     candidates: [],
@@ -48,10 +54,14 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     products: [],
     contracts: { offers: [], active: [], next: 3, failed: 0 },
     research: {},
-    office: { tier: 0, perks: {} },
+    office: { tier: 0, perks: {}, layout: defaultLayout(0, {}, { fixtures: true }) },
     policies: {},
     infra: { cloud: true, racks: 0, outages: 0 },
     competitors: [],
+    mail: [],
+    nextMailDay: 12,
+    regions: {},
+    laws: {},
     campaigns: [],
     ledger: { month: { inc: {}, exp: {} }, last: null },
     rev30: [],
@@ -68,7 +78,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     notes: [],
     redDays: 0,
     gameOver: null,
-    settings: { sound: true },
+    settings: { sound: true, music: true },
   };
   const f = makePerson(s, 'founder', { skill: 45, traits: [] });
   f.name = founder;
@@ -80,8 +90,11 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
   for (const [cat, def] of Object.entries(CATEGORIES)) {
     for (const [name, appeal] of def.rivals) s.competitors.push(makeCompetitor(s, cat, name, appeal));
   }
+  ensureRivals(s);
   refreshCandidates(s);
   s.contracts.offers.push(makeContract(s), makeContract(s));
+  sendMail(s, 'welcome');
+  s.notes.length = 0;
   news(s, `${company} nace en un garaje. ¡Todo gran imperio empezó así!`, 'good');
   return s;
 }
@@ -96,17 +109,20 @@ export const roleUnlocked = (s, role) => !ROLES[role].unlock || has(s, ROLES[rol
 export const featureUnlocked = (s, f) => !FEATURES[f].research || has(s, FEATURES[f].research);
 export const categoryUnlocked = (s, c) => !CATEGORIES[c].research || has(s, CATEGORIES[c].research);
 export const isRemote = (e) => e.traits.includes('remote');
-export const onsite = (s) => s.employees.filter((e) => !isRemote(e)).length;
+// Quien trabaja en remoto o en una sede extranjera no ocupa mesa en la sede.
+export const atHQ = (e) => !isRemote(e) && !e.region;
+export const onsite = (s) => s.employees.filter(atHQ).length;
 export const freeDesks = (s) => officeOf(s).desks - onsite(s);
 export const canWork = (e) => e.off <= 0;
 
 export function teamPowers(s) {
-  const p = { ops: 0, sales: 0, people: 0 };
+  const p = { ops: 0, sales: 0, people: 0, legal: 0 };
   for (const e of s.employees) {
     if (e.off > 0) continue;
     if (e.role === 'devops') p.ops += e.skill / 50;
     else if (e.role === 'sales') p.sales += e.skill / 50;
     else if (e.role === 'hr') p.people += e.skill / 50;
+    else if (e.role === 'legal') p.legal += e.skill / 50;
   }
   return p;
 }
@@ -132,7 +148,23 @@ export function productivity(s, e, ps = perkStats(s)) {
   if (has(s, 'agi')) m *= 1.5;
   if (!s.office.perks.ac) m *= effectMult(s, 'heat');
   m *= effectMult(s, 'prod');
+  m *= 1 - deskFx(s, e).noise;
   return m;
+}
+
+// Efectos del sitio donde se sienta alguien: decoración cercana y ruido.
+export function deskFx(s, e) {
+  if (e.desk == null || isRemote(e)) return { comfort: 0, noise: 0 };
+  return deskEffects(s.office.layout, e.desk);
+}
+
+// El plano pertenece a una oficina concreta; si no cuadra, se regenera.
+export function ensureLayout(s) {
+  const L = s.office.layout;
+  if (!L || L.tier !== s.office.tier || L.desks.length !== officeOf(s).desks) {
+    s.office.layout = defaultLayout(s.office.tier, s.office.perks, { fixtures: s.office.tier === 0 && !L });
+  }
+  return s.office.layout;
 }
 export const output = (s, e, ps) => (e.skill / 10) * productivity(s, e, ps);
 
@@ -157,7 +189,8 @@ export function productAppeal(s, p) {
   const cat = CATEGORIES[p.cat];
   let a = 0;
   for (const [k, l] of Object.entries(p.features)) {
-    a += FEATURES[k].appeal * (cat.features[k] ?? 0) * (1 + LEVEL_APPEAL * (l - 1));
+    const w = cat.features[k] ?? (FEATURES[k].universal ? UNIVERSAL_WEIGHT : 0);
+    a += FEATURES[k].appeal * w * (1 + LEVEL_APPEAL * (l - 1));
   }
   return Math.max(1, a * (0.5 + 0.5 * quality(p)));
 }
@@ -182,7 +215,7 @@ export function potential(s, p) {
     const m = FEATURES[k].market;
     if (m) bonus += m * (1 + 0.2 * (l - 1));
   }
-  return CATEGORIES[p.cat].market * marketGrowth(s) * (1 + bonus);
+  return CATEGORIES[p.cat].market * marketGrowth(s) * (1 + bonus) * regionMarket(s, p);
 }
 
 export function satisfaction(s, p) {
@@ -204,7 +237,7 @@ export function premiumConversion(s, p, price = p.price, sat = satisfaction(s, p
   if (!p.features.subs || price <= 0) return 0;
   const cat = CATEGORIES[p.cat];
   const conv = (0.025 * cat.monet.subs * sat * (1 + 0.12 * (p.features.subs - 1))) / Math.pow(price / 5, 1.1);
-  return Math.min(0.35, conv);
+  return Math.min(0.35, conv) * warFx(s, p).conv;
 }
 
 const AI_FEATURES = ['recs', 'chatbot', 'voice', 'aigen'];
@@ -213,10 +246,11 @@ export const isAIProduct = (p) => AI_FEATURES.some((f) => p.features[f]);
 // Ingresos diarios de un producto por fuente.
 export function productRevenue(s, p, tp = teamPowers(s)) {
   const out = { ads: 0, subs: 0, tx: 0, api: 0, total: 0, premium: 0 };
+  if (isHW(p)) return p.rev || out;
   if (!p.launched || p.down > 0) return out;
   const cat = CATEGORIES[p.cat];
   const f = p.features;
-  const mult = salesMult(s, tp) * (1 + (f.analytics ? FEATURES.analytics.revenue * f.analytics : 0)) * effectMult(s, 'econ');
+  const mult = salesMult(s, tp) * (1 + (f.analytics ? FEATURES.analytics.revenue * f.analytics : 0)) * effectMult(s, 'econ') * regionArpu(s, p) * warFx(s, p).rev;
   if (f.ads && p.ads) out.ads = p.users * 0.0012 * cat.monet.ads * (1 + 0.3 * (f.ads - 1)) * effectMult(s, 'ads');
   if (f.subs && p.price > 0) {
     out.premium = p.users * premiumConversion(s, p);
@@ -225,7 +259,7 @@ export function productRevenue(s, p, tp = teamPowers(s)) {
   let tx = 0;
   if (f.payments) tx += 1 + 0.25 * (f.payments - 1);
   if (f.bank) tx += 1.2 + 0.3 * (f.bank - 1);
-  if (tx) out.tx = p.users * 0.003 * cat.monet.tx * tx;
+  if (tx) out.tx = p.users * 0.003 * cat.monet.tx * tx * seasonTx(s, p.cat);
   if (f.api) out.api = p.users * 0.0004 * cat.monet.api * (1 + 0.3 * (f.api - 1));
   out.ads *= mult;
   out.subs *= mult;
@@ -313,6 +347,7 @@ export function monthlyCosts(s, tp = teamPowers(s)) {
     cloud: inf.cloudMonthly,
     servers: inf.rackMonthly,
     policies: policyMonthly(s),
+    regions: regionRent(s),
     interest: s.loans.reduce((a, l) => a + l.left * LOAN_RATE, 0),
   };
   out.total = Object.values(out).reduce((a, b) => a + b, 0);
@@ -389,7 +424,13 @@ export function refreshCandidates(s) {
     }
     list.push(makePerson(s, role));
   }
-  s.candidates = list;
+  for (const id of Object.keys(s.regions)) {
+    const n = rint(s, 1, 2);
+    for (let i = 0; i < n; i++) list.push(makePerson(s, pick(s, roles), { region: id }));
+  }
+  // Quien fichaste a un rival o vino por un evento se queda un mes en la lista.
+  const keep = (s.candidates || []).filter((c) => c.keepUntil > s.day);
+  s.candidates = [...keep, ...list];
   s.candidatesDay = s.day;
 }
 
@@ -406,24 +447,28 @@ const fail = (msg) => ({ ok: false, msg });
 export function hire(s, candId) {
   const c = s.candidates.find((x) => x.id === candId);
   if (!c) return fail('Ese candidato ya no está disponible.');
-  if (!isRemote(c) && freeDesks(s) <= 0) return fail('No quedan escritorios libres. Múdate a una oficina más grande.');
-  if (isRemote(c) && s.employees.length - onsite(s) >= officeOf(s).desks) {
+  if (c.region) {
+    if (s.regions[c.region] == null) return fail('Ya no tienes sede en esa región.');
+    if (regionStaff(s, c.region) >= REGIONS[c.region].cap) return fail(`La sede de ${REGIONS[c.region].name} está llena.`);
+  } else if (!isRemote(c) && freeDesks(s) <= 0) return fail('No quedan escritorios libres. Múdate a una oficina más grande.');
+  else if (isRemote(c) && s.employees.filter(isRemote).length >= officeOf(s).desks) {
     return fail('Demasiado personal remoto para coordinarlo desde esta oficina.');
   }
   const fee = Math.round(c.salary * 0.5);
   if (s.money < fee) return fail(`Necesitas ${fmtMoney(fee)} para la contratación.`);
   money(s, -fee, 'hiring');
   s.candidates = s.candidates.filter((x) => x !== c);
+  delete c.keepUntil;
   c.hired = s.day;
   c.mood = 75;
-  if (!isRemote(c)) c.desk = firstFreeDesk(s);
+  if (atHQ(c)) c.desk = firstFreeDesk(s);
   s.employees.push(c);
   autoAssign(s, c);
   return ok(`¡${c.name} se une al equipo como ${ROLES[c.role].name}!`);
 }
 
 function firstFreeDesk(s) {
-  const used = new Set(s.employees.filter((e) => !isRemote(e)).map((e) => e.desk));
+  const used = new Set(s.employees.filter(atHQ).map((e) => e.desk));
   for (let i = 0; i < 999; i++) if (!used.has(i)) return i;
   return 0;
 }
@@ -557,6 +602,7 @@ export function createProduct(s, name, cat) {
     users: 0, peak: 0, hype: 0, awareness: 0, ads: false, price: 0, down: 0, overload: 0,
     launchHunt: false, sat: 0.6, share: 0, rev: null,
   };
+  if (CATEGORIES[cat].kind === 'hw') Object.assign(p, { kind: 'hw', stock: 0, orders: [], priceMult: 1, sold: 0, demand: 0, lost: 0 });
   s.products.push(p);
   for (const f of CATEGORIES[cat].core) queueFeature(s, p.id, f);
   for (const e of s.employees) if (!e.assign && MAKERS.includes(e.role)) e.assign = 'p:' + p.id;
@@ -568,7 +614,7 @@ export function suggestProductName(s) {
 }
 
 export function featureAvailable(s, p, f) {
-  return CATEGORIES[p.cat].features[f] != null;
+  return CATEGORIES[p.cat].features[f] != null || (!!FEATURES[f].universal && !isHW(p));
 }
 
 export function queueFeature(s, pid, f) {
@@ -616,7 +662,7 @@ export function launch(s, pid) {
   p.launchDay = s.day;
   p.awareness = Math.min(0.3, 0.03 + p.hype * 0.0003);
   p.hype += 40;
-  p.users = 50 + p.hype * 3;
+  p.users = isHW(p) ? 0 : 50 + p.hype * 3;
   s.reputation = Math.min(100, s.reputation + 3);
   news(s, `🚀 ${s.company} lanza ${p.name} (${CATEGORIES[p.cat].name}).`, 'good');
   return ok(`🚀 ¡${p.name} está en línea!`);
@@ -671,15 +717,12 @@ export function doResearch(s, id) {
   return ok(`Investigación completada: ${r.name}.`);
 }
 
-export const perkCount = (s) => Object.values(s.office.perks).reduce((a, b) => a + b, 0);
-
 export function perkState(s, id) {
   const p = PERKS[id];
   const n = s.office.perks[id] || 0;
   if (p.research && !has(s, p.research)) return { ok: false, why: `Requiere ${RESEARCH_BY_ID[p.research].name}` };
   if (s.office.tier < p.tier) return { ok: false, why: `Requiere ${OFFICES[p.tier].name}` };
   if (n >= p.max) return { ok: false, why: 'Máximo alcanzado' };
-  if (perkCount(s) >= officeOf(s).slots) return { ok: false, why: 'Sin espacio libre' };
   return { ok: true };
 }
 
@@ -689,18 +732,60 @@ export function buyPerk(s, id) {
   const st = perkState(s, id);
   if (!st.ok) return fail(st.why);
   if (s.money < p.cost) return fail(`Cuesta ${fmtMoney(p.cost)}.`);
+  const it = addItem(ensureLayout(s), s.office.tier, id);
+  if (!it) return fail('No hay hueco libre. Reorganiza la oficina en el editor o múdate.');
   money(s, -p.cost, 'office');
   s.office.perks[id] = (s.office.perks[id] || 0) + 1;
-  return ok(`${p.icon} ${p.name} instalado.`);
+  return { ok: true, msg: `${p.icon} ${p.name} instalado.`, ref: 'i:' + it.uid };
+}
+
+// Instalación gratuita (por ejemplo, desde un evento).
+export function installPerk(s, id) {
+  addItem(ensureLayout(s), s.office.tier, id);
+  s.office.perks[id] = (s.office.perks[id] || 0) + 1;
 }
 
 export function sellPerk(s, id) {
+  const L = ensureLayout(s);
+  const it = [...L.items].reverse().find((x) => x.id === id);
+  if (it) return sellItem(s, it.uid);
+  if (!s.office.perks[id]) return fail();
+  return removePerk(s, id);
+}
+
+function removePerk(s, id) {
   const p = PERKS[id];
-  if (!p || !s.office.perks[id]) return fail();
   s.office.perks[id] -= 1;
   if (!s.office.perks[id]) delete s.office.perks[id];
   money(s, Math.round(p.cost * 0.3), 'other');
   return ok(`${p.name} vendido por ${fmtMoney(p.cost * 0.3)}.`);
+}
+
+export const sellValue = (id) => (PERKS[id] ? Math.round(PERKS[id].cost * 0.3) : itemDef(id)?.sell ?? 0);
+
+// Vende o quita un objeto concreto del plano.
+export function sellItem(s, uid) {
+  const L = ensureLayout(s);
+  const it = L.items.find((x) => x.uid === uid);
+  if (!it) return fail('Ese objeto ya no está.');
+  L.items = L.items.filter((x) => x !== it);
+  if (PERKS[it.id]) return removePerk(s, it.id);
+  const f = itemDef(it.id);
+  if (f.sell) money(s, f.sell, 'other');
+  if (it.id === 'car') news(s, `Los padres de ${s.company.split(' ')[0]} buscan su coche desesperadamente.`, 'bad');
+  return ok(f.sell ? `${f.icon} ${f.name}: +${fmtMoney(f.sell)}.` : `${f.icon} ${f.name} fuera.`);
+}
+
+// Mueve una mesa ('d:i') o un objeto ('i:uid') a otra posición del plano.
+export function moveObject(s, ref, x, y) {
+  const L = ensureLayout(s);
+  const r = getRef(L, ref);
+  if (!r) return fail();
+  const pos = snapPos(r.id, x, y);
+  if (!canPlace(L, s.office.tier, r.id, pos.x, pos.y, ref)) return fail('No cabe ahí.');
+  r.obj.x = pos.x;
+  r.obj.y = pos.y;
+  return ok();
 }
 
 export function moveOffice(s, tier) {
@@ -710,6 +795,7 @@ export function moveOffice(s, tier) {
   if (s.money < o.move) return fail(`La mudanza cuesta ${fmtMoney(o.move)}.`);
   money(s, -o.move, 'office');
   s.office.tier = tier;
+  s.office.layout = defaultLayout(tier, s.office.perks, { fixtures: false });
   news(s, `🏢 ${s.company} se muda a: ${o.name}.`, 'good');
   s.reputation = Math.min(100, s.reputation + 2);
   return ok(`¡Bienvenido a tu nueva oficina: ${o.name}!`);
@@ -843,6 +929,7 @@ export function acquire(s, compId) {
   if (s.money < price) return fail(`Cuesta ${fmtMoney(price)}.`);
   money(s, -price, 'acquisitions');
   c.alive = false;
+  for (const p of s.products) if (p.war?.rival === c.id) p.war.until = s.day;
   const mine = s.products.filter((p) => p.launched && p.cat === c.cat).sort((a, b) => b.users - a.users)[0];
   if (mine) {
     mine.users += c.users * 0.35;
@@ -901,6 +988,8 @@ export function stepDay(s) {
   funding(s);
   if (s.day - s.candidatesDay >= 14) refreshCandidates(s);
   if (newMonth) monthly(s, today);
+  mailStep(s);
+  worldDay(s, newMonth);
   maybeEvent(s);
   quests(s);
   achievements(s);
@@ -989,6 +1078,7 @@ function workAndPeople(s, ps, tp) {
       target += clamp((ratio - 1) * 60, e.traits.includes('ambitious') ? -40 : -30, 12);
     }
     if (crowded && !isRemote(e)) target -= 3;
+    target += deskFx(s, e).comfort;
     target += effectMult(s, 'mood') * 10 - 10;
     e.mood = clamp(e.mood + (target - e.mood) * 0.08, 0, 100);
     if (e.role !== 'founder' && !e.traits.includes('loyal')) {
@@ -1091,6 +1181,7 @@ function productWork(s, p, b) {
     if (task.f === 'ads' && task.lvl === 1) p.ads = true;
     if (task.f === 'subs' && task.lvl === 1 && !p.price) p.price = 5;
     if (p.launched) p.hype += 4 + task.lvl * 2 + (F.hype && task.lvl === 1 ? F.hype : 0);
+    onShip(s, p, task.f, task.lvl);
     notify(s, `📦 ${p.name}: ${F.icon} ${F.name} ${task.lvl > 1 ? 'nivel ' + task.lvl : 'lista'}.`, 'good');
     if (!p.launched && coreDone(p) && !p.readyNotified) {
       p.readyNotified = true;
@@ -1127,15 +1218,27 @@ function products(s, tp) {
   const aiHype = effectMult(s, 'aiHype');
   let dayRev = 0;
   for (const p of s.products) {
+    if (isHW(p)) dayRev += hwStep(s, p);
     if (!p.launched) {
       p.hype *= 0.94;
       continue;
     }
     const sat = satisfaction(s, p);
     const sh = share(s, p);
+    if (isHW(p)) {
+      if (p.down > 0) p.down -= 1;
+      const gain = (Math.sqrt(p.hype) * 0.00012 * growthMult(s) + 0.0015 * sat * sh) * (1 - p.awareness);
+      p.awareness = clamp(p.awareness + gain - 0.0015 * p.awareness, 0, 1);
+      p.hype *= 0.94;
+      p.sat = sat;
+      p.share = sh;
+      p.peak = Math.max(p.peak, p.users);
+      continue;
+    }
     const pot = potential(s, p);
     const boost = isAIProduct(p) ? aiHype : 1;
-    const target = pot * sh * (0.12 + 0.88 * p.awareness) * (0.35 + 0.65 * sat) * boost;
+    const limits = seasonDemand(s, p.cat) * warFx(s, p).target * (p.antitrust > s.day ? 0.8 : 1);
+    const target = pot * sh * (0.12 + 0.88 * p.awareness) * (0.35 + 0.65 * sat) * boost * limits;
     if (p.down > 0) {
       p.users *= 0.985;
       p.down -= 1;
@@ -1164,13 +1267,14 @@ function products(s, tp) {
 
 function infra(s, tp) {
   const st = infraStatus(s, tp);
-  for (const p of s.products) p.overload = st.overload;
+  // Los productos físicos no dependen de tus servidores.
+  for (const p of s.products) p.overload = isHW(p) ? 0 : st.overload;
   money(s, -st.cloudMonthly / 30, 'cloud');
   money(s, -st.rackMonthly / 30, 'servers');
   const uncovered = Math.max(0, s.infra.racks - st.coverage);
   const risk = Math.min(0.2, uncovered * 0.004) + (st.cloudUnits > 0 ? 0.0005 : 0);
   if (risk > 0 && chance(s, risk)) {
-    const live = s.products.filter((p) => p.launched && p.users > 100 && !p.down);
+    const live = s.products.filter((p) => !isHW(p) && p.launched && p.users > 100 && !p.down);
     if (live.length) {
       const p = pick(s, live);
       p.down = rint(s, 1, 3);
@@ -1187,6 +1291,7 @@ function costs(s, tp) {
   money(s, -officeOf(s).rent / 30, 'rent');
   money(s, -perkStats(s).upkeep / 30, 'perks');
   money(s, -policyMonthly(s) / 30, 'policies');
+  money(s, -regionRent(s) / 30, 'regions');
   for (const l of s.loans) money(s, -(l.left * LOAN_RATE) / 30, 'interest');
 }
 
@@ -1239,8 +1344,10 @@ function market(s, newMonth) {
     const avg = alive.length ? alive.reduce((a, c) => a + c.appeal, 0) / alive.length : 50;
     const c = makeCompetitor(s, cat, startupName(s), avg * rfloat(s, 0.4, 0.8));
     s.competitors.push(c);
+    ensureRivals(s);
     news(s, `🌱 Nueva startup: ${c.name} entra en ${CATEGORIES[cat].name}.`);
   }
+  rivalMonth(s);
 }
 
 function funding(s) {

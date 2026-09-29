@@ -1,9 +1,9 @@
 // Helpers de estado compartidos por la simulación y los eventos.
-import { ROLES, LEVELS, TRAITS, LOOKS, FIRST_NAMES, LAST_NAMES, OFFICES, PERKS } from './data.js';
+import { ROLES, LEVELS, TRAITS, LOOKS, FIRST_NAMES, LAST_NAMES, OFFICES, PERKS, REGIONS } from './data.js';
 import { rnd, rint, rfloat, pick, chance, gauss, clamp } from './util.js';
 
 export const uid = (s) => s.nextId++;
-export const has = (s, id) => !!s.research[id];
+export const has = (s, id) => s.research[id] != null;
 export const officeOf = (s) => OFFICES[s.office.tier];
 export const findEmp = (s, id) => s.employees.find((e) => e.id === id);
 export const findProduct = (s, id) => s.products.find((p) => p.id === id);
@@ -24,7 +24,7 @@ export function money(s, amount, cat) {
   s.money += amount;
   const bucket = amount >= 0 ? s.ledger.month.inc : s.ledger.month.exp;
   bucket[cat] = (bucket[cat] || 0) + Math.abs(amount);
-  if (amount > 0 && ['ads', 'subs', 'tx', 'api', 'contracts'].includes(cat)) s.stats.revenue += amount;
+  if (amount > 0 && ['ads', 'subs', 'tx', 'api', 'contracts', 'hardware', 'store'].includes(cat)) s.stats.revenue += amount;
 }
 
 export function effectMult(s, key) {
@@ -53,6 +53,7 @@ export function payFactor(skill) {
 export function expectedSalary(e, s) {
   if (e.role === 'founder') return 0;
   let x = ROLES[e.role].base * payFactor(e.skill) * Math.pow(1.03, (s?.day || 0) / 365);
+  if (e.region) x *= REGIONS[e.region].salary;
   if (e.traits.includes('tenx')) x *= 1.3;
   return Math.round(x / 50) * 50;
 }
@@ -74,10 +75,10 @@ export function makeName(s) {
 
 const TRAIT_POOL = Object.keys(TRAITS).filter((t) => t !== 'remote');
 
-export function makePerson(s, role, { skill, traits, remote } = {}) {
+export function makePerson(s, role, { skill, traits, remote, region } = {}) {
   const hr = s.employees.filter((e) => e.role === 'hr' && !e.off).reduce((a, e) => a + e.skill, 0);
   const boost = s.reputation * 0.35 + Math.min(15, hr / 25) + (effectMult(s, 'talent') - 1) * 100;
-  const sk = skill ?? clamp(Math.round(gauss(s, 26 + boost, 13)), 12, 97);
+  const sk = skill ?? clamp(Math.round(gauss(s, 26 + boost + (region ? REGIONS[region].skill : 0), 13)), 12, 97);
   let tr = traits;
   if (!tr) {
     tr = [];
@@ -86,7 +87,7 @@ export function makePerson(s, role, { skill, traits, remote } = {}) {
       const t = pick(s, TRAIT_POOL);
       if (!tr.includes(t)) tr.push(t);
     }
-    if (remote ?? (has(s, 'remote') && chance(s, 0.3))) tr.push('remote');
+    if (!region && (remote ?? (has(s, 'remote') && chance(s, 0.3)))) tr.push('remote');
   }
   const e = {
     id: uid(s),
@@ -105,6 +106,7 @@ export function makePerson(s, role, { skill, traits, remote } = {}) {
     hired: s.day,
     unhappy: 0,
   };
+  if (region) e.region = region;
   e.salary = Math.round((expectedSalary(e, s) * rfloat(s, 0.95, 1.15) * effectMult(s, 'salary')) / 50) * 50;
   return e;
 }

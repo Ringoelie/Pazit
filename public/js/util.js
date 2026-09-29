@@ -35,7 +35,8 @@ export function fmtNum(n) {
   const sign = n < 0 ? '-' : '';
   n = Math.abs(n);
   for (const [v, suf] of SUFFIX) {
-    if (n >= v) {
+    // 999.999 se redondea a "1M" en vez de "1000k".
+    if (n >= v * 0.9995) {
       const x = n / v;
       const str = x >= 100 ? String(Math.round(x)) : x.toFixed(x >= 10 ? 1 : 2).replace(/\.?0+$/, '');
       return sign + str + suf;

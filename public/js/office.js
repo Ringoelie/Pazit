@@ -1,53 +1,66 @@
 // Vista de la oficina en canvas: fondo cacheado, empleados animados, cámara
-// con zoom entero (píxeles nítidos) y arrastre.
-import { OFFICES, ROLES, PAL } from './data.js';
-import { dateOf } from './util.js';
+// con zoom y arrastre, y modo edición para recolocar mesas y muebles.
+import { OFFICES, ROLES, PAL, PERKS } from './data.js';
 import * as S from './sprites.js';
+import { THEMES, paintBackground, paintWindows, paintVignette } from './scenery.js';
+import {
+  WALL, FLAT, NEAR_RADIUS, isWall, deskRect, itemRect, serverRoom, loungeX, canPlace, snapPos, getRef, deskEffects,
+} from './layout.js';
 
-const COLS = [2, 4, 7, 8, 10, 14, 20];
-const CW = 28;
-const CH = 30;
-const WALL = 44;
-
-const THEMES = {
-  garage: { wall: '#566c86', trim: '#3e4c63', floor: ['#6f7d91', '#687689'], desk: ['#b4895f', '#8a6340'], chair: '#333c57', bg: '#20243a' },
-  cowork: { wall: '#e9d8b8', trim: '#cdb896', floor: ['#b98555', '#ae7a4b'], desk: ['#f4f4f4', '#c9d3dc'], chair: '#3b5dc9', bg: '#2a2437' },
-  small: { wall: '#c7d4e0', trim: '#94b0c2', floor: ['#3a4a8a', '#35447f'], desk: ['#e8e8e8', '#b8c4cf'], chair: '#1a1c2c', bg: '#1f2440' },
-  loft: { wall: '#9c4a3a', trim: '#6e3228', floor: ['#7a4a2a', '#704426'], desk: ['#3a3f58', '#2a2e44'], chair: '#ef7d57', bg: '#241a22' },
-  tower: { wall: '#29366f', trim: '#1f2a58', floor: ['#d6dee6', '#cad4de'], desk: ['#f4f4f4', '#94b0c2'], chair: '#333c57', bg: '#141a33' },
-  campus: { wall: '#e6efe0', trim: '#b9cbb0', floor: ['#a8dcae', '#9dd2a4'], desk: ['#fff4e0', '#e2cfae'], chair: '#38b764', bg: '#1d2b24' },
-  orbital: { wall: '#1a1c2c', trim: '#333c57', floor: ['#4a5470', '#454e69'], desk: ['#94b0c2', '#566c86'], chair: '#73eff7', bg: '#0b0c14' },
+// Muebles a los que el equipo va a descansar.
+const BREAK = new Set(['coffee', 'snacks', 'arcade', 'sofa', 'foosball', 'ballpit', 'gym', 'nappods', 'chef', 'robot', 'library', 'cooler', 'aquarium', 'meeting']);
+const MAKERS_VIEW = ['founder', 'dev', 'design', 'ai', 'marketer', 'pm'];
+const strHash = (str) => [...String(str)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+const PARTY_TEXT = {
+  launch: 'LANZAMIENTO!', funding: 'RONDA CERRADA!', ipo: 'SALIMOS A BOLSA!', move: 'OFICINA NUEVA!', acquire: 'COMPRADA!', achievement: 'LOGRO!',
 };
-
-const WALL_ITEMS = { coffee: 12, snacks: 14, arcade: 14, library: 22, robot: 14 };
-const FLOOR_ITEMS = { sofa: [30, 14], foosball: [26, 17], ballpit: [34, 16], gym: [35, 14], nappods: [30, 16], chef: [34, 18], podcast: [26, 20] };
-const BREAK_PERKS = ['coffee', 'snacks', 'arcade', 'sofa', 'foosball', 'ballpit', 'gym', 'nappods', 'chef', 'robot', 'library'];
 const GLYPH = {
   code: ['</>', PAL.sky], design: ['~', PAL.orange], ai: ['01', PAL.silver], flex: ['*', PAL.yellow],
   hype: ['!', '#ff6b8b'], rp: ['?', PAL.lime], ops: ['%', PAL.green], sales: ['$', PAL.cyan], people: ['♥', '#ff6b8b'], lead: ['>', PAL.cyan],
 };
 
-function layout(tier) {
-  const o = OFFICES[tier];
-  const cols = COLS[tier];
-  const x0 = 14;
-  const y0 = WALL + 30;
-  const desks = [];
-  for (let i = 0; i < o.desks; i++) desks.push({ x: x0 + (i % cols) * CW, y: y0 + Math.floor(i / cols) * CH });
-  const loungeX = x0 + cols * CW + 18;
-  return { o, cols, desks, x0, y0, loungeX, W: o.w, H: o.h, theme: THEMES[o.theme] };
+function drawItem(g, id, x, y, t) {
+  switch (id) {
+    case 'plant': return S.drawPlant(g, x, y, t);
+    case 'rug': return S.drawRug(g, x, y);
+    case 'lamp': return S.drawLamp(g, x, y, t);
+    case 'coffee': return S.drawCoffee(g, x, y, t);
+    case 'cooler': return S.drawCooler(g, x, y, t);
+    case 'snacks': return S.drawVending(g, x, y, t);
+    case 'sofa': return S.drawSofa(g, x, y);
+    case 'foosball': return S.drawFoosball(g, x, y, t);
+    case 'aquarium': return S.drawAquarium(g, x, y, t);
+    case 'meeting': return S.drawMeeting(g, x, y);
+    case 'arcade': return S.drawArcade(g, x, y, t);
+    case 'library': return S.drawBookshelf(g, x, y);
+    case 'ballpit': return S.drawBallpit(g, x, y);
+    case 'podcast': return S.drawPodcast(g, x, y, t);
+    case 'gym': return S.drawGym(g, x, y, t);
+    case 'statue': return S.drawStatue(g, x, y, t);
+    case 'nappods': return S.drawNapPod(g, x, y, t);
+    case 'chef': return S.drawChef(g, x, y, t);
+    case 'robot': return S.drawRobot(g, x, y, t);
+    case 'whiteboard': return S.drawWhiteboard(g, x, y);
+    case 'ac': return S.drawAC(g, x, y, t);
+    case 'car': return S.drawCar(g, x, y);
+    case 'boxes': return S.drawBoxes(g, x, y);
+    case 'bike': return S.drawBike(g, x, y);
+  }
 }
 
 export class OfficeView {
-  constructor(canvas, { onPick, onHover } = {}) {
+  constructor(canvas, { onPick, onHover, onEditPick, onEditDrop } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.world = document.createElement('canvas');
     this.wctx = this.world.getContext('2d');
     this.bg = document.createElement('canvas');
+    this.shadeLayer = document.createElement('canvas');
     this.bgKey = '';
     this.onPick = onPick;
     this.onHover = onHover;
+    this.onEditPick = onEditPick;
+    this.onEditDrop = onEditDrop;
     this.zoom = 2;
     this.cam = { x: 0, y: 0 };
     this.userZoom = false;
@@ -58,8 +71,20 @@ export class OfficeView {
     this.selected = null;
     this.hover = null;
     this.hits = [];
+    this.editHits = [];
+    this.edit = false;
+    this.editSel = null;
+    this.drag = null;
     this.tier = -1;
+    this.s = null;
     this.pointers = new Map();
+    this.partyUntil = 0;
+    this.banner = null;
+    this.balloons = [];
+    this.visitors = [];
+    this.pet = null;
+    this.petCoat = S.DOG_COATS[0];
+    this.crisis = false;
     this.bindInput();
   }
 
@@ -127,7 +152,7 @@ export class OfficeView {
     const my = Math.max(0, this.L.H - this.viewH());
     this.cam.x = Math.max(0, Math.min(mx, this.cam.x));
     this.cam.y = Math.max(0, Math.min(my, this.cam.y));
-    this.canvas.style.touchAction = mx > 0 || my > 0 ? 'none' : 'pan-y';
+    this.canvas.style.touchAction = this.edit || mx > 0 || my > 0 ? 'none' : 'pan-y';
   }
 
   toWorld(clientX, clientY) {
@@ -137,17 +162,55 @@ export class OfficeView {
     return { x: this.cam.x + (px - this.offX()) / this.zoom, y: this.cam.y + (py - this.offY()) / this.zoom, px, py };
   }
 
+  // ---------------------------------------------------------------- edición
+
+  setEdit(on) {
+    this.edit = on;
+    this.drag = null;
+    this.editSel = null;
+    this.hover = null;
+    this.onHover?.(null);
+    this.clampCam();
+  }
+
+  // El plano tal y como se ve ahora: con el objeto arrastrado en su sitio provisional.
+  viewLayout() {
+    const L = this.s.office.layout;
+    const d = this.drag;
+    if (!d || !d.moved) return L;
+    return {
+      ...L,
+      desks: L.desks.map((k, i) => ('d:' + i === d.ref ? { x: d.x, y: d.y } : k)),
+      items: L.items.map((it) => ('i:' + it.uid === d.ref ? { ...it, x: d.x, y: d.y } : it)),
+    };
+  }
+
+  // ---------------------------------------------------------------- entrada
+
   bindInput() {
     const c = this.canvas;
-    let drag = null;
+    let pan = null;
     let pinch = null;
     c.addEventListener('pointerdown', (e) => {
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.pointers.size === 2) {
         const [a, b] = [...this.pointers.values()];
         pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) };
-        drag = null;
-      } else drag = { x: e.clientX, y: e.clientY, cx: this.cam.x, cy: this.cam.y, moved: false };
+        pan = null;
+        this.drag = null;
+        return;
+      }
+      if (this.edit && this.s) {
+        const w = this.toWorld(e.clientX, e.clientY);
+        const ref = this.editHitTest(w.x, w.y);
+        const r = ref && getRef(this.s.office.layout, ref);
+        if (r) {
+          this.drag = { ref, id: r.id, ox: w.x - r.obj.x, oy: w.y - r.obj.y, x: r.obj.x, y: r.obj.y, sx: e.clientX, sy: e.clientY, moved: false, valid: true };
+          c.setPointerCapture?.(e.pointerId);
+          return;
+        }
+      }
+      pan = { x: e.clientX, y: e.clientY, cx: this.cam.x, cy: this.cam.y, moved: false };
     });
     c.addEventListener('pointermove', (e) => {
       if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -163,15 +226,32 @@ export class OfficeView {
         }
         return;
       }
-      if (drag && e.buttons) {
-        const dx = e.clientX - drag.x;
-        const dy = e.clientY - drag.y;
-        if (Math.abs(dx) + Math.abs(dy) > 5) drag.moved = true;
-        if (drag.moved) {
-          this.cam.x = drag.cx - (dx * this.dpr) / this.zoom;
-          this.cam.y = drag.cy - (dy * this.dpr) / this.zoom;
+      const d = this.drag;
+      if (d) {
+        if (Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) > 4) d.moved = true;
+        if (d.moved) {
+          const w = this.toWorld(e.clientX, e.clientY);
+          const p = snapPos(d.id, w.x - d.ox, w.y - d.oy);
+          d.x = p.x;
+          d.y = p.y;
+          d.valid = canPlace(this.s.office.layout, this.s.office.tier, d.id, p.x, p.y, d.ref);
+        }
+        return;
+      }
+      if (pan && e.buttons) {
+        const dx = e.clientX - pan.x;
+        const dy = e.clientY - pan.y;
+        if (Math.abs(dx) + Math.abs(dy) > 5) pan.moved = true;
+        if (pan.moved) {
+          this.cam.x = pan.cx - (dx * this.dpr) / this.zoom;
+          this.cam.y = pan.cy - (dy * this.dpr) / this.zoom;
           this.clampCam();
         }
+        return;
+      }
+      if (this.edit) {
+        const w = this.toWorld(e.clientX, e.clientY);
+        c.style.cursor = this.editHitTest(w.x, w.y) ? 'move' : 'grab';
         return;
       }
       const w = this.toWorld(e.clientX, e.clientY);
@@ -185,12 +265,22 @@ export class OfficeView {
     const end = (e) => {
       this.pointers.delete(e.pointerId);
       if (this.pointers.size < 2) pinch = null;
-      if (drag && !drag.moved && e.type === 'pointerup') {
-        const w = this.toWorld(e.clientX, e.clientY);
-        const hit = this.hitTest(w.x, w.y);
-        this.onPick?.(hit);
+      const d = this.drag;
+      if (d) {
+        this.drag = null;
+        if (e.type !== 'pointerup') return;
+        if (d.moved) this.onEditDrop?.(d.ref, d.x, d.y, d.valid);
+        else this.onEditPick?.(d.ref);
+        return;
       }
-      drag = null;
+      if (pan && !pan.moved && e.type === 'pointerup') {
+        if (this.edit) this.onEditPick?.(null);
+        else {
+          const w = this.toWorld(e.clientX, e.clientY);
+          this.onPick?.(this.hitTest(w.x, w.y));
+        }
+      }
+      pan = null;
     };
     c.addEventListener('pointerup', end);
     c.addEventListener('pointercancel', end);
@@ -204,8 +294,15 @@ export class OfficeView {
       'wheel',
       (e) => {
         e.preventDefault();
+        // Un paso de zoom por cada muesca de rueda (~100 px); los trackpads
+        // mandan muchos eventos pequeños y se van acumulando.
+        const dy = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1) * (e.ctrlKey ? 3 : 1);
+        if (Math.sign(dy) !== Math.sign(this.wheel || 0)) this.wheel = 0;
+        this.wheel = (this.wheel || 0) + dy;
+        if (Math.abs(this.wheel) < 90) return;
+        this.wheel = 0;
         const w = this.toWorld(e.clientX, e.clientY);
-        this.zoomBy(e.deltaY < 0 ? 1 : -1, w.px, w.py);
+        this.zoomBy(dy < 0 ? 1 : -1, w.px, w.py);
       },
       { passive: false },
     );
@@ -219,11 +316,19 @@ export class OfficeView {
     return null;
   }
 
+  editHitTest(x, y) {
+    for (let i = this.editHits.length - 1; i >= 0; i--) {
+      const h = this.editHits[i];
+      if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) return h.ref;
+    }
+    return null;
+  }
+
   // ---------------------------------------------------------------- efectos
 
   onDay(s) {
-    if (!this.L) return;
-    const working = s.employees.filter((e) => e.off <= 0 && !e.traits.includes('remote'));
+    if (!this.L || this.edit) return;
+    const working = s.employees.filter((e) => e.off <= 0 && !e.traits.includes('remote') && !e.region);
     const n = Math.min(6, Math.ceil(working.length / 3));
     for (let i = 0; i < n; i++) {
       const e = working[Math.floor(Math.random() * working.length)];
@@ -252,178 +357,193 @@ export class OfficeView {
     }
   }
 
+  // ---------------------------------------------------------------- fiestas y visitas
+
+  // Celebración: confeti, globos, guirnalda, cartel y el equipo de pie.
+  party(kind) {
+    if (!this.L) return;
+    this.partyUntil = this.t + 5;
+    this.banner = { text: PARTY_TEXT[kind] || 'BIEN!', until: this.t + 4 };
+    this.burst(kind === 'achievement' ? 50 : 90);
+    const colors = [PAL.red, PAL.yellow, PAL.sky, PAL.lime, '#ff6b8b', PAL.orange];
+    const n = kind === 'achievement' ? 3 : 8;
+    for (let i = 0; i < n; i++) {
+      this.balloons.push({ x: 8 + Math.random() * (this.L.W - 16), y: this.L.H - 12 - Math.random() * 30, c: colors[i % colors.length], v: 10 + Math.random() * 8 });
+    }
+  }
+
+  // Un inversor entra junto a la pared, se sienta a la mesa de reuniones y se va.
+  visit() {
+    if (!this.L || !this.s) return;
+    const meet = this.s.office.layout.items.find((it) => it.id === 'meeting');
+    const tx = meet ? meet.x + 14 : this.L.loungeX + 20;
+    const ty = meet ? meet.y + 12 : WALL + 30;
+    const pick = (a) => a[Math.floor(Math.random() * a.length)];
+    this.visitors.push({
+      x: -12,
+      y: WALL + 6,
+      path: [{ x: tx, y: WALL + 6 }, { x: tx, y: ty }],
+      mode: 'in',
+      timer: 0,
+      looks: { skin: pick(['#f6d2b5', '#e8b48f', '#c98a60', '#9a5f3c']), hair: pick(['#94b0c2', PAL.ink, PAL.white, '#4a2f1f']), style: pick([0, 4]), pants: PAL.ink, glasses: Math.random() < 0.5, beard: false },
+    });
+  }
+
+  updateVisitors(dt) {
+    const step = 26 * dt;
+    for (const v of this.visitors) {
+      if (v.mode === 'stay') {
+        v.timer -= dt;
+        if (v.timer <= 0) {
+          v.mode = 'out';
+          v.path = [{ x: v.x, y: WALL + 6 }, { x: -14, y: WALL + 6 }];
+        }
+        continue;
+      }
+      const p = v.path[0];
+      const dx = p.x - v.x;
+      const dy = p.y - v.y;
+      const d = Math.hypot(dx, dy);
+      if (d <= step) {
+        v.x = p.x;
+        v.y = p.y;
+        v.path.shift();
+        if (!v.path.length) {
+          if (v.mode === 'in') {
+            v.mode = 'stay';
+            v.timer = 6;
+          } else v.gone = true;
+        }
+      } else {
+        v.x += (dx / d) * step;
+        v.y += (dy / d) * step;
+      }
+    }
+    this.visitors = this.visitors.filter((v) => !v.gone);
+  }
+
+  drawVisitor(g, v, t) {
+    const x = Math.round(v.x);
+    const y = Math.round(v.y);
+    g.fillStyle = 'rgba(14,10,30,.28)';
+    g.fillRect(x, y + 19, 10, 1);
+    g.fillRect(x + 1, y + 20, 8, 1);
+    S.drawStanding(g, x - 1, y - 2, v.looks, PAL.white, v.mode === 'stay' ? 'idle' : Math.floor(t * 8) % 2, t, 90, 'legal');
+    S.R(g, x + 9, y + 13, 4, 3, '#6b4024');
+    S.R(g, x + 10, y + 12, 2, 1, PAL.ink);
+    if (v.mode === 'stay' && t % 2 < 1.2) S.drawBubble(g, x + 7, y - 11, 'money');
+  }
+
+  // ---------------------------------------------------------------- mascota
+
+  updatePet(s, layout, dt, speed) {
+    const bed = layout.items.find((it) => it.id === 'pet');
+    if (!bed) {
+      this.pet = null;
+      return;
+    }
+    const home = { x: bed.x + 2, y: bed.y };
+    let p = this.pet;
+    if (!p || p.bed !== bed.uid) p = this.pet = { bed: bed.uid, x: home.x, y: home.y, mode: 'sleep', timer: 4 + Math.random() * 6, left: false, love: 0 };
+    p.love = Math.max(0, p.love - dt);
+    if (this.edit) {
+      Object.assign(p, { mode: 'sleep', x: home.x, y: home.y, timer: 3 });
+      return;
+    }
+    if (speed === 0) return;
+    const mult = [0, 1, 1.4, 1.8][speed] || 1;
+    if (p.mode === 'walk') {
+      const dx = p.tx - p.x;
+      const dy = p.ty - p.y;
+      const d = Math.hypot(dx, dy);
+      const v = 22 * mult * dt;
+      if (d <= v) {
+        p.x = p.tx;
+        p.y = p.ty;
+        p.mode = p.home ? 'sleep' : 'sit';
+        p.timer = p.home ? 8 + Math.random() * 8 : 3 + Math.random() * 4;
+      } else {
+        p.x += (dx / d) * v;
+        p.y += (dy / d) * v;
+        p.left = dx < 0;
+      }
+      return;
+    }
+    p.timer -= dt * mult;
+    if (p.timer > 0) return;
+    // Siguiente paseo: visitar a alguien, dar una vuelta o volver a la cama.
+    const r = Math.random();
+    const busy = new Set(s.employees.filter((e) => !e.region && !e.traits.includes('remote')).map((e) => e.desk));
+    const desks = layout.desks.filter((_, i) => busy.has(i));
+    let to;
+    p.home = false;
+    if (p.mode !== 'sleep' && r < 0.3) {
+      to = home;
+      p.home = true;
+    } else if (desks.length && r < 0.8) {
+      const d = desks[Math.floor(Math.random() * desks.length)];
+      to = { x: d.x + 8, y: d.y + 20 };
+    } else {
+      to = { x: this.L.loungeX + Math.random() * Math.max(10, this.L.W - this.L.loungeX - 24), y: WALL + 8 + Math.random() * 60 };
+    }
+    p.tx = to.x;
+    p.ty = to.y;
+    p.mode = 'walk';
+  }
+
+  // Tocar al perro: se despierta y pide mimos.
+  petLove() {
+    if (!this.pet) return;
+    this.pet.love = 1.8;
+    if (this.pet.mode === 'sleep') this.pet.timer = 0;
+  }
+
+  drawPet(g, t) {
+    const p = this.pet;
+    const x = Math.round(p.x);
+    const y = Math.round(p.y);
+    g.fillStyle = 'rgba(14,10,30,.25)';
+    g.fillRect(x + 2, y + 9, 10, 1);
+    const pose = p.mode === 'walk' ? (Math.floor(t * 8) % 2 ? 'w1' : 'w0') : 'sit';
+    S.drawDog(g, x, y, this.petCoat, pose, p.left);
+    this.hits.push({ id: 'pet', x: x - 1, y: y - 1, w: 15, h: 11 });
+    if (p.love > 0) S.drawBubble(g, x + 6, y - 10, 'heart');
+  }
+
   // ---------------------------------------------------------------- fondo
 
-  ensureLayout(s) {
+  ensureView(s) {
     if (s.office.tier !== this.tier) {
       this.tier = s.office.tier;
-      this.L = layout(this.tier);
+      const o = OFFICES[this.tier];
+      this.L = { o, W: o.w, H: o.h, theme: THEMES[o.theme], loungeX: loungeX(this.tier), room: serverRoom(this.tier) };
       this.world.width = this.L.W;
       this.world.height = this.L.H;
       this.bg.width = this.L.W;
       this.bg.height = this.L.H;
+      this.shadeLayer.width = this.L.W;
+      this.shadeLayer.height = this.L.H;
+      paintVignette(this.shadeLayer.getContext('2d'), this.L);
       this.bgKey = '';
       this.people.clear();
+      this.pet = null;
+      this.visitors = [];
       this.canvas.parentElement?.style.setProperty('--office-ar', `${this.L.W} / ${this.L.H}`);
       this.userZoom = false;
       this.resize();
     }
-    const key = JSON.stringify([this.tier, s.office.perks, s.company]);
+    const key = this.tier + ':' + s.company;
     if (key !== this.bgKey) {
       this.bgKey = key;
-      this.placePerks(s);
+      this.petCoat = S.DOG_COATS[strHash(s.company) % S.DOG_COATS.length];
       this.drawBackground(s);
     }
   }
 
-  placePerks(s) {
-    const L = this.L;
-    const P = s.office.perks;
-    const pos = {};
-    let x = L.loungeX + 30;
-    for (const id of Object.keys(WALL_ITEMS)) {
-      const n = id === 'arcade' ? P.arcade || 0 : P[id] ? 1 : 0;
-      for (let i = 0; i < n; i++) {
-        (pos[id] ||= []).push({ x, y: WALL + 24 - (id === 'coffee' ? 20 : id === 'robot' ? 20 : 24) });
-        x += WALL_ITEMS[id] + 5;
-      }
-    }
-    const plants = [{ x: 2, y: WALL + 12 }, { x: L.loungeX + 12, y: WALL + 12 }, { x: L.W - 14, y: WALL + 12 }];
-    pos.plant = plants.slice(0, P.plant || 0);
-    let fx = L.loungeX + 4;
-    let fy = WALL + 40;
-    let rowH = 0;
-    for (const id of Object.keys(FLOOR_ITEMS)) {
-      if (!P[id]) continue;
-      const [w, h] = FLOOR_ITEMS[id];
-      const n = P[id];
-      for (let i = 0; i < n; i++) {
-        if (fx + w > L.W - 6) {
-          fx = L.loungeX + 4;
-          fy += rowH + 12;
-          rowH = 0;
-        }
-        (pos[id] ||= []).push({ x: fx, y: fy + (id === 'podcast' ? 8 : 0) });
-        fx += w + 8;
-        rowH = Math.max(rowH, h + (id === 'podcast' ? 8 : 0));
-      }
-    }
-    this.perkPos = pos;
-    this.usePoints = [];
-    for (const id of BREAK_PERKS) {
-      for (const p of pos[id] || []) {
-        const w = WALL_ITEMS[id] || FLOOR_ITEMS[id]?.[0] || 12;
-        const h = FLOOR_ITEMS[id]?.[1] || 24;
-        const floor = !!FLOOR_ITEMS[id];
-        this.usePoints.push({ x: p.x + w / 2 - 5, y: floor ? p.y + h - 6 : WALL + 24 });
-      }
-    }
-  }
-
   drawBackground(s) {
-    const L = this.L;
-    const T = L.theme;
-    const g = this.bg.getContext('2d');
-    g.clearRect(0, 0, L.W, L.H);
-    // Suelo
-    for (let y = WALL; y < L.H; y += 8) {
-      for (let x = 0; x < L.W; x += 16) {
-        const alt = ((x / 16) + (y / 8)) % 2 === 0;
-        S.R(g, x, y, 16, 8, T.floor[alt ? 0 : 1]);
-      }
-    }
-    if (L.o.theme === 'cowork' || L.o.theme === 'loft') {
-      for (let y = WALL; y < L.H; y += 8) S.R(g, 0, y, L.W, 1, S.shade(T.floor[0], -0.15));
-    }
-    if (L.o.theme === 'orbital') {
-      for (let y = WALL + 4; y < L.H; y += 16) for (let x = 4; x < L.W; x += 16) S.R(g, x, y, 1, 1, PAL.silver);
-    }
-    if (L.o.theme === 'campus') {
-      S.R(g, L.loungeX - 4, WALL + 30, L.W - L.loungeX, L.H - WALL - 34, '#f6c177');
-      S.R(g, L.loungeX - 2, WALL + 32, L.W - L.loungeX - 4, L.H - WALL - 38, '#f8d49a');
-    }
-    // Pared
-    S.R(g, 0, 0, L.W, WALL, T.wall);
-    if (L.o.theme === 'loft') {
-      for (let y = 0; y < WALL; y += 4) {
-        const off = (y / 4) % 2 ? 4 : 0;
-        for (let x = -off; x < L.W; x += 8) S.R(g, x + 7, y, 1, 4, T.trim);
-        S.R(g, 0, y + 3, L.W, 1, T.trim);
-      }
-    }
-    S.R(g, 0, WALL - 3, L.W, 3, T.trim);
-    S.R(g, 0, WALL, L.W, 1, S.shade(T.floor[0], -0.3));
-    // Rótulo de la empresa sobre la zona de mesas
-    const name = s.company.slice(0, 18);
-    const tw = S.textWidth(name, 1);
-    const sx = Math.max(4, L.x0 + (L.cols * CW) / 2 - tw / 2 - 4);
-    S.R(g, sx, 6, tw + 8, 11, PAL.ink);
-    S.R(g, sx + 1, 7, tw + 6, 9, PAL.navy);
-    S.drawText(g, name, sx + 4, 9, PAL.yellow);
-    if (L.o.theme === 'garage') {
-      this.drawGarageStuff(g);
-      // Puerta de garaje
-      const gx = L.loungeX + 8;
-      const gw = Math.min(90, L.W - gx - 10);
-      S.R(g, gx, 4, gw, WALL - 7, '#8a96a8');
-      for (let y = 6; y < WALL - 4; y += 4) S.R(g, gx, y, gw, 1, '#6f7b8e');
-      S.R(g, gx + gw / 2 - 4, WALL - 8, 8, 2, PAL.ink);
-    } else {
-      this.windows = [];
-      const start = L.loungeX + 4;
-      for (let x = start; x + 38 < L.W - 4; x += 48) this.windows.push({ x, y: 7, w: 38, h: 26 });
-    }
-    // Tablón de corcho con notas en garaje/coworking; póster en el resto
-    if (L.o.theme === 'garage' || L.o.theme === 'cowork') {
-      S.R(g, 4, 20, 22, 16, '#b86f50');
-      S.R(g, 6, 22, 5, 5, PAL.yellow);
-      S.R(g, 13, 23, 5, 5, PAL.cyan);
-      S.R(g, 19, 22, 5, 5, '#ff6b8b');
-      S.R(g, 8, 29, 5, 5, PAL.lime);
-    } else S.drawPoster(g, 6, 20);
-  }
-
-  // El garaje de tus padres: coche, cajas y una bici. Solo decorado.
-  drawGarageStuff(g) {
-    const L = this.L;
-    const cx = L.loungeX + 44;
-    const cy = WALL + 62;
-    S.R(g, cx + 6, cy + 26, 50, 3, 'rgba(26,28,44,.35)');
-    S.R(g, cx + 14, cy + 20, 10, 4, 'rgba(26,28,44,.25)');
-    S.R(g, cx + 12, cy, 32, 10, PAL.red);
-    S.R(g, cx + 15, cy + 2, 11, 7, PAL.cyan);
-    S.R(g, cx + 28, cy + 2, 11, 7, PAL.cyan);
-    S.R(g, cx + 16, cy + 3, 3, 2, PAL.white);
-    S.R(g, cx + 2, cy + 10, 54, 11, PAL.red);
-    S.R(g, cx + 2, cy + 10, 54, 2, '#d0566b');
-    S.R(g, cx + 2, cy + 17, 54, 2, '#8a2f41');
-    S.R(g, cx + 2, cy + 12, 4, 3, PAL.yellow);
-    S.R(g, cx + 52, cy + 12, 4, 3, PAL.orange);
-    for (const wx of [cx + 8, cx + 40]) {
-      S.R(g, wx, cy + 18, 10, 9, PAL.ink);
-      S.R(g, wx + 3, cy + 21, 4, 3, PAL.slate);
-    }
-    // Cajas de mudanza apiladas
-    const bx = 2;
-    const by = L.H - 28;
-    for (const [dx, dy, w, h] of [[0, 12, 16, 12], [16, 14, 14, 10], [3, 0, 12, 12]]) {
-      S.R(g, bx + dx, by + dy, w, h, '#c98a60');
-      S.R(g, bx + dx, by + dy, w, 2, '#e0a878');
-      S.R(g, bx + dx + w / 2 - 1, by + dy, 2, h, '#e8d0a0');
-    }
-    // Bici apoyada en la pared
-    const kx = L.W - 34;
-    const ky = WALL + 8;
-    for (const wx of [kx, kx + 16]) {
-      S.R(g, wx, ky + 4, 9, 1, PAL.ink);
-      S.R(g, wx, ky + 12, 9, 1, PAL.ink);
-      S.R(g, wx, ky + 5, 1, 7, PAL.ink);
-      S.R(g, wx + 8, ky + 5, 1, 7, PAL.ink);
-    }
-    S.R(g, kx + 4, ky + 3, 17, 1, PAL.sky);
-    S.R(g, kx + 11, ky, 1, 8, PAL.sky);
-    S.R(g, kx + 9, ky - 1, 5, 2, PAL.ink);
-    S.R(g, kx + 20, ky - 2, 1, 6, PAL.sky);
+    const { windows, clock } = paintBackground(this.bg.getContext('2d'), this.L, s);
+    this.windows = windows;
+    this.clockPos = clock;
   }
 
   // ---------------------------------------------------------------- personas
@@ -431,32 +551,43 @@ export class OfficeView {
   personPos(e) {
     const st = this.people.get(e.id);
     if (st && st.mode !== 'desk') return { x: st.x, y: st.y };
-    const d = this.L.desks[e.desk];
+    const d = this.s?.office.layout.desks[e.desk];
     if (!d) return null;
-    return { x: d.x + 9, y: d.y + 1 };
+    return { x: d.x + 10, y: d.y + 1 };
   }
 
-  updatePeople(s, dt, speed) {
+  usePoints(layout) {
+    const pts = [];
+    for (const it of layout.items) {
+      if (!BREAK.has(it.id)) continue;
+      const r = itemRect(it);
+      pts.push({ x: r.x + r.w / 2 - 5, y: Math.max(WALL + 2, r.y + r.h - 14) });
+    }
+    return pts;
+  }
+
+  updatePeople(s, layout, dt, speed) {
     const alive = new Set();
     const mult = [0, 1, 1.5, 2.2][speed] || 1;
+    const points = this.usePoints(layout);
     for (const e of s.employees) {
-      if (e.traits.includes('remote')) continue;
+      if (e.traits.includes('remote') || e.region) continue;
       alive.add(e.id);
-      const d = this.L.desks[e.desk];
+      const d = layout.desks[e.desk];
       if (!d) continue;
       let st = this.people.get(e.id);
-      const home = { x: d.x + 9, y: d.y - 2 };
+      const home = { x: d.x + 10, y: d.y - 2 };
       if (!st) {
         st = { mode: 'desk', x: home.x, y: home.y, tx: 0, ty: 0, timer: 0, phase: Math.random() * 10 };
         this.people.set(e.id, st);
       }
-      if (e.off > 0) {
+      if (e.off > 0 || this.edit) {
         st.mode = 'desk';
         continue;
       }
       if (st.mode === 'desk') {
-        if (speed > 0 && this.usePoints.length && e.energy < 88 && Math.random() < dt * 0.025 * mult) {
-          const p = this.usePoints[Math.floor(Math.random() * this.usePoints.length)];
+        if (speed > 0 && points.length && e.energy < 88 && Math.random() < dt * 0.025 * mult) {
+          const p = points[Math.floor(Math.random() * points.length)];
           st.mode = 'walk';
           st.x = home.x;
           st.y = home.y + 8;
@@ -471,6 +602,10 @@ export class OfficeView {
           st.ty = home.y + 8;
         }
       } else {
+        if (st.mode === 'return') {
+          st.tx = home.x;
+          st.ty = home.y + 8;
+        }
         const dx = st.tx - st.x;
         const dy = st.ty - st.y;
         const dist = Math.hypot(dx, dy);
@@ -494,52 +629,76 @@ export class OfficeView {
   // ---------------------------------------------------------------- dibujo
 
   frame(s, dt, speed) {
+    this.s = s;
     this.t += dt;
-    this.ensureLayout(s);
-    this.updatePeople(s, dt, speed);
+    this.ensureView(s);
+    const layout = this.viewLayout();
+    this.updatePeople(s, layout, dt, speed);
+    this.updatePet(s, layout, dt, speed);
+    this.updateVisitors(dt);
+    this.crisis = s.money < 0;
     const L = this.L;
     const g = this.wctx;
     const t = this.t;
+    const dragRef = this.drag?.moved ? this.drag.ref : null;
     g.drawImage(this.bg, 0, 0);
-    this.drawWindows(g, s, t);
+    paintWindows(g, L, s, t, this.windows);
     this.drawWallDecor(g, s, t);
+    this.drawRacks(g, s, t);
+    if (this.partyUntil > t) S.drawGarland(g, L.W, 3, t);
+    if (this.edit) this.drawGrid(g);
     this.hits = [];
+    this.editHits = [];
 
-    // Objetos de pared (de pie contra la pared)
-    const P = this.perkPos;
-    for (const p of P.coffee || []) S.drawCoffee(g, p.x, p.y, t);
-    for (const p of P.snacks || []) S.drawVending(g, p.x, p.y, t);
-    for (const p of P.arcade || []) S.drawArcade(g, p.x, p.y, t);
-    for (const p of P.library || []) S.drawBookshelf(g, p.x, p.y);
-    for (const p of P.robot || []) S.drawRobot(g, p.x, p.y, t);
-    for (const p of P.plant || []) S.drawPlant(g, p.x, p.y, t);
-
-    // Objetos de suelo y servidores ordenados por profundidad junto a la gente
-    const drawables = [];
-    for (const [id, list] of Object.entries(P)) {
-      if (!FLOOR_ITEMS[id]) continue;
-      for (const p of list) drawables.push({ y: p.y + FLOOR_ITEMS[id][1], draw: () => this.drawFloorItem(g, id, p, t) });
+    for (const it of layout.items) {
+      if (!isWall(it.id)) continue;
+      drawItem(g, it.id, it.x, it.y, t);
+      this.editHits.push({ ref: 'i:' + it.uid, ...itemRect(it) });
     }
-    this.queueRacks(s, drawables, t);
+    for (const it of layout.items) {
+      if (!FLAT.has(it.id)) continue;
+      drawItem(g, it.id, it.x, it.y, t);
+      this.editHits.push({ ref: 'i:' + it.uid, ...itemRect(it) });
+    }
 
+    const drawables = [];
+    for (const it of layout.items) {
+      if (isWall(it.id) || FLAT.has(it.id)) continue;
+      const r = itemRect(it);
+      const draw = () => {
+        S.floorShadow(g, r.x, r.y + r.h - 1, r.w);
+        if (it.id === 'pet') {
+          const asleep = !this.pet || this.pet.mode === 'sleep';
+          S.drawDogBed(g, it.x, it.y, this.petCoat, asleep, t);
+          if (asleep && this.pet) this.hits.push({ id: 'pet', x: r.x, y: r.y, w: r.w, h: r.h });
+          if (asleep && this.pet?.love > 0) S.drawBubble(g, it.x + 8, it.y - 10, 'heart');
+        } else drawItem(g, it.id, it.x, it.y, t);
+      };
+      drawables.push({ y: r.y + r.h, ref: 'i:' + it.uid, rect: r, draw });
+    }
     const byDesk = new Map();
-    for (const e of s.employees) if (!e.traits.includes('remote')) byDesk.set(e.desk, e);
-    L.desks.forEach((d, i) => {
-      const e = byDesk.get(i);
-      drawables.push({ y: d.y + 24, draw: () => this.drawDesk(g, s, d, e, t) });
+    for (const e of s.employees) if (!e.traits.includes('remote') && !e.region) byDesk.set(e.desk, e);
+    layout.desks.forEach((d, i) => {
+      drawables.push({ y: d.y + 24, ref: 'd:' + i, rect: deskRect(d), draw: () => this.drawDesk(g, d, byDesk.get(i), t, i) });
     });
     for (const e of s.employees) {
       const st = this.people.get(e.id);
       if (!st || st.mode === 'desk' || e.off > 0) continue;
       drawables.push({ y: st.y + 18, draw: () => this.drawWalker(g, e, st, t) });
     }
+    if (this.pet && this.pet.mode !== 'sleep' && !this.edit) drawables.push({ y: this.pet.y + 9, draw: () => this.drawPet(g, t) });
+    for (const v of this.visitors) drawables.push({ y: v.y + 18, draw: () => this.drawVisitor(g, v, t) });
     drawables.sort((a, b) => a.y - b.y);
-    for (const d of drawables) d.draw();
+    for (const d of drawables) {
+      d.draw();
+      if (d.ref) this.editHits.push({ ref: d.ref, ...d.rect });
+    }
 
+    this.drawLights(g, layout, t);
+    if (this.edit) this.drawEditOverlay(g, layout, dragRef);
     this.drawEffects(g, dt);
-    this.drawLabel(g, s);
+    if (!this.edit) this.drawLabel(g, s);
 
-    // Volcado al canvas visible
     const c = this.ctx;
     c.imageSmoothingEnabled = false;
     c.fillStyle = L.theme.bg;
@@ -547,143 +706,171 @@ export class OfficeView {
     const z = this.zoom;
     const sw = Math.min(L.W, this.viewW());
     const sh = Math.min(L.H, this.viewH());
-    c.drawImage(this.world, this.cam.x, this.cam.y, sw, sh, this.offX(), this.offY(), sw * z, sh * z);
-  }
-
-  drawWindows(g, s, t) {
-    if (!this.windows) return;
-    const L = this.L;
-    const m = dateOf(s.day).m;
-    const theme = L.o.theme;
-    const sky = theme === 'orbital' ? '#05060c' : m === 11 || m <= 1 ? '#b8cde0' : m >= 5 && m <= 7 ? '#41a6f6' : m >= 8 && m <= 10 ? '#f2a36b' : '#73cff7';
-    for (const w of this.windows) {
-      S.R(g, w.x - 2, w.y - 2, w.w + 4, w.h + 4, L.theme.trim);
-      S.R(g, w.x, w.y, w.w, w.h, sky);
-      if (theme === 'orbital') {
-        for (let i = 0; i < 9; i++) {
-          const sx = w.x + ((i * 13 + Math.floor(t * 2)) % w.w);
-          S.R(g, sx, w.y + ((i * 7) % w.h), 1, 1, i % 3 ? PAL.white : PAL.cyan);
-        }
-        const ex = w.x + ((w.x + t * 1.5) % (w.w + 20)) - 10;
-        S.R(g, ex, w.y + 14, 10, 8, PAL.blue);
-        S.R(g, ex + 2, w.y + 15, 4, 3, PAL.green);
-      } else {
-        const cx = w.x + ((w.x * 3 + t * 3) % (w.w + 16)) - 12;
-        g.save();
-        g.beginPath();
-        g.rect(w.x, w.y, w.w, w.h);
-        g.clip();
-        S.R(g, cx, w.y + 5, 12, 3, PAL.white);
-        S.R(g, cx + 3, w.y + 3, 6, 2, PAL.white);
-        if (theme === 'tower') {
-          for (let i = 0; i < 6; i++) S.R(g, w.x + i * 7, w.y + w.h - 6 - ((i * 5) % 9), 6, 20, i % 2 ? '#29366f' : '#333c57');
-          for (let i = 0; i < 6; i++) S.R(g, w.x + i * 7 + 2, w.y + w.h - 4 - ((i * 3) % 5), 1, 1, PAL.yellow);
-        } else if (theme === 'campus') {
-          S.R(g, w.x, w.y + w.h - 5, w.w, 5, PAL.green);
-          S.R(g, w.x + 6, w.y + w.h - 11, 5, 7, '#2a8c50');
-          S.R(g, w.x + 26, w.y + w.h - 9, 5, 5, '#2a8c50');
-        } else {
-          S.R(g, w.x, w.y + w.h - 4, w.w, 4, '#8fa5b8');
-        }
-        if (m === 11 || m <= 1) {
-          for (let i = 0; i < 6; i++) S.R(g, w.x + ((i * 11 + t * 4) % w.w), w.y + ((i * 9 + t * 8) % w.h), 1, 1, PAL.white);
-        }
-        g.restore();
-      }
-      S.R(g, w.x + w.w / 2, w.y, 1, w.h, L.theme.trim);
+    const ox = this.offX();
+    const oy = this.offY();
+    // Si sobra hueco alrededor de la oficina: trama de puntos y sombra.
+    if (ox > 0 || oy > 0) {
+      c.fillStyle = this.dots();
+      c.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      const d = Math.max(3, Math.round(z * 3));
+      c.fillStyle = 'rgba(0,0,0,.35)';
+      c.fillRect(ox + d, oy + d, sw * z, sh * z);
     }
+    c.drawImage(this.world, this.cam.x, this.cam.y, sw, sh, ox, oy, sw * z, sh * z);
   }
 
+  dots() {
+    if (!this.pattern) {
+      const p = document.createElement('canvas');
+      p.width = p.height = 14;
+      const pg = p.getContext('2d');
+      pg.fillStyle = 'rgba(255,255,255,.06)';
+      pg.fillRect(0, 0, 2, 2);
+      this.pattern = this.ctx.createPattern(p, 'repeat');
+    }
+    return this.pattern;
+  }
+
+  drawGrid(g) {
+    const L = this.L;
+    g.fillStyle = 'rgba(244,244,244,.18)';
+    for (let y = WALL + 4; y < L.H; y += 8) for (let x = 4; x < L.W; x += 8) g.fillRect(x, y, 1, 1);
+    const r = L.room;
+    g.fillStyle = 'rgba(177,62,83,.35)';
+    for (let y = r.y; y < r.y + r.h; y += 2) for (let x = r.x; x < r.x + r.w; x += 2) if ((x + y) % 8 === 0) g.fillRect(x, y, 2, 2);
+  }
+
+  // Ánimo y ruido de cada mesa, selección, radio de efecto y vista previa.
+  drawEditOverlay(g, layout, dragRef) {
+    layout.desks.forEach((d, i) => {
+      const fx = deskEffects(layout, i);
+      let x = d.x + 3;
+      if (fx.comfort) {
+        const txt = '+' + fx.comfort;
+        S.R(g, x - 1, d.y - 8, S.textWidth(txt) + 2, 7, PAL.ink);
+        S.drawText(g, txt, x, d.y - 7, PAL.lime);
+        x += S.textWidth(txt) + 4;
+      }
+      if (fx.noise) {
+        const txt = '-' + Math.round(fx.noise * 100) + '%';
+        S.R(g, x - 1, d.y - 8, S.textWidth(txt) + 2, 7, PAL.ink);
+        S.drawText(g, txt, x, d.y - 7, '#ff6b8b');
+      }
+    });
+    const ref = dragRef || this.editSel;
+    const r = ref && getRef(layout, ref);
+    if (!r) return;
+    const rect = r.kind === 'desk' ? deskRect(r.obj) : itemRect(r.obj);
+    const p = PERKS[r.id];
+    if (p && (p.near || p.noise)) {
+      g.save();
+      g.strokeStyle = p.noise ? '#ff6b8b' : PAL.lime;
+      g.lineWidth = 1;
+      g.setLineDash([2, 3]);
+      g.beginPath();
+      g.arc(rect.x + rect.w / 2, rect.y + rect.h / 2, NEAR_RADIUS, 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
+    }
+    if (dragRef) {
+      g.fillStyle = this.drag.valid ? 'rgba(167,240,112,.3)' : 'rgba(177,62,83,.45)';
+      g.fillRect(rect.x, rect.y, rect.w, rect.h);
+    }
+    this.outline(g, rect.x, rect.y, rect.w, rect.h);
+  }
+
+  // Reloj y pantalla de videollamada con el equipo en remoto.
   drawWallDecor(g, s, t) {
-    const L = this.L;
-    if (s.office.perks.whiteboard) S.drawWhiteboard(g, L.x0 + L.cols * CW - 34, 20);
-    if (s.office.perks.ac) S.drawAC(g, L.W - 30, 2, t);
-    S.drawClock(g, L.loungeX + 12, 20, t);
-    const remote = s.employees.filter((e) => e.traits.includes('remote')).length;
-    if (remote) {
-      const x = 32;
-      S.R(g, x, 19, 30, 19, PAL.ink);
-      S.R(g, x + 1, 20, 28, 14, PAL.navy);
-      const shown = Math.min(remote, 6);
-      for (let i = 0; i < shown; i++) {
-        const fx = x + 2 + (i % 3) * 9;
-        const fy = 21 + Math.floor(i / 3) * 7;
-        S.R(g, fx, fy, 8, 6, PAL.dark);
-        S.R(g, fx + 3, fy + 1, 3, 3, ['#f6d2b5', '#c98a60', '#9a5f3c'][i % 3]);
-        S.R(g, fx + 2, fy + 4, 5, 2, [PAL.sky, PAL.orange, PAL.lime][i % 3]);
-      }
-      S.drawText(g, String(remote), x + 12, 34, PAL.white);
-    }
+    if (this.clockPos) S.drawClock(g, this.clockPos.x, this.clockPos.y, t);
+    const remote = s.employees.filter((e) => e.traits.includes('remote') || e.region);
+    if (!remote.length) return;
+    const x = 32;
+    S.R(g, x - 1, 18, 32, 21, PAL.ink);
+    S.R(g, x, 18, 30, 1, PAL.slate);
+    S.R(g, x + 1, 20, 28, 14, '#10131f');
+    const shown = remote.slice(0, 6);
+    shown.forEach((e, i) => {
+      const fx = x + 2 + (i % 3) * 9;
+      const fy = 21 + Math.floor(i / 3) * 6;
+      S.R(g, fx, fy, 8, 5, i % 2 ? '#2b3a55' : '#33456a');
+      S.R(g, fx + 2, fy + 1, 4, 3, e.looks.skin);
+      S.R(g, fx + 2, fy, 4, 1, e.looks.hair);
+      S.R(g, fx + 1, fy + 4, 6, 1, ROLES[e.role].color);
+      if ((t + i) % 5 < 0.2) S.R(g, fx, fy, 8, 5, 'rgba(115,239,247,.35)');
+    });
+    S.R(g, x + 1, 34, 28, 4, PAL.dark);
+    S.drawText(g, String(remote.length), x + 3, 34, PAL.lime);
+    S.px(g, x + 26, 35, (t % 1) < 0.5 ? PAL.red : '#6b2233');
   }
 
-  drawFloorItem(g, id, p, t) {
-    switch (id) {
-      case 'sofa': return S.drawSofa(g, p.x, p.y);
-      case 'foosball': return S.drawFoosball(g, p.x, p.y, t);
-      case 'ballpit': return S.drawBallpit(g, p.x, p.y);
-      case 'gym': return S.drawGym(g, p.x, p.y, t);
-      case 'nappods': return S.drawNapPod(g, p.x, p.y);
-      case 'chef': return S.drawChef(g, p.x, p.y, t);
-      case 'podcast': return S.drawPodcast(g, p.x, p.y, t);
+  // Halos de luz de las lámparas y viñeta final.
+  drawLights(g, layout, t) {
+    g.globalCompositeOperation = 'lighter';
+    for (const it of layout.items) {
+      if (it.id !== 'lamp' || (t + it.x) % 9 <= 0.15) continue;
+      g.drawImage(S.glowSprite('rgba(255,196,110,.38)', 26), it.x + 4 - 26, it.y + 5 - 26);
     }
+    const r = this.L.room;
+    if (this.s.infra.racks) g.drawImage(S.glowSprite('rgba(65,166,246,.12)', 30), r.x + r.w - 50, r.y - 10);
+    g.globalCompositeOperation = 'source-over';
+    g.drawImage(this.shadeLayer, 0, 0);
   }
 
-  queueRacks(s, drawables, t) {
+  // Racks alineados a la derecha; a la izquierda quedan el rótulo y el contador.
+  drawRacks(g, s, t) {
     const n = s.infra.racks;
     if (!n) return;
-    const L = this.L;
-    const max = Math.max(2, Math.floor((L.W - L.loungeX - 30) / 14));
+    const r = this.L.room;
+    const label = S.textWidth('SERVIDORES') + 12;
+    const max = Math.max(1, Math.floor((r.w - label - 4) / 14));
     const shown = Math.min(n, max);
-    const y = L.H - 30;
-    const x0 = L.W - 8 - shown * 14;
-    drawables.push({
-      y: L.H,
-      draw: () => {
-        S.R(this.wctx, x0 - 3, y - 3, shown * 14 + 4, 29, 'rgba(26,28,44,.35)');
-        for (let i = 0; i < shown; i++) S.drawRack(this.wctx, x0 + i * 14, y, t, i);
-        if (n > shown) S.drawText(this.wctx, '+' + (n - shown), x0 - 3, y - 9, PAL.lime);
-      },
-    });
+    const x0 = r.x + r.w - 4 - shown * 14;
+    for (let i = 0; i < shown; i++) S.drawRack(g, x0 + i * 14, r.y + 8, t, i);
+    if (n > shown) S.drawText(g, '+' + (n - shown), r.x + 6, r.y + 16, PAL.lime);
   }
 
-  drawDesk(g, s, d, e, t) {
+  drawDesk(g, d, e, t, i) {
     const T = this.L.theme;
     const cx = d.x;
     const cy = d.y;
     const st = e && this.people.get(e.id);
     const seated = e && e.off <= 0 && (!st || st.mode === 'desk');
-    S.drawChair(g, cx + 8, cy + 5, T.chair);
+    const phase = st?.phase || 0;
+    const working = !!e && !(MAKERS_VIEW.includes(e.role) && !e.assign);
+    const busy = seated && working && !this.edit;
+    S.floorShadow(g, cx + 2, cy + 27, 24);
+    // Con la mesa vacía la silla queda metida bajo el tablero.
+    S.drawChair(g, cx + 8, seated ? cy + 4 : cy + 8, T.chair);
     const roleColor = e ? ROLES[e.role].color : PAL.slate;
+    const cheer = seated && this.partyUntil > t && !this.edit;
     if (seated) {
-      const working = !(['founder', 'dev', 'design', 'ai', 'marketer', 'pm'].includes(e.role) && !e.assign);
-      const phase = st?.phase || 0;
-      const bob = working && Math.sin(t * 6 + phase) > 0.7 ? 1 : 0;
-      S.drawSeated(g, cx + 9, cy + 1 + bob, e.looks, roleColor, t + phase, e.mood);
-      this.hits.push({ id: e.id, x: cx + 7, y: cy - 2, w: 14, h: 20 });
+      const bob = cheer ? (Math.sin(t * 10 + phase * 3) > 0 ? 2 : 0) : busy && Math.sin(t * 6 + phase) > 0.7 ? 1 : 0;
+      S.drawSeated(g, cx + 9, cy - 1 + bob, e.looks, roleColor, t + phase, e.mood, e.role);
+      this.hits.push({ id: e.id, x: cx + 8, y: cy - 2, w: 14, h: 20 });
     }
     S.drawDesk(g, cx + 2, cy + 14, T.desk[0], T.desk[1]);
-    S.drawMonitor(g, cx + 3, cy + 6, S.shade(roleColor, 0.25), !!seated);
+    S.drawMonitor(g, cx + 1, cy + 6, S.shade(roleColor, 0.25), !!seated, t + phase, i, busy);
+    S.drawDeskProp(g, cx + 22, cy + 11, i % 7, t + phase, busy);
     if (seated) {
-      S.R(g, cx + 10, cy + 14, 8, 2, PAL.silver);
-      const working = !(['founder', 'dev', 'design', 'ai', 'marketer', 'pm'].includes(e.role) && !e.assign);
-      const phase = st?.phase || 0;
-      const k = working ? Math.floor((t + phase) * 8) % 2 : 0;
-      S.R(g, cx + 9, cy + 13 - k, 2, 2, e.looks.skin);
-      S.R(g, cx + 17, cy + 12 + k, 2, 2, e.looks.skin);
-      S.R(g, cx + 20, cy + 12, 3, 3, PAL.white);
-      S.R(g, cx + 23, cy + 13, 1, 1, PAL.white);
-      const icon = this.statusIcon(e, t + phase);
-      if (icon) S.drawBubble(g, cx + 15, cy - 9, icon);
+      S.R(g, cx + 11, cy + 14, 8, 2, '#c9d3dc');
+      S.R(g, cx + 11, cy + 15, 8, 1, PAL.slate);
+      const k = busy ? Math.floor((t + phase) * 8) % 2 : 0;
+      S.R(g, cx + 11, cy + 13 - k, 2, 2, e.looks.skin);
+      S.R(g, cx + 17, cy + 13 - (1 - k), 2, 2, S.shade(e.looks.skin, -0.12));
+      const icon = cheer ? (phase % 2 < 1 ? 'star' : 'heart') : !this.edit && this.statusIcon(e, t + phase);
+      if (icon) S.drawBubble(g, cx + 17, cy - 10, icon);
     } else if (e && e.off > 0) {
-      S.drawBubble(g, cx + 11, cy + 2, 'palm');
+      S.drawBubble(g, cx + 12, cy + 2, 'palm');
     }
-    if (e && this.selected === e.id) this.outline(g, cx + 8, cy, 12, 18);
+    if (e && this.selected === e.id && !this.edit) this.outline(g, cx + 9, cy - 1, 12, 18);
   }
 
   statusIcon(e, t) {
     if (e.energy < 25) return 'zz';
     if (e.mood < 30) return 'bang';
-    if (['founder', 'dev', 'design', 'ai', 'marketer', 'pm'].includes(e.role) && !e.assign) return (t % 3) < 2 ? 'q' : null;
+    // Con la empresa en números rojos, el equipo suda.
+    if (this.crisis && (t + e.id) % 7 < 1.2) return 'sweat';
+    if (MAKERS_VIEW.includes(e.role) && !e.assign) return t % 3 < 2 ? 'q' : null;
     if (e.role === 'research' && t % 7 < 1.2) return 'bulb';
     if (e.mood > 85 && t % 9 < 1) return 'heart';
     return null;
@@ -691,12 +878,15 @@ export class OfficeView {
 
   drawWalker(g, e, st, t) {
     const moving = st.mode !== 'break';
-    const frame = moving ? Math.floor(t * 8) % 2 : 0;
+    const frame = moving ? Math.floor(t * 8) % 2 : 'idle';
     const x = Math.round(st.x);
     const y = Math.round(st.y);
-    S.R(g, x + 1, y + 18, 8, 1, 'rgba(26,28,44,.3)');
-    S.drawStanding(g, x, y, e.looks, ROLES[e.role].color, frame, t, e.mood);
-    if (st.mode === 'break' && t % 4 < 1.5) S.drawBubble(g, x + 6, y - 10, e.energy < 40 ? 'zz' : 'heart');
+    g.fillStyle = 'rgba(14,10,30,.28)';
+    g.fillRect(x, y + 19, 10, 1);
+    g.fillRect(x + 1, y + 20, 8, 1);
+    S.drawStanding(g, x - 1, y - 2, e.looks, ROLES[e.role].color, frame, t + (st.phase || 0), e.mood, e.role);
+    if (this.partyUntil > t) S.drawBubble(g, x + 7, y - 11, 'star');
+    else if (st.mode === 'break' && (t + (st.phase || 0)) % 4 < 1.5) S.drawBubble(g, x + 7, y - 11, e.energy < 40 ? 'zz' : 'heart');
     this.hits.push({ id: e.id, x: x - 1, y: y - 2, w: 12, h: 21 });
     if (this.selected === e.id) this.outline(g, x - 1, y - 2, 12, 21);
   }
@@ -720,7 +910,11 @@ export class OfficeView {
     const w = S.textWidth(name) + 4;
     const x = Math.max(1, Math.min(this.L.W - w - 1, Math.round(pos.x + 5 - w / 2)));
     const y = Math.max(1, Math.round(pos.y) - 17);
-    S.R(g, x, y, w, 8, PAL.ink);
+    S.R(g, x + 1, y, w - 2, 8, PAL.ink);
+    S.R(g, x, y + 1, w, 6, PAL.ink);
+    const tx = Math.max(x + 2, Math.min(x + w - 3, Math.round(pos.x + 5)));
+    S.R(g, tx - 1, y + 8, 3, 1, PAL.ink);
+    S.px(g, tx, y + 9, PAL.ink);
     S.drawText(g, name, x + 2, y + 2, PAL.white);
   }
 
@@ -729,7 +923,7 @@ export class OfficeView {
       f.life -= dt;
       f.y -= dt * 9;
       g.globalAlpha = Math.max(0, Math.min(1, f.life));
-      S.drawText(g, f.txt, f.x, f.y, f.color);
+      S.drawTextShadow(g, f.txt, f.x, f.y, f.color, PAL.ink);
     }
     g.globalAlpha = 1;
     this.floaters = this.floaters.filter((f) => f.life > 0);
@@ -741,6 +935,22 @@ export class OfficeView {
       S.R(g, c.x, c.y, 2, 2, c.c);
     }
     this.confetti = this.confetti.filter((c) => c.life > 0 && c.y < this.L.H);
+    for (const b of this.balloons) {
+      b.y -= b.v * dt;
+      S.drawBalloon(g, Math.round(b.x), Math.round(b.y), b.c, this.t);
+    }
+    this.balloons = this.balloons.filter((b) => b.y > -20);
+    const bn = this.banner;
+    if (bn && bn.until > this.t && !this.edit) {
+      const tw = S.textWidth(bn.text, 2);
+      const x = Math.round(this.L.W / 2 - tw / 2);
+      const y = WALL + 8 + (Math.sin(this.t * 6) > 0 ? 0 : 1);
+      S.R(g, x - 7, y - 5, tw + 14, 20, PAL.ink);
+      S.R(g, x - 6, y - 4, tw + 12, 18, PAL.plum);
+      S.R(g, x - 6, y - 4, tw + 12, 1, PAL.yellow);
+      S.R(g, x - 6, y + 13, tw + 12, 1, PAL.orange);
+      S.drawTextShadow(g, bn.text, x, y, PAL.yellow, PAL.ink, 2);
+    } else if (bn) this.banner = null;
   }
 }
 

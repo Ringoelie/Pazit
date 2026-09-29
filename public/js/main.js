@@ -4,12 +4,18 @@ import { ROLES, RESEARCH } from './data.js';
 import { makeLooks } from './core.js';
 import { fmtMoney, fmtNum, fmtDate, esc } from './util.js';
 import { save, load, clearSave, exportSave, importSave } from './state.js';
+import { answerMail, pendingMail, markAllRead } from './mail.js';
+import { openRegion, seasonOf } from './world.js';
+import { poachFrom, smear } from './rivals.js';
+import { orderUnits, setHwPrice } from './hw.js';
 import { OfficeView } from './office.js';
 import { sfx, setSound } from './audio.js';
+import { setMusic, setMusicMood, unlockMusic } from './music.js';
+import { renderTutorial } from './tutorial.js';
 import {
   patch, openModal, closeModal, closeAllModals, topModal, modalOpen, refreshModals, confirmModal, toast, avatar, pixIcon, btn,
 } from './ui.js';
-import { TABS, renderPanel, hireModal, employeeModal, newProductModal } from './panels.js';
+import { TABS, renderPanel, hireModal, employeeModal, newProductModal, editBar, perkCards } from './panels.js';
 
 const DAYS_PER_SEC = [0, 0.625, 1.6, 4];
 const UI_KEY = 'pixel-unicorn:ui';
@@ -27,8 +33,11 @@ let lastSfx = 0;
 let tickerIdx = 0;
 let tickerTime = 0;
 let lastNewsDay = -1;
+let loopError = false;
+// Partida de relleno mientras se elige nombre: no se guarda hasta empezar.
+let draft = false;
 
-const U = { tab: 'office', pid: null, mktPid: null, cat: null, hireRole: 'all', newCat: 'blog', newName: '', empModal: null };
+const U = { tab: 'office', pid: null, mktPid: null, cat: null, hireRole: 'all', newCat: 'blog', newName: '', empModal: null, edit: false, editSel: null, prevSpeed: 1 };
 try {
   Object.assign(U, JSON.parse(localStorage.getItem(UI_KEY) || '{}'), { pid: null, empModal: null });
 } catch {
@@ -49,13 +58,39 @@ const $ = (sel) => document.querySelector(sel);
 function start(state) {
   s = state;
   setSound(s.settings.sound);
+  setMusic(s.settings.music !== false);
   acc = 0;
   lastSaveDay = s.day;
   eventModal = null;
   overModal = null;
-  closeAllModals();
+  draft = false;
+  closeAllModals(true);
+  if (U.edit) setEdit(false);
   office.tier = -1;
   office.selected = null;
+  dirty = true;
+}
+
+// Modo edición de la oficina: pausa el juego mientras recolocas.
+function setEdit(on) {
+  U.edit = on;
+  U.editSel = null;
+  if (on) {
+    U.tutEdited = true;
+    U.prevSpeed = s.speed;
+    s.speed = 0;
+    office.selected = null;
+    $('#tip').hidden = true;
+  } else if (s.speed === 0) s.speed = U.prevSpeed;
+  office.setEdit(on);
+  document.body.classList.toggle('editing', on);
+  $('#editBar').hidden = !on;
+  dirty = true;
+}
+
+function selectEdit(ref) {
+  U.editSel = ref;
+  office.editSel = ref;
   dirty = true;
 }
 
@@ -63,10 +98,30 @@ function boot() {
   buildTabs();
   office = new OfficeView($('#office'), {
     onPick: (id) => {
+      if (id === 'pet') {
+        office.petLove();
+        sfx('good');
+        return;
+      }
       office.selected = id;
       if (id != null) openEmployee(id);
     },
     onHover: showTip,
+    onEditPick: (ref) => {
+      selectEdit(ref);
+      if (ref) sfx('click');
+    },
+    onEditDrop: (ref, x, y, valid) => {
+      if (!valid) {
+        toast('No cabe ahí.', 'bad');
+        sfx('error');
+        return;
+      }
+      const r = G.moveObject(s, ref, x, y);
+      if (!r.ok) result(r);
+      else sfx('click');
+      selectEdit(ref);
+    },
   });
   window.addEventListener('resize', () => office.resize());
   new ResizeObserver(() => office.resize()).observe($('#officeWrap'));
@@ -74,10 +129,12 @@ function boot() {
   document.addEventListener('change', onChange);
   document.addEventListener('input', onInput);
   document.addEventListener('keydown', onKey);
+  // El audio solo puede arrancar tras un gesto de la persona.
+  for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, unlockMusic, { passive: true });
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && s) save(s);
+    if (document.hidden && s && !draft) save(s);
   });
-  window.addEventListener('pagehide', () => s && save(s));
+  window.addEventListener('pagehide', () => s && !draft && save(s));
 
   const saved = load();
   if (saved) {
@@ -86,14 +143,43 @@ function boot() {
   } else {
     start(G.newGame({ company: 'Pixel Startup', founder: 'Alex' }));
     s.speed = 0;
+    draft = true;
     newGameModal(false);
   }
   requestAnimationFrame(loop);
+  registerSW();
 }
+
+// Se puede instalar como app y jugar sin conexión (no dentro de un iframe).
+let installPrompt = null;
+function registerSW() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installPrompt = e;
+  });
+  if (!('serviceWorker' in navigator) || !window.isSecureContext || window.self !== window.top) return;
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone;
 
 // ---------------------------------------------------------------- bucle
 
 function loop(now) {
+  try {
+    frame(now);
+  } catch (err) {
+    // Un error no debe congelar el juego para siempre: se avisa y se sigue.
+    if (!loopError) {
+      loopError = true;
+      console.error(err);
+      toast('Algo ha fallado. Si se repite, exporta la partida desde el menú.', 'bad');
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const blocked = !!s.event || !!s.gameOver;
@@ -112,8 +198,8 @@ function loop(now) {
     if (n >= 4) acc = 0;
   }
   flushNotes();
-  if (s.event && !eventModal) showEvent();
-  if (s.gameOver && !overModal) showGameOver();
+  if (s.event && !eventModal?.wrap.isConnected) showEvent();
+  if (s.gameOver && !overModal?.wrap.isConnected) showGameOver();
   office.frame(s, dt, blocked ? 0 : s.speed);
   uiTimer -= dt;
   if (dirty || (ticked && uiTimer <= 0)) {
@@ -121,13 +207,13 @@ function loop(now) {
     uiTimer = 0.25;
     dirty = false;
   }
+  renderTutorial(s, U);
   tickerTime -= dt;
   if (tickerTime <= 0) rotateTicker();
   if (s.day - lastSaveDay >= 7) {
     lastSaveDay = s.day;
     if (save(s)) flashSaved();
   }
-  requestAnimationFrame(loop);
 }
 
 function flushNotes() {
@@ -135,9 +221,11 @@ function flushNotes() {
   const now = performance.now();
   for (const n of s.notes) {
     toast(n.text, n.kind);
-    if (n.kind === 'achievement' || n.text.startsWith('🚀') || n.text.startsWith('🎯')) office.burst(n.kind === 'achievement' ? 60 : 30);
+    if (n.kind === 'achievement') office.party('achievement');
+    else if (n.text.startsWith('🚀')) office.party('launch');
+    else if (n.text.startsWith('🎯')) office.burst(30);
     if (now - lastSfx > 250) {
-      sfx(n.kind === 'achievement' ? 'achievement' : n.kind === 'bad' ? 'bad' : n.kind === 'good' ? 'coin' : 'click');
+      sfx(n.kind === 'achievement' ? 'achievement' : n.kind === 'bad' ? 'bad' : n.kind === 'good' ? 'coin' : n.kind === 'mail' ? 'event' : 'click');
       lastSfx = now;
     }
   }
@@ -161,6 +249,7 @@ function badges() {
     contracts: s.contracts.offers.length && s.contracts.active.length < 3 ? s.contracts.offers.length : '',
     research: res || '',
     investors: s.funding.offer ? '!' : '',
+    mail: pendingMail(s).length || '',
     products: s.products.some((p) => !p.launched && G.coreDone(p)) ? '!' : '',
     finance: s.money < 0 ? '!' : '',
   };
@@ -178,6 +267,8 @@ function render() {
   $('#rp').textContent = fmtNum(Math.floor(s.rp));
   $('#date').textContent = fmtDate(s.day);
   $('#val').textContent = fmtMoney(sm.val);
+  const partying = office.partyUntil > office.t;
+  setMusicMood(s.money < 0 ? 'crisis' : partying || (sm.val >= 1e9 && sm.net > 0) ? 'success' : 'normal', s.office.tier);
   for (const b of document.querySelectorAll('[data-act=speed]')) b.classList.toggle('on', +b.dataset.n === s.speed);
   const q = G.currentQuest(s);
   $('#quest').innerHTML = q ? `🎯 <b>Objetivo:</b> ${esc(q.text)}${q.reward ? ` <small>(+${fmtMoney(q.reward)})</small>` : ''}` : '🦄 ¡Has cumplido todos los objetivos! Sigue creciendo.';
@@ -192,7 +283,11 @@ function render() {
     tickerIdx = 0;
     tickerTime = 0;
   }
+  const se = seasonOf(s);
+  $('#season').innerHTML = se ? `<span title="${esc(se.desc)}">${se.icon} ${esc(se.name)}</span>` : '';
   patch($('#panel'), renderPanel(s, U));
+  if (U.tab === 'mail') markAllRead(s);
+  if (U.edit) patch($('#editBar'), editBar(s, U));
   refreshModals();
 }
 
@@ -214,15 +309,24 @@ function flashSaved() {
 
 function showTip(id, x, y) {
   const tip = $('#tip');
-  const e = id != null && G.findEmp(s, id);
-  if (!e) {
+  const e = id != null && id !== 'pet' && G.findEmp(s, id);
+  if (!e && id !== 'pet') {
     tip.hidden = true;
     return;
   }
   tip.hidden = false;
+  if (id === 'pet') {
+    tip.innerHTML = '<b>🐕 Bit</b><br>El perro de la oficina. Tócalo para darle mimos.';
+    placeTip(tip, x, y);
+    return;
+  }
   const target = e.assign?.startsWith('p:') ? G.findProduct(s, +e.assign.slice(2))?.name : e.assign?.startsWith('c:') ? 'Contrato' : e.assign === 'rd' ? 'I+D' : e.assign === 'brand' ? 'Marca' : null;
   tip.innerHTML = `<b>${esc(e.name)}</b><br>${ROLES[e.role].icon} ${ROLES[e.role].name}${target ? ` · ${esc(target)}` : ''}<br>
     ánimo ${Math.round(e.mood)} · energía ${Math.round(e.energy)}${e.off > 0 ? `<br>${e.offReason}` : ''}`;
+  placeTip(tip, x, y);
+}
+
+function placeTip(tip, x, y) {
   const r = tip.getBoundingClientRect();
   tip.style.left = Math.min(window.innerWidth - r.width - 8, x + 14) + 'px';
   tip.style.top = Math.max(8, y - r.height - 10) + 'px';
@@ -237,6 +341,15 @@ function result(r, okSound = 'click') {
   dirty = true;
 }
 
+// Vuelve al principio del panel. En móvil la página entera hace scroll, así
+// que se sube hasta las pestañas si quedaron por encima.
+function panelToTop() {
+  $('#panel').scrollTop = 0;
+  if (!window.matchMedia('(max-width: 1000px)').matches) return;
+  const y = $('.side').getBoundingClientRect().top + window.scrollY;
+  if (window.scrollY > y) window.scrollTo({ top: y });
+}
+
 function setSpeed(n) {
   s.speed = n;
   dirty = true;
@@ -247,19 +360,52 @@ const ACTIONS = {
     U.tab = d.tab;
     if (d.tab !== 'products') U.pid = null;
     saveUI();
-    $('#panel').scrollTop = 0;
+    panelToTop();
     sfx('click');
   },
   speed: (d) => {
     setSpeed(+d.n);
     sfx('click');
   },
-  togglePause: () => setSpeed(s.speed ? 0 : 1),
   menu: () => settingsModal(),
+  tutStart: () => {
+    s.tutorial = 0;
+    U.tutEdited = false;
+    closeAllModals();
+  },
+  tutNext: () => {
+    s.tutorial += 1;
+    sfx('click');
+  },
+  tutSkip: () => {
+    s.tutorial = -1;
+  },
   help: () => helpModal(),
   zoomIn: () => office.zoomBy(1),
   zoomOut: () => office.zoomBy(-1),
   zoomFit: () => office.fit(),
+  editToggle: () => {
+    closeAllModals();
+    setEdit(!U.edit);
+    sfx('click');
+  },
+  editDeselect: () => selectEdit(null),
+  editAdd: () => {
+    openModal({ title: '➕ Añadir a la oficina', wide: true, render: () => `<p class="muted">Se coloca en el primer hueco libre; después arrástralo donde quieras.</p><div class="cards">${perkCards(s, 'editBuy', false)}</div>` });
+  },
+  editBuy: (d) => {
+    const r = G.buyPerk(s, d.id);
+    result(r, 'coin');
+    if (r.ok) {
+      closeAllModals();
+      if (!U.edit) setEdit(true);
+      selectEdit(r.ref);
+    }
+  },
+  editSell: (d) => {
+    result(G.sellItem(s, +d.uid), 'coin');
+    selectEdit(null);
+  },
 
   hireOpen: () => {
     openModal({ title: 'Contratar talento', wide: true, render: () => hireModal(s, U) });
@@ -320,7 +466,7 @@ const ACTIONS = {
   },
   openProduct: (d) => {
     U.pid = +d.id;
-    $('#panel').scrollTop = 0;
+    panelToTop();
   },
   backProducts: () => {
     U.pid = null;
@@ -332,7 +478,7 @@ const ACTIONS = {
     const r = G.launch(s, +d.pid);
     if (r.ok) {
       sfx('launch');
-      office.burst(80);
+      office.party('launch');
       toast(r.msg, 'good');
       dirty = true;
     } else result(r);
@@ -367,7 +513,7 @@ const ACTIONS = {
   moveOffice: (d) => {
     const r = G.moveOffice(s, +d.tier);
     result(r, 'good');
-    if (r.ok) office.burst(60);
+    if (r.ok) office.party('move');
   },
   policy: (d) => result(G.togglePolicy(s, d.id)),
   cloud: () => result(G.setCloud(s, !s.infra.cloud)),
@@ -380,7 +526,10 @@ const ACTIONS = {
   acceptOffer: () => {
     const r = G.acceptOffer(s);
     result(r, 'achievement');
-    if (r.ok) office.burst(80);
+    if (r.ok) {
+      office.party(s.funding.ipo && r.msg.startsWith('🔔') ? 'ipo' : 'funding');
+      office.visit();
+    }
   },
   rejectOffer: () => result(G.rejectOffer(s)),
   issueShares: () => result(G.issueShares(s), 'coin'),
@@ -395,9 +544,23 @@ const ACTIONS = {
     confirmModal('Comprar competidor', `¿Comprar ${c.name} por ${fmtMoney(G.competitorPrice(c))}? Desaparece del mercado y parte de sus usuarios se pasan a tu producto.`, 'Comprar', () => {
       const r = G.acquire(s, c.id);
       result(r, 'achievement');
-      if (r.ok) office.burst(60);
+      if (r.ok) office.party('acquire');
     });
   },
+  answerMail: (d) => {
+    const r = answerMail(s, +d.id, +d.i);
+    if (r.msg) toast(r.msg, r.ok ? 'info' : 'bad');
+    sfx(r.ok ? 'click' : 'error');
+  },
+  openRegion: (d) => {
+    const r = openRegion(s, d.id);
+    result(r, 'achievement');
+    if (r.ok) office.burst(60);
+  },
+  orderUnits: (d) => result(orderUnits(s, +d.pid, +d.q), 'coin'),
+  hwPrice: (d) => result(setHwPrice(s, +d.pid, +d.m)),
+  rivalPoach: (d) => result(poachFrom(s, +d.id), 'coin'),
+  rivalSmear: (d) => result(smear(s, +d.id), 'good'),
   eventChoice: (d) => {
     const r = G.resolveEvent(s, +d.i);
     if (eventModal) closeModal(eventModal);
@@ -431,13 +594,19 @@ function onInput(e) {
 }
 
 function onKey(e) {
-  if (e.target.matches('input, textarea, select')) return;
   if (e.key === 'Escape') {
     const m = topModal();
     if (m && m.closable) closeModal(m);
+    else if (!m && U.edit) setEdit(false);
     return;
   }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.matches('input, textarea, select')) return;
   if (modalOpen()) return;
+  if (e.key === 'e' || e.key === 'E') {
+    setEdit(!U.edit);
+    return;
+  }
   if (e.key === ' ') {
     e.preventDefault();
     setSpeed(s.speed ? 0 : 1);
@@ -487,11 +656,12 @@ function showGameOver() {
   });
   overModal.body.insertAdjacentHTML('beforeend', `<div class="row end gap">${btn('Nueva partida', 'newGame', {}, { kind: 'primary big' })}</div>`);
   ACTIONS.newGame = () => {
+    const founder = s.employees.find((e) => e.role === 'founder')?.name || 'Alex';
     clearSave();
-    closeAllModals();
-    start(G.newGame({ company: s.company, founder: s.employees.find((e) => e.role === 'founder')?.name || 'Alex' }));
+    start(G.newGame({ company: s.company, founder }));
     s.speed = 0;
-    newGameModal(false);
+    draft = true;
+    newGameModal(false, founder);
   };
 }
 
@@ -503,7 +673,7 @@ function summaryStats() {
     <div class="kpi"><span>Equipo</span><b>${s.employees.length}</b></div></div>`;
 }
 
-function newGameModal(closable) {
+function newGameModal(closable, founderName = 'Alex') {
   let looks = makeLooks({ rng: (Math.random() * 2 ** 31) | 0 });
   let previewId = 0;
   const m = openModal({
@@ -512,7 +682,7 @@ function newGameModal(closable) {
     body: `<p class="lg">De garaje a unicornio. Funda tu startup, contrata talento, lanza productos y conquista el mercado.</p>
       <div class="row gap"><div id="look"></div>
       <div class="grow"><label class="field">Tu startup<input id="ng-company" maxlength="18" value="${esc(s.company)}"></label>
-      <label class="field">Tu nombre<input id="ng-founder" maxlength="18" value="Alex"></label></div></div>
+      <label class="field">Tu nombre<input id="ng-founder" maxlength="18" value="${esc(founderName)}"></label></div></div>
       <div class="row gap wrap"><button class="btn" id="ng-look">🎲 Cambiar aspecto</button></div>
       <div class="row end gap">${closable ? '<button class="btn" data-close>Cancelar</button>' : ''}<button class="btn primary big" id="ng-go">¡Empezar!</button></div>`,
   });
@@ -533,6 +703,7 @@ function newGameModal(closable) {
     closeModal(m);
     start(G.newGame({ company, founder, looks }));
     s.speed = 1;
+    draft = false;
     save(s);
     sfx('good');
     helpModal(true);
@@ -549,10 +720,12 @@ function helpModal(first = false) {
       <li>🔬 <b>I+D:</b> investiga "Modelos de negocio" para poder ganar dinero con publicidad o suscripciones. Luego desbloquea móviles, IA, streaming...</li>
       <li>📣 <b>Marketing, 🖥️ servidores y 📈 inversores:</b> haz crecer tu producto, mantenlo en pie y busca financiación.</li>
       <li>🏢 <b>Oficina:</b> compra mejoras para que el equipo esté feliz y con energía, y múdate cuando te falte espacio.</li>
+      <li>📬 <b>Correo:</b> empleados, clientes, rivales y reguladores te escriben. Si no contestas a tiempo, se aplica la última opción.</li>
+      <li>🗺️ <b>Mundo:</b> abre sedes en otros continentes, vigila las leyes y aprovecha temporadas como Black Friday o Navidades.</li>
       </ol>
-      <p class="muted">Controles: <b>Espacio</b> pausa · <b>1-3</b> velocidad · arrastra la oficina para moverte · rueda o pellizco para zoom · toca a alguien para ver su ficha.</p>
+      <p class="muted">Controles: <b>Espacio</b> pausa · <b>1-3</b> velocidad · <b>E</b> o ✏️ editar la oficina · arrastra la oficina para moverte · rueda o pellizco para zoom · toca a alguien para ver su ficha.</p>
       <p class="muted">Si te quedas sin dinero durante 45 días, quiebras. ¡Vigila tus finanzas!</p>
-      <div class="row end"><button class="btn primary" data-close>¡A por ello!</button></div>`,
+      <div class="row end gap">${first ? '<button class="btn" data-close>Ya sé jugar</button><button class="btn primary" data-act="tutStart">🧭 Guíame paso a paso</button>' : '<button class="btn primary" data-close>¡A por ello!</button>'}</div>`,
   });
 }
 
@@ -562,10 +735,14 @@ function settingsModal() {
     body: `<div class="menu">
       <button class="btn" data-m="save">💾 Guardar ahora</button>
       <button class="btn" data-act="help">❓ Cómo jugar</button>
+      <button class="btn" data-act="tutStart">🧭 Tutorial guiado</button>
       <button class="btn" data-m="sound">${s.settings.sound ? '🔊 Sonido: activado' : '🔇 Sonido: desactivado'}</button>
+      <button class="btn" data-m="music">${s.settings.music !== false ? '🎵 Música: activada' : '🎵 Música: desactivada'}</button>
       <button class="btn" data-m="export">📤 Exportar partida</button>
       <button class="btn" data-m="import">📥 Importar partida</button>
-      <button class="btn danger" data-m="new">🆕 Nueva partida</button></div>
+      <button class="btn danger" data-m="new">🆕 Nueva partida</button>
+      ${installPrompt ? '<button class="btn primary" data-m="install">📲 Instalar la app</button>' : ''}</div>
+      ${isIOS() ? '<p class="muted small">📲 Para instalarla en el iPhone: botón Compartir → «Añadir a pantalla de inicio».</p>' : ''}
       <div id="menu-extra"></div>
       <p class="muted small">Pixel Unicorn · se guarda solo en este navegador cada semana de juego.</p>`,
   });
@@ -575,11 +752,21 @@ function settingsModal() {
     if (!b) return;
     const k = b.dataset.m;
     if (k === 'save') {
-      toast(save(s) ? 'Partida guardada.' : 'No se pudo guardar (almacenamiento bloqueado).', 'good');
+      const ok = save(s);
+      toast(ok ? 'Partida guardada.' : 'No se pudo guardar (almacenamiento bloqueado).', ok ? 'good' : 'bad');
     } else if (k === 'sound') {
       s.settings.sound = !s.settings.sound;
       setSound(s.settings.sound);
       b.textContent = s.settings.sound ? '🔊 Sonido: activado' : '🔇 Sonido: desactivado';
+    } else if (k === 'install') {
+      installPrompt?.prompt();
+      installPrompt = null;
+      b.remove();
+    } else if (k === 'music') {
+      s.settings.music = s.settings.music === false;
+      setMusic(s.settings.music);
+      unlockMusic();
+      b.textContent = s.settings.music ? '🎵 Música: activada' : '🎵 Música: desactivada';
     } else if (k === 'export') {
       extra.innerHTML = `<label class="field">Copia este código y guárdalo<textarea readonly rows="4">${exportSave(s)}</textarea></label>
         <button class="btn" id="copy">📋 Copiar</button>`;
@@ -619,4 +806,4 @@ hudIcons();
 boot();
 
 // Exponer el estado ayuda a depurar desde la consola.
-window.__pixelUnicorn = { get state() { return s; }, G };
+window.__pixelUnicorn = { get state() { return s; }, get office() { return office; }, G };

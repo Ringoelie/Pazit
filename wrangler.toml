@@ -1,4 +1,7 @@
-# Configuración de Cloudflare Pages. El sitio es estático: no hay paso de build.
-name = "pixel-unicorn"
-pages_build_output_dir = "./public"
+# Cloudflare Workers con archivos estáticos: sirve la carpeta public/ tal cual.
+# El nombre tiene que coincidir con el del Worker en el panel de Cloudflare.
+name = "pazit"
 compatibility_date = "2026-09-28"
+
+[assets]
+directory = "./public"
