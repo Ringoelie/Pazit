@@ -3,7 +3,7 @@
 import {
   ROLES, TRAITS, OFFICES, PERKS, FIXTURES, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID, CAMPAIGNS, ROUNDS,
   QUESTS, ACHIEVEMENTS, POINT_TYPES, PREMIUM_PRICES, MAX_FEATURE_LEVEL, LEVELS, HW_PRICES, UNIVERSAL_WEIGHT,
-  REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD, PACES, KEYNOTES, B2B_SIZES,
+  REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD, PACES, KEYNOTES, B2B_SIZES, AWARDS,
 } from './data.js';
 import { pendingMail, defaultChoice } from './mail.js';
 import { seasonOf, seasonDemand, regionMarket, langReach, regionStaff, complianceIssues, lawActive } from './world.js';
@@ -14,9 +14,10 @@ import { STORES, CLOUD_NAME, onMobile, storeFee, storeMonthly, cloudMult, adsHit
 import { REL_KINDS, relationsOf, relSummary } from './relations.js';
 import { keynoteOdds, tierOf, KEYNOTE_TIERS } from './keynote.js';
 import { winChance, missingReqs, reqHint, b2bDaily } from './b2b.js';
+import { nominations, winChance as awardChance } from './awards.js';
 import * as G from './sim.js';
 import { perkStats, birthdayOf, isBirthday } from './core.js';
-import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, MONTHS } from './util.js';
+import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, dateOf, MONTHS } from './util.js';
 import { bar, btn, avatar } from './ui.js';
 
 export const TABS = [
@@ -1083,6 +1084,27 @@ function platformsSection(s) {
 
 // ---------------------------------------------------------------- logros
 
+// Premios Pixel: palmarés, nominaciones del año y cómo vas para la próxima gala.
+function awardsSection(s) {
+  const A = s.awards || { won: [], noms: null, base: null };
+  const year = dateOf(s.day).y;
+  const N = A.noms?.year === year ? A.noms : null;
+  const won = [...A.won].reverse().map((w) => `<li>${AWARDS[w.id].icon} <b>${AWARDS[w.id].name}</b> ${w.year} <small class="muted">(${esc(w.why)})</small></li>`).join('');
+  let now = '';
+  if (N && !N.done) {
+    now = N.list.length
+      ? `<p>Nominaciones ${year}: ${N.list.map((n) => `${AWARDS[n.id].icon} ${AWARDS[n.id].name} (${fmtPct(awardChance(s, n, N.gala))})`).join(' · ')}. Gala el 20 de noviembre.</p>`
+      : `<p class="muted">Este año no hay nominaciones.</p>`;
+  } else if (A.base) {
+    const cands = nominations(s, G.teamPowers(s));
+    now = `<p class="muted">Las nominaciones salen el 1 de noviembre. Ahora mismo optarías a: ${cands.length ? cands.map((n) => `${AWARDS[n.id].icon} ${AWARDS[n.id].name}`).join(', ') : 'nada todavía'}.</p>`;
+  }
+  const how = Object.values(AWARDS).map((a) => `${a.icon} <b>${a.name}</b>: ${a.desc}`).join('<br>');
+  return `<h3>🏆 Premios Pixel <small class="muted">${A.won.length} ${A.won.length === 1 ? 'premio' : 'premios'}</small></h3>
+    ${now}${won ? `<ul class="quests">${won}</ul>` : ''}
+    <details data-key="awards-how"><summary class="muted small">¿Cómo se gana?</summary><p class="small">${how}</p></details>`;
+}
+
 function goalsPanel(s) {
   const quests = QUESTS.map((q) => {
     const done = s.quests[q.id] != null;
@@ -1095,6 +1117,7 @@ function goalsPanel(s) {
   const got = Object.keys(s.achievements).length;
   return `<h3>Objetivos</h3><ul class="quests">${quests}</ul>
     <h3>Logros <small class="muted">${got}/${ACHIEVEMENTS.length}</small></h3><div class="achs">${ach}</div>
+    ${awardsSection(s)}
     <h3>Estadísticas</h3><div class="kpis">
       ${kpi('Días', s.day)}${kpi('Ingresos totales', fmtMoney(s.stats.revenue))}${kpi('Récord de usuarios', fmtNum(s.stats.peakUsers))}
       ${kpi('Funciones lanzadas', s.stats.shipped)}${kpi('Contratos', s.stats.contractsDone)}${kpi('Compras', s.stats.acquired)}</div>`;

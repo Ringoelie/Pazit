@@ -115,6 +115,15 @@ export const POLICIES = {
 };
 
 // Funcionalidades de producto. cost: puntos por tipo en nivel 1; cada nivel cuesta x1.55.
+// Premios Pixel: gala anual del sector (nominaciones el 1 de noviembre,
+// gala el 20).
+export const AWARDS = {
+  startup: { name: 'Startup del año', icon: '🚀', desc: 'Tu valoración se ha multiplicado este año.' },
+  product: { name: 'Mejor producto', icon: '📦', desc: 'Uno de tus productos tiene a sus usuarios encantados.' },
+  work: { name: 'Mejor lugar para trabajar', icon: '💜', desc: 'Tu equipo está muy contento.' },
+  innovation: { name: 'Innovación', icon: '💡', desc: 'Has investigado mucho este año.' },
+};
+
 // Clientes empresa (B2B): cuánto encaja cada tipo de producto, tamaños de
 // cliente y funciones que suelen exigir.
 export const B2B_FIT = { saas: 1, assistant: 0.9, fintech: 0.6, search: 0.5, metaverse: 0.3, shop: 0.3, streaming: 0.25, blog: 0.2, social: 0.15, game: 0.05, dating: 0 };
@@ -471,6 +480,7 @@ export const ACHIEVEMENTS = [
   { id: 'moon', name: 'Un pequeño paso', icon: '🌕', desc: 'Múdate a la sede en la Luna.' },
   { id: 'friends', name: 'Como una familia', icon: '🤝', desc: 'Diez amistades en la plantilla a la vez.' },
   { id: 'showman', name: 'Una cosa más...', icon: '🎤', desc: 'Da una presentación de lanzamiento épica.' },
+  { id: 'award', name: 'Y el premio es para...', icon: '🏆', desc: 'Gana un Premio Pixel.' },
   { id: 'happy', name: 'Mejor lugar para trabajar', icon: '😊', desc: 'Ánimo medio superior a 85 con 20+ empleados.' },
   { id: 'crunchSurvivor', name: 'Superviviente', icon: '🧯', desc: 'Sobrevive a un incidente de seguridad.' },
   { id: 'bootstrapped', name: 'Sin inversores', icon: '🥾', desc: 'Llega a $100k/mes sin vender acciones.' },

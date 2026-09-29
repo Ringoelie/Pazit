@@ -19,6 +19,8 @@ export const SIZES = {
   // No es un mueble: el árbol de Navidad busca sitio libre con estas medidas.
   xmastree: [16, 26],
   stage: [44, 30],
+  trophies: [18, 26],
+  pumpkin: [10, 9],
 };
 // Objetos de pared: solo se mueven en horizontal, a esta altura.
 export const WALL_ITEMS = { whiteboard: 20, ac: 2 };

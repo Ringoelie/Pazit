@@ -21,6 +21,7 @@ import { storeCut, adsHit, platformDemand, platformsMonth, cloudMult } from './p
 import { relationsWeek, relFx } from './relations.js';
 import { keynoteDay } from './keynote.js';
 import { b2bDay, b2bDaily } from './b2b.js';
+import { awardsDay } from './awards.js';
 
 export { has, officeOf, findEmp, findProduct, perkStats, expectedSalary, levelOf };
 
@@ -68,6 +69,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     rel: [],
     leads: {},
     b2b: { leads: [], deals: [], next: 30, won: 0, lost: 0 },
+    awards: { won: [], base: null, noms: null },
     digest: { n: {}, last: '' },
     officeFx: [],
     competitors: [],
@@ -1144,6 +1146,7 @@ export function stepDay(s) {
     platformsMonth(s);
   }
   mailStep(s);
+  awardsDay(s, tp);
   worldDay(s, newMonth);
   maybeEvent(s);
   quests(s);
@@ -1663,6 +1666,7 @@ const ACH_CHECK = {
   bootstrapped: (s) => !s.stats.soldShares && mrr(s) >= 1e5,
   agi: (s) => has(s, 'agi'),
   showman: (s) => (s.stats.epicKeynotes || 0) > 0,
+  award: (s) => (s.awards?.won.length || 0) > 0,
 };
 
 function achievements(s) {

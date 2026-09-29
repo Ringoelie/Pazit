@@ -11,7 +11,7 @@ import { seasonDemand, seasonTx, openRegion, regionMarket, complianceIssues, law
 import { ensureRivals, warFx, poachFrom, smear, rivalMonth } from '../public/js/rivals.js';
 import { orderUnits, unitCost, leadTime, hwPrice } from '../public/js/hw.js';
 import { makePerson } from '../public/js/core.js';
-import { fmtNum, fmtMoney } from '../public/js/util.js';
+import { fmtNum, fmtMoney, dateOf } from '../public/js/util.js';
 import { secLevel, attackSurface, yearlyAttacks } from '../public/js/security.js';
 import { storeCut, platformDemand, MOBILE_SHARE, platformsMonth } from '../public/js/platforms.js';
 import { relFx, relOf, relationsWeek } from '../public/js/relations.js';
@@ -657,4 +657,29 @@ console.log('OK');
     for (let d = 0; d < deal.sla + 2; d++) G.stepDay(s);
     assert.ok(!s.b2b.deals.includes(deal), 'a la segunda, el cliente se va');
   } else assert.ok(s.b2b.lost === 1, 'o se pierde la venta');
+}
+
+// 20. Premios Pixel: nominaciones el 1 de noviembre, gala el 20 y vitrina.
+{
+  const s = fresh(23);
+  s.money = 1e8;
+  s.reputation = 100;
+  for (let i = 0; i < 12; i++) s.employees.push(Object.assign(makePerson(s, 'dev', { traits: [] }), { mood: 95 }));
+  G.stepDay(s);
+  s.awards.base.research = -10;
+  // Avanza hasta el 1 de noviembre.
+  while (!(dateOf(s.day).m === 10 && dateOf(s.day).d === 1)) {
+    for (const e of s.employees) e.mood = 95;
+    G.stepDay(s);
+  }
+  const N = s.awards.noms;
+  assert.ok(N && N.list.some((n) => n.id === 'work'), 'nominados a mejor lugar para trabajar');
+  assert.ok(N.list.some((n) => n.id === 'innovation'), 'y a innovación');
+  const gala = s.mail.find((m) => m.type === 'awardsGala');
+  assert.ok(gala, 'llega la invitación a la gala');
+  answerMail(s, gala.id, 0);
+  assert.equal(N.gala, 0, 'todo el equipo va a la gala');
+  while (!N.done) G.stepDay(s);
+  assert.equal(s.awards.won.length > 0, s.achievements.award != null || s.awards.won.length === 0);
+  assert.ok(s.awards.won.every((w) => w.year === N.year));
 }
