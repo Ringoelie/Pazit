@@ -292,6 +292,7 @@ export const EVENTS = {
 
   patent: {
     from: 'Bufete Troll & Asociados',
+    critical: true,
     weight: (s) => (live(s).length && s.day > 120 ? 1.2 : 0),
     setup: (s) => ({ amount: Math.round(Math.max(8000, valuation(s) * 0.004) / 1000) * 1000 }),
     view: (s, ctx) => ({
@@ -375,6 +376,7 @@ export const EVENTS = {
     setup: (s) => ({ amount: Math.round((valuation(s) * 1.5) / 1e6) * 1e6 }),
     def: 0,
     days: 10,
+    critical: true,
     view: (s, ctx) => ({
       icon: '🤑',
       title: 'Oferta de compra',
@@ -585,6 +587,7 @@ export function deliverEvent(s, id, ctx = {}) {
 
 registerMail({
   event: {
+    critical: (s, { id }) => !!EVENTS[id]?.critical,
     make: (s, { id, ctx, out }) => {
       const def = EVENTS[id];
       if (!def) return null;

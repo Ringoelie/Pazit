@@ -27,7 +27,12 @@ export const STEPS = [
   },
   {
     text: 'Pon a tu gente a trabajar en él: pulsa «Asignar a quien esté libre» o, en Equipo, elige el producto en la tarea de cada persona.',
-    target: (U) => (U.tab === 'products' && document.querySelector('[data-act=assignIdle]') ? '[data-act=assignIdle]' : U.tab !== 'team' ? tab('team') : '[data-change=assign]'),
+    // Si todo el mundo está ocupado (con el contrato), toca cambiar la tarea en Equipo.
+    target: (U, s) => {
+      const free = s.employees.some((e) => !e.assign && e.off <= 0);
+      if (free && U.tab === 'products' && document.querySelector('[data-act=assignIdle]')) return '[data-act=assignIdle]';
+      return U.tab !== 'team' ? tab('team') : '[data-change=assign]';
+    },
     done: (s) => s.employees.some((e) => e.assign?.startsWith('p:')),
   },
   {
@@ -79,7 +84,7 @@ export function renderTutorial(s, U) {
   ensureDom();
   const i = s.tutorial;
   const st = STEPS[i];
-  const sel = st.target?.(U);
+  const sel = st.target?.(U, s);
   let el = sel ? document.querySelector(sel) : null;
   if (el && !el.getClientRects().length) el = null;
   // Si una ventana tapa lo que toca pulsar, se señala su ✕. Si no se puede

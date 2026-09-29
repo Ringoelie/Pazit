@@ -8,7 +8,7 @@ import {
 import { rnd, rint, rfloat, pick, chance, gauss, clamp, dateOf, fmtMoney, fmtNum, MONTHS } from './util.js';
 import {
   uid, has, officeOf, findEmp, findProduct, notify, news, money, effectMult, addEffect, levelOf,
-  expectedSalary, makeLooks, makePerson, perkStats, isBirthday,
+  expectedSalary, makeLooks, makePerson, perkStats, isBirthday, digest, flushDigest,
 } from './core.js';
 import { EVENTS, deliverEvent } from './events.js';
 import { defaultLayout, addItem, canPlace, getRef, snapPos, deskEffects, itemDef } from './layout.js';
@@ -64,6 +64,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     sec: { bounty: false, backups: false, audit: -999, incidents: 0, hidden: null },
     plat: { fee: 0.3, webpay: false, webpayFree: false, adsHit: -1, cloud: 1, commit: -1, prepaid: 0 },
     rel: [],
+    digest: { n: {}, last: '' },
     officeFx: [],
     competitors: [],
     mail: [],
@@ -86,7 +87,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     notes: [],
     redDays: 0,
     gameOver: null,
-    settings: { sound: true, music: true },
+    settings: { sound: true, music: true, pauseCritical: false },
   };
   const f = makePerson(s, 'founder', { skill: 45, traits: [] });
   f.name = founder;
@@ -1020,6 +1021,7 @@ export function stepDay(s) {
   if (s.day % 7 === 0) {
     record(s, tp);
     relationsWeek(s);
+    flushDigest(s);
   }
   s.stats.peakUsers = Math.max(s.stats.peakUsers, totalUsers(s));
 
@@ -1108,7 +1110,7 @@ function workAndPeople(s, ps, tp) {
     if (e.energy < 12) {
       e.off = 5;
       e.offReason = 'Vacaciones';
-      if (s.employees.length <= 12) notify(s, `🌴 ${e.name} se toma 5 días de vacaciones para recargar pilas.`);
+      digest(s, 'vacation', `🌴 ${e.name} se toma 5 días de vacaciones para recargar pilas.`);
     }
 
     // Ánimo
@@ -1142,7 +1144,7 @@ function workAndPeople(s, ps, tp) {
       const before = levelOf(e.skill);
       e.skill += 1;
       if (levelOf(e.skill) > before) {
-        notify(s, `🎉 ${e.name} asciende a ${['Junior', 'Mid', 'Senior', 'Lead'][levelOf(e.skill)]}.`, 'good');
+        digest(s, 'promo', `🎉 ${e.name} asciende a ${['Junior', 'Mid', 'Senior', 'Lead'][levelOf(e.skill)]}.`);
       }
     }
   }
@@ -1225,7 +1227,10 @@ function productWork(s, p, b) {
     if (task.f === 'subs' && task.lvl === 1 && !p.price) p.price = 5;
     if (p.launched) p.hype += 4 + task.lvl * 2 + (F.hype && task.lvl === 1 ? F.hype : 0);
     onShip(s, p, task.f, task.lvl);
-    notify(s, `📦 ${p.name}: ${F.icon} ${F.name} ${task.lvl > 1 ? 'nivel ' + task.lvl : 'lista'}.`, 'good');
+    // Antes del lanzamiento cada función cuenta; después van al resumen semanal.
+    const shipped = `📦 ${p.name}: ${F.icon} ${F.name} ${task.lvl > 1 ? 'nivel ' + task.lvl : 'lista'}.`;
+    if (p.launched) digest(s, 'feature', shipped);
+    else notify(s, shipped, 'good');
     if (!p.launched && coreDone(p) && !p.readyNotified) {
       p.readyNotified = true;
       notify(s, `✅ ${p.name} ya se puede lanzar. Ve a Productos y pulsa Lanzar.`, 'good');
@@ -1436,7 +1441,7 @@ function maybeEvent(s) {
     const w = def.weight(s);
     if (w > 0) pool.push({ id, w });
   }
-  s.nextEventDay = s.day + rint(s, 18, 34);
+  s.nextEventDay = s.day + rint(s, 30, 50);
   if (!pool.length) return;
   const total = pool.reduce((a, x) => a + x.w, 0);
   let r = rnd(s) * total;
@@ -1456,10 +1461,10 @@ function maybeEvent(s) {
 // Cumpleaños: cada persona celebra el suyo una vez al año y el equipo lo nota.
 function birthdays(s) {
   const today = s.employees.filter((e) => e.off <= 0 && isBirthday(s, e));
-  for (const e of today) e.mood = Math.min(100, e.mood + 8);
-  if (!today.length || s.employees.length > 40) return;
-  const names = today.map((e) => e.name).join(' y ');
-  notify(s, `🎂 Hoy ${today.length > 1 ? 'cumplen' : 'cumple'} años ${names}. ¡Hay tarta!`, 'good');
+  for (const e of today) {
+    e.mood = Math.min(100, e.mood + 8);
+    digest(s, 'bday', `🎂 ${e.name} ha cumplido años. ¡Hubo tarta!`);
+  }
 }
 
 // ---- objetivos y logros

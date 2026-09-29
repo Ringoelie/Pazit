@@ -13,6 +13,34 @@ export function notify(s, text, kind = 'info') {
   s.notes.push({ text, kind });
 }
 
+// Avisos menores (ascensos, funciones terminadas, cumpleaños...): en vez de
+// uno cada vez, se cuentan y salen juntos en un resumen semanal.
+const DIGEST = {
+  feature: ['📦', 'función terminada', 'funciones terminadas'],
+  promo: ['🎉', 'ascenso', 'ascensos'],
+  bday: ['🎂', 'cumpleaños', 'cumpleaños'],
+  vacation: ['🌴', 'persona de vacaciones', 'personas de vacaciones'],
+  friend: ['🤝', 'amistad nueva', 'amistades nuevas'],
+  couple: ['💕', 'pareja nueva', 'parejas nuevas'],
+  mentor: ['🎓', 'mentoría nueva', 'mentorías nuevas'],
+  mentorDone: ['🎓', 'junior ya vuela solo/a', 'juniors ya vuelan solos'],
+};
+export function digest(s, kind, text) {
+  const d = s.digest || (s.digest = { n: {}, last: '' });
+  d.n[kind] = (d.n[kind] || 0) + 1;
+  d.last = text;
+}
+export function flushDigest(s) {
+  const d = s.digest;
+  s.digest = { n: {}, last: '' };
+  const parts = Object.entries(d?.n || {}).filter(([k, n]) => n > 0 && DIGEST[k]);
+  const total = parts.reduce((a, [, n]) => a + n, 0);
+  if (!total) return;
+  // Si solo ha pasado una cosa, se cuenta tal cual.
+  if (total === 1) return notify(s, d.last, 'good');
+  notify(s, '📰 Esta semana: ' + parts.map(([k, n]) => `${DIGEST[k][0]} ${n} ${n === 1 ? DIGEST[k][1] : DIGEST[k][2]}`).join(' · '), 'good');
+}
+
 export function news(s, text, kind = 'info') {
   s.news.unshift({ day: s.day, text, kind });
   if (s.news.length > 40) s.news.length = 40;

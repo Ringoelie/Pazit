@@ -10,9 +10,11 @@ import {
   WALL, FLAT, NEAR_RADIUS, isWall, deskRect, itemRect, serverRoom, loungeX, canPlace, snapPos, getRef, deskEffects, findSpot,
 } from './layout.js';
 
-// Reloj de la oficina: un día visual dura 150 s a velocidad normal. Cada tramo
-// acaba en [fracción del ciclo, hora]; 0 son las 6:00 de la mañana.
-const CYCLE = 150;
+// Reloj de la oficina: un día visual dura 90 s a velocidad normal (unas tres
+// semanas de juego). Más corto no daría tiempo a que la gente de las mesas del
+// fondo de las oficinas grandes salga antes de que amanezca. Cada tramo acaba
+// en [fracción del ciclo, hora]; 0 son las 6:00 de la mañana.
+const CYCLE = 90;
 const DAY_PARTS = [[0, 6], [0.04, 8], [0.08, 9], [0.74, 18], [0.78, 19], [0.86, 22], [1, 30]];
 function hourOf(tod) {
   for (let i = 1; i < DAY_PARTS.length; i++) {
@@ -642,7 +644,8 @@ export class OfficeView {
         const dx = p.x - st.x;
         const dy = p.y - st.y;
         const dist = Math.hypot(dx, dy);
-        const v = 30 * mult * dt;
+        // En las oficinas grandes se va (y se viene) con más prisa.
+        const v = 40 * Math.max(1, this.L.W / 640) * mult * dt;
         if (dist <= v) {
           st.x = p.x;
           st.y = p.y;

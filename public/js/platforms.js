@@ -117,6 +117,7 @@ registerMail({
   },
 
   platBan: {
+    critical: true,
     make: (s, { pid, why }) => {
       const p = findProduct(s, pid);
       if (!p) return null;

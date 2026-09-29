@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { OFFICES } from '../public/js/data.js';
 import * as G from '../public/js/sim.js';
-import { sendMail, answerMail, pendingMail, mailStep } from '../public/js/mail.js';
+import { sendMail, answerMail, pendingMail, mailStep, mailDeadline } from '../public/js/mail.js';
 import { seasonDemand, seasonTx, openRegion, regionMarket, complianceIssues, lawActive } from '../public/js/world.js';
 import { ensureRivals, warFx, poachFrom, smear, rivalMonth } from '../public/js/rivals.js';
 import { orderUnits, unitCost, leadTime, hwPrice } from '../public/js/hw.js';
@@ -14,7 +14,8 @@ import { secLevel, attackSurface, yearlyAttacks } from '../public/js/security.js
 import { storeCut, platformDemand, MOBILE_SHARE, platformsMonth } from '../public/js/platforms.js';
 import { relFx, relOf, relationsWeek } from '../public/js/relations.js';
 import { EVENTS, deliverEvent } from '../public/js/events.js';
-import { officeFx, birthdayOf, isBirthday, hasEffect, effectMult, addEffect } from '../public/js/core.js';
+import { officeFx, birthdayOf, isBirthday, hasEffect, effectMult, addEffect, digest, flushDigest } from '../public/js/core.js';
+import { botDay } from './bot.js';
 
 const fresh = (seed = 1) => {
   const s = G.newGame({ seed });
@@ -140,7 +141,7 @@ function quickProduct(s, cat, features) {
   const other = s.competitors.find((c) => c.cat === 'search');
   assert.equal(smear(s, other.id).ok, false, 'sin producto en ese mercado no hay campaña');
   for (let i = 0; i < 24; i++) rivalMonth(s);
-  assert.ok(s.mail.some((m) => ['priceWar', 'rivalLawsuit', 'rivalPoach', 'rivalAd'].includes(m.type)) || s.news.some((n) => /actualización/.test(n.text)), 'los rivales actúan');
+  assert.ok(s.mail.some((m) => ['priceWar', 'rivalLawsuit', 'rivalPoach', 'rivalAd'].includes(m.type)) || s.news.some((n) => /actualización|comparándose/.test(n.text)), 'los rivales actúan');
 }
 
 // 6. Hardware: pedido, llegada, ventas, stock y margen.
@@ -355,8 +356,8 @@ function quickProduct(s, cat, features) {
   const offer = deliverEvent(s, 'buyout', { amount: 1e9 });
   assert.ok(offer.choices, 'la oferta de compra pide una decisión');
   const day = s.day;
-  step(s, 12);
-  assert.equal(s.day, day + 12, 'el tiempo sigue corriendo con eventos pendientes');
+  step(s, 31);
+  assert.equal(s.day, day + 31, 'el tiempo sigue corriendo con eventos pendientes');
   assert.ok(!s.gameOver, 'si no contestas, la empresa no se vende');
   assert.equal(offer.done, 0);
   // Una partida guardada con un evento a medias lo recibe por correo.
@@ -463,3 +464,47 @@ console.log('OK');
   for (let w = 0; w < 40; w++) relationsWeek(s);
   assert.ok(!j1.mentor && !j2.mentor, 'un junior no hace de mentor');
 }
+
+// 15. Ritmo: plazos largos, pausa opcional, resumen semanal y rivales con calma.
+{
+  const s = fresh(18);
+  s.money = 1e8;
+  assert.equal(mailDeadline(3), 14, 'nunca menos de dos semanas');
+  assert.equal(mailDeadline(14), 30, 'nunca más de un mes');
+  const e = makePerson(s, 'dev', { skill: 60 });
+  s.employees.push(e);
+  const m = sendMail(s, 'raise', { eid: e.id });
+  assert.equal(m.expires - s.day, 25);
+  // Una decisión grave pausa el juego solo si la opción está activada.
+  const offer = deliverEvent(s, 'buyout', { amount: 1e9 });
+  assert.equal(offer.critical, true);
+  assert.equal(s.pauseFor, undefined, 'con la opción apagada no se pausa');
+  s.settings.pauseCritical = true;
+  const again = deliverEvent(s, 'buyout', { amount: 1e9 });
+  assert.equal(s.pauseFor, again.id);
+  assert.equal(sendMail(s, 'raise', { eid: e.id }).critical, false, 'un aumento no es grave');
+  // Los avisos menores salen juntos una vez por semana.
+  s.notes.length = 0;
+  digest(s, 'promo', '🎉 A asciende a Mid.');
+  flushDigest(s);
+  assert.equal(s.notes.pop().text, '🎉 A asciende a Mid.', 'uno solo se cuenta tal cual');
+  digest(s, 'promo', 'x');
+  digest(s, 'promo', 'y');
+  digest(s, 'feature', 'z');
+  flushDigest(s);
+  assert.match(s.notes.pop().text, /Esta semana: 🎉 2 ascensos · 📦 1 función terminada/);
+  flushDigest(s);
+  assert.equal(s.notes.length, 0, 'sin novedades no hay resumen');
+  // Un año de juego con el bot: unas 30–60 decisiones, no 75.
+  const b = G.newGame({ seed: 7919 });
+  let decisions = 0;
+  for (let d = 0; d < 365 * 2; d++) {
+    botDay(b);
+    const before = new Set(b.mail.map((x) => x.id));
+    G.stepDay(b);
+    b.notes.length = 0;
+    if (d >= 365) decisions += b.mail.filter((x) => !before.has(x.id) && x.choices).length;
+  }
+  assert.ok(decisions <= 45, `demasiadas decisiones en el segundo año: ${decisions}`);
+}
+

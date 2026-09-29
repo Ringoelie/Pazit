@@ -18,7 +18,7 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 - **Ciberseguridad**: cuantos más usuarios tienes, más te atacan. Filtraciones de datos (¿ocultarlo o avisar?), ransomware (pagar, llamar a la policía o restaurar las copias), DDoS y phishing. Tu nivel de seguridad sube con investigación, especialistas en seguridad, auditorías, bug bounty y copias de seguridad.
 - **Plataformas**: las tiendas de apps se quedan hasta un 30% de lo que pagan tus usuarios del móvil (15% si facturas poco), cambian sus comisiones, recortan tus anuncios con nuevas reglas de privacidad o te expulsan. Puedes cobrar por la web, recurrir o denunciarlas. La nube también sube precios: firma un compromiso anual o negocia.
 - **Rivales con personalidad**: cada competidor tiene CEO, un estilo (agresivo, copión, cazatalentos, innovador o dormido) y un nivel de rivalidad contigo. Te declaran guerras de precios, te demandan, intentan fichar a tu gente o copian tus funciones. Tú puedes robarles talento, lanzar campañas comparativas o comprarlos.
-- **Correo**: empleados que piden aumentos o teletrabajo, ideas para tus productos, clientes con proyectos grandes, inversores, rivales, reguladores y los imprevistos del día a día. Nada detiene la partida: llega un aviso que puedes tocar para ir al correo. Las decisiones caducan y, si no contestas, se aplica la opción por defecto, que nunca es drástica (una oferta de compra sin respuesta no vende tu empresa).
+- **Correo**: empleados que piden aumentos o teletrabajo, ideas para tus productos, clientes con proyectos grandes, inversores, rivales, reguladores y los imprevistos del día a día. Nada detiene la partida: llega un aviso con un botón para ir al correo. Tienes entre 2 semanas y un mes de juego para decidir y, si no contestas, se aplica la opción por defecto, que nunca es drástica (una oferta de compra sin respuesta no vende tu empresa). En el menú puedes hacer que el juego se pause con las decisiones graves (ofertas de compra, ransomware, filtraciones, demandas...). Los avisos menores (ascensos, funciones terminadas, cumpleaños...) llegan juntos en un resumen semanal.
 - **Expansión internacional**: sedes en Latinoamérica, África, Norteamérica y Asia. Cada una suma mercado (si tus productos hablan el idioma, gracias a Multi-idioma), cambia lo que paga cada usuario y te deja contratar allí con otros sueldos y otro talento.
 - **Leyes y reguladores**: ley de protección de datos, ley de IA, tasa digital e investigaciones antimonopolio si dominas un mercado. Auditorías, multas y juicios; los abogados mejoran tus opciones.
 - **Productos físicos**: smartphones, relojes, gafas VR y robots domésticos. Fabricas por lotes que tardan en llegar, gestionas el stock, fijas el precio, pagas almacenaje y sufres devoluciones si la calidad es mala.
@@ -45,7 +45,7 @@ npx wrangler pages dev public
 
 Abre http://localhost:8080.
 
-Controles: **Espacio** pausa, **1-3** velocidad, **E** editar la oficina, arrastra la oficina para moverte, rueda o pellizco para el zoom y toca a alguien para ver su ficha.
+Controles: **Espacio** pausa, **1-3** velocidad (un día de juego dura 4 s, 1,5 s o medio segundo), **E** editar la oficina, arrastra la oficina para moverte, rueda o pellizco para el zoom y toca a alguien para ver su ficha.
 
 ## Pruebas
 
