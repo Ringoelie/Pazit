@@ -16,7 +16,8 @@ export const MOBILE_SHARE = 0.55;
 const fail = (msg = '') => ({ ok: false, msg });
 
 export const onMobile = (p) => !isHW(p) && !!p.features.mobile;
-export const storeBanned = (s, p) => (p.storeBan || 0) > s.day;
+// La expulsión dura hasta el día storeBan incluido.
+export const storeBanned = (s, p) => p.storeBan != null && p.storeBan >= s.day;
 
 // Ingresos anuales aproximados según los últimos 30 días.
 function annualRevenue(s) {
@@ -37,7 +38,7 @@ export function storeCut(s, p) {
 }
 
 // Publicidad perdida en el móvil por la nueva política de rastreo.
-export const adsHit = (s, p) => (onMobile(p) && s.plat.adsHit > s.day ? MOBILE_SHARE * 0.35 : 0);
+export const adsHit = (s, p) => (onMobile(p) && s.plat.adsHit >= s.day ? MOBILE_SHARE * 0.35 : 0);
 
 // Si te expulsan de la tienda, la gente del móvil no puede instalar la app.
 export const platformDemand = (s, p) => (storeBanned(s, p) ? 1 - MOBILE_SHARE * 0.7 : 1);
@@ -55,7 +56,8 @@ export function toggleWebpay(s) {
 export function platformsMonth(s) {
   const mobile = s.products.filter((p) => p.launched && onMobile(p));
   if (mobile.length) {
-    if (chance(s, 0.05)) {
+    // Si ganaste la denuncia, la comisión se queda en el 15% para siempre.
+    if (!s.plat.webpayFree && chance(s, 0.05)) {
       const from = s.plat.fee;
       s.plat.fee = from !== 0.3 && chance(s, 0.5) ? 0.3 : chance(s, 0.6) ? 0.35 : 0.25;
       if (s.plat.fee !== from) sendMail(s, 'platFee', { from, to: s.plat.fee });
@@ -76,7 +78,7 @@ export function platformsMonth(s) {
       p.storeBan = s.day + 60;
       sendMail(s, 'platBan', { pid: p.id, why: 'policy' });
     }
-    if (!(s.plat.adsHit > s.day) && mobile.some((p) => p.features.ads) && chance(s, 0.03)) {
+    if (!(s.plat.adsHit >= s.day) && mobile.some((p) => p.features.ads) && chance(s, 0.03)) {
       s.plat.adsHit = s.day + 180;
       sendMail(s, 'platTracking', {});
     }
@@ -140,7 +142,7 @@ registerMail({
       if (!p) return 'Ese producto ya no existe.';
       if (i === 0) {
         p.storeBan = s.day + 30;
-        if (chance(s, 0.35 + teamPowers(s).legal * 0.05)) {
+        if (chance(s, Math.min(0.85, 0.35 + teamPowers(s).legal * 0.05))) {
           s.plat.fee = 0.15;
           s.plat.webpayFree = true;
           news(s, `⚖️ La autoridad de competencia da la razón a ${s.company} frente a las tiendas de apps.`, 'good');
@@ -150,7 +152,7 @@ registerMail({
       }
       if (i === 1) {
         if (chance(s, legalWinChance(s, 0.3))) {
-          p.storeBan = 0;
+          p.storeBan = -1;
           s.reputation = Math.min(100, s.reputation + 2);
           return '⚖️ Recurso ganado: vuelves a la tienda hoy mismo.';
         }
@@ -188,10 +190,13 @@ registerMail({
         const pay = infraStatus(s).cloudMonthly * 3;
         if (s.money < pay) return `No tienes ${fmtMoney(pay)} para pagar por adelantado.`;
         money(s, -pay, 'cloud');
+        // Lo pagado por adelantado se descuenta de las próximas facturas.
+        s.plat.prepaid = (s.plat.prepaid || 0) + pay;
         s.plat.commit = s.day + 365;
         return `Compromiso firmado hasta el ${fmtDate(s.plat.commit)}: -20% en la nube.`;
       }
       if (i === 1) {
+        if (s.plat.cloud !== to) return 'Los precios ya han vuelto a cambiar: no hay nada que negociar.';
         if (chance(s, Math.min(0.85, 0.3 + teamPowers(s).sales * 0.08))) {
           s.plat.cloud = Math.round((from + (to - from) * 0.25) * 100) / 100;
           return 'Buena negociación: la subida se queda en una cuarta parte.';

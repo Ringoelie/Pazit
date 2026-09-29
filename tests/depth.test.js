@@ -2,6 +2,7 @@
 // leyes, rivales y productos físicos.
 // Uso: node tests/depth.test.js
 import assert from 'node:assert/strict';
+import { OFFICES } from '../public/js/data.js';
 import * as G from '../public/js/sim.js';
 import { sendMail, answerMail, pendingMail, mailStep } from '../public/js/mail.js';
 import { seasonDemand, seasonTx, openRegion, regionMarket, complianceIssues, lawActive } from '../public/js/world.js';
@@ -10,10 +11,10 @@ import { orderUnits, unitCost, leadTime, hwPrice } from '../public/js/hw.js';
 import { makePerson } from '../public/js/core.js';
 import { fmtNum, fmtMoney } from '../public/js/util.js';
 import { secLevel, attackSurface, yearlyAttacks } from '../public/js/security.js';
-import { storeCut, platformDemand, MOBILE_SHARE } from '../public/js/platforms.js';
+import { storeCut, platformDemand, MOBILE_SHARE, platformsMonth } from '../public/js/platforms.js';
 import { relFx, relOf, relationsWeek } from '../public/js/relations.js';
 import { EVENTS, deliverEvent } from '../public/js/events.js';
-import { officeFx, birthdayOf, isBirthday } from '../public/js/core.js';
+import { officeFx, birthdayOf, isBirthday, hasEffect, effectMult, addEffect } from '../public/js/core.js';
 
 const fresh = (seed = 1) => {
   const s = G.newGame({ seed });
@@ -365,9 +366,9 @@ function quickProduct(s, cat, features) {
   assert.equal(s.mail[0].type, 'event');
   // La ola de calor empieza al llegar y el aire acondicionado la corta.
   const hw = deliverEvent(s, 'heatwave', {});
-  assert.ok(s.effects.some((e) => e.id === 'heat' && e.until > s.day));
+  assert.ok(hasEffect(s, 'heat'));
   answerMail(s, hw.id, 0);
-  assert.ok(!s.effects.some((e) => e.id === 'heat' && e.until > s.day), 'con aire acondicionado se acaba el calor');
+  assert.ok(!hasEffect(s, 'heat'), 'con aire acondicionado se acaba el calor');
 }
 
 // 13. Cada persona cumple años una vez al año, en su fecha.
@@ -395,3 +396,70 @@ assert.equal(fmtMoney(999.6e6), '$1B');
 assert.equal(fmtNum(12345), '12.3k');
 
 console.log('OK');
+
+// 14. Errores corregidos: días de efectos y caídas, nube, tiendas, oficinas.
+{
+  const s = fresh(17);
+  s.money = 1e9;
+  // Un efecto de 1 día se nota al día siguiente.
+  addEffect(s, 'prueba', 1, { prod: 0.5 });
+  G.stepDay(s);
+  assert.equal(effectMult(s, 'prod'), 0.5, 'el efecto de un día se aplica');
+  G.stepDay(s);
+  assert.equal(effectMult(s, 'prod'), 1, 'y se acaba');
+  // Un día de caída cuesta un día de ingresos.
+  s.research.monetization = 1;
+  const p = quickProduct(s, 'blog', { landing: 1, articles: 1, subs: 1 });
+  p.price = 5;
+  p.users = 50000;
+  G.stepDay(s);
+  assert.ok(p.rev.total > 0);
+  p.down = 1;
+  G.stepDay(s);
+  assert.equal(p.rev.total, 0, 'caído, no ingresa');
+  assert.equal(p.down, 0);
+  // El compromiso con la nube se paga por adelantado y se descuenta.
+  s.plat.prepaid = 100000;
+  s.infra.cloud = true;
+  G.stepDay(s);
+  assert.ok(s.plat.prepaid < 100000, 'lo pagado por adelantado se va gastando');
+  // La comisión del 15% ganada en la denuncia es para siempre.
+  s.plat.fee = 0.15;
+  s.plat.webpayFree = true;
+  p.features.mobile = 1;
+  for (let i = 0; i < 400; i++) platformsMonth(s);
+  assert.equal(s.plat.fee, 0.15);
+  // La isla privada necesita el programa espacial.
+  s.office.tier = OFFICES.findIndex((o) => o.id === 'campus');
+  assert.equal(G.moveOffice(s, OFFICES.findIndex((o) => o.id === 'island')).ok, false);
+  // Las copias que cuentan en un secuestro son las que había al llegar.
+  s.sec.backups = false;
+  const rm = sendMail(s, 'secRansom', { pid: p.id, amount: 20000, backups: false });
+  s.sec.backups = true;
+  answerMail(s, rm.id, 2);
+  assert.equal(p.down, 6, 'activar las copias después no sirve');
+  // Pagar sin dinero lo dice claramente.
+  s.money = 100;
+  p.down = 0;
+  const rm2 = sendMail(s, 'secRansom', { pid: p.id, amount: 50000, backups: false });
+  assert.match(answerMail(s, rm2.id, 0).msg, /No tienes/);
+  // Dos filtraciones ocultas se suman.
+  s.sec.hidden = null;
+  s.money = 1e9;
+  for (const n of [100000, 10]) {
+    const b = sendMail(s, 'secBreach', { pid: p.id, n });
+    const was = s.sec.hidden?.n || 0;
+    while ((s.sec.hidden?.n || 0) === was) {
+      b.done = null;
+      answerMail(s, b.id, 0);
+    }
+  }
+  assert.ok(s.sec.hidden.n >= 100010, 'la filtración grande no desaparece');
+  // Dos juniors con el rasgo Mentor no se enseñan entre ellos.
+  s.employees = s.employees.slice(0, 1);
+  const j1 = makePerson(s, 'dev', { skill: 15, traits: ['mentor'] });
+  const j2 = makePerson(s, 'dev', { skill: 15, traits: ['mentor'] });
+  s.employees.push(j1, j2);
+  for (let w = 0; w < 40; w++) relationsWeek(s);
+  assert.ok(!j1.mentor && !j2.mentor, 'un junior no hace de mentor');
+}

@@ -27,17 +27,22 @@ export function money(s, amount, cat) {
   if (amount > 0 && ['ads', 'subs', 'tx', 'api', 'contracts', 'hardware', 'store'].includes(cat)) s.stats.revenue += amount;
 }
 
+// Un efecto de N días añadido hoy dura del día siguiente al día de hoy + N,
+// ambos incluidos (el día de hoy ya se ha simulado).
 export function effectMult(s, key) {
   let m = 1;
-  for (const ef of s.effects) if (ef.until > s.day && ef[key] != null) m *= ef[key];
+  for (const ef of s.effects) if (ef.until >= s.day && ef[key] != null) m *= ef[key];
   return m;
 }
 export function hasEffect(s, id) {
-  return s.effects.some((ef) => ef.id === id && ef.until > s.day);
+  return s.effects.some((ef) => ef.id === id && ef.until >= s.day);
 }
 export function addEffect(s, id, days, mods) {
   s.effects = s.effects.filter((ef) => ef.id !== id);
   s.effects.push({ id, until: s.day + days, ...mods });
+}
+export function removeEffect(s, id) {
+  s.effects = s.effects.filter((ef) => ef.id !== id);
 }
 
 // Efectos visuales en la oficina (hackathon, Navidad, cumpleaños, apagón...).

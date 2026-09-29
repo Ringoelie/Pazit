@@ -10,7 +10,7 @@ import { seasonOf, seasonDemand, regionMarket, langReach, regionStaff, complianc
 import { warFx, poachCost, smearCost, rivalCooldown } from './rivals.js';
 import { isHW, unitCost, hwPrice, leadTime } from './hw.js';
 import { secLevel, yearlyAttacks, BOUNTY_COST, BACKUP_COST, AUDIT_COST, AUDIT_DAYS } from './security.js';
-import { STORES, CLOUD_NAME, onMobile, storeBanned, storeFee, storeMonthly, cloudMult, adsHit } from './platforms.js';
+import { STORES, CLOUD_NAME, onMobile, storeFee, storeMonthly, cloudMult, adsHit } from './platforms.js';
 import { REL_KINDS, relationsOf, relSummary } from './relations.js';
 import * as G from './sim.js';
 import { perkStats, birthdayOf, isBirthday } from './core.js';
@@ -515,7 +515,7 @@ function productAlerts(s, p) {
     out.push(`<div class="banner warn">⚔️ Guerra de precios con ${esc(c?.name || 'un rival')}: ${how}. Quedan ${fmtDays(p.war.until - s.day)}.</div>`);
   }
   if (p.antitrust > s.day) out.push(`<div class="banner warn">🏛️ Bajo vigilancia antimonopolio: crecimiento limitado ${fmtDays(p.antitrust - s.day)} más.</div>`);
-  if (storeBanned(s, p)) out.push(`<div class="banner warn">⛔ Fuera de las tiendas de apps ${fmtDays(p.storeBan - s.day)} más: casi nadie puede instalar la app.</div>`);
+  if (p.storeBan > s.day) out.push(`<div class="banner warn">⛔ Fuera de las tiendas de apps ${fmtDays(p.storeBan - s.day)} más: casi nadie puede instalar la app.</div>`);
   if (adsHit(s, p)) out.push('<div class="banner warn">🙈 Nueva política de rastreo: los anuncios rinden menos en el móvil.</div>');
   if (p.down > 0) out.push(`<div class="banner warn">🔥 Caído ${fmtDays(p.down)} más: sin ingresos y perdiendo usuarios.</div>`);
   const m = seasonDemand(s, p.cat);
@@ -927,7 +927,7 @@ function worldPanel(s) {
 function platformsSection(s) {
   const mobile = s.products.filter((p) => p.launched && onMobile(p));
   const fee = storeFee(s);
-  const banned = mobile.filter((p) => storeBanned(s, p));
+  const banned = mobile.filter((p) => p.storeBan > s.day);
   const hasWeb = G.has(s, 'webpay');
   return `<h3>Plataformas</h3>
     <div class="cards">

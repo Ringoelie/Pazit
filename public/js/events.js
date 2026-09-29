@@ -4,7 +4,7 @@
 // El contexto (ctx) es JSON plano para que sobreviva a guardar y cargar.
 import { PERKS } from './data.js';
 import { rint, chance, pick, dateOf, fmtMoney } from './util.js';
-import { has, findEmp, findProduct, news, money, addEffect, makePerson, expectedSalary, addOfficeFx } from './core.js';
+import { has, findEmp, findProduct, news, money, addEffect, removeEffect, makePerson, expectedSalary, addOfficeFx } from './core.js';
 import { valuation, queueFeature, isAIProduct, featureAvailable, installPerk, teamPowers } from './sim.js';
 import { registerMail, sendMail } from './mail.js';
 import { isHW } from './hw.js';
@@ -38,7 +38,8 @@ export const EVENTS = {
     }),
     resolve: (s, ctx, i) => {
       const cost = [300, 80, 0][i] * s.employees.length;
-      if (i < 2 && s.money >= cost) {
+      if (i < 2 && s.money < cost) return 'No llega el dinero para la fiesta. El equipo lo entiende... más o menos.';
+      if (i < 2) {
         money(s, -cost, 'other');
         for (const e of s.employees) e.mood = Math.min(100, e.mood + (i === 0 ? 15 : 6));
         if (i === 0) s.reputation = Math.min(100, s.reputation + 1);
@@ -202,7 +203,7 @@ export const EVENTS = {
       if (i === 0 && s.money >= PERKS.ac.cost) {
         money(s, -PERKS.ac.cost, 'office');
         installPerk(s, 'ac');
-        addEffect(s, 'heat', 0, {});
+        removeEffect(s, 'heat');
         return '❄️ Aire acondicionado instalado. ¡Qué gloria!';
       }
       return i === 0 ? `No tienes ${fmtMoney(PERKS.ac.cost)}: toca sudar.` : 'Toca sudar hasta que pase la ola de calor.';
