@@ -16,7 +16,31 @@ export const THEMES = {
   tower: { wall: '#29366f', trim: '#1a2250', floor: ['#d6dee6', '#cad4de'], desk: ['#f4f4f4', '#94b0c2'], chair: '#333c57', bg: '#10152c', win: 'glass', frame: '#1a2250', sign: ['#10152c', '#73eff7'] },
   campus: { wall: '#eef3ea', trim: '#8fb58a', floor: ['#e2c79a', '#d9bd8e', '#e8cfa6'], desk: ['#fff4e0', '#e2cfae'], chair: '#38b764', bg: '#18261f', win: 'std', frame: '#ffffff', sign: ['#257179', '#f4f4f4'] },
   orbital: { wall: '#2b3047', trim: '#1a1c2c', floor: ['#4a5470', '#454e69'], desk: ['#94b0c2', '#566c86'], chair: '#73eff7', bg: '#07080f', win: 'porthole', frame: '#94b0c2', sign: ['#07080f', '#73eff7'] },
+  island: { wall: '#e8d5a8', trim: '#8a6340', floor: ['#c08a58', '#b57f50', '#c9955f'], desk: ['#f4f4f4', '#d9c7a3'], chair: '#38b764', bg: '#0f2a33', win: 'std', frame: '#f4f4f4', sign: ['#257179', '#ffcd75'], view: 'sea' },
+  moon: { wall: '#dfe6ee', trim: '#566c86', floor: ['#8a8f9e', '#80859a'], desk: ['#dfe6ee', '#94b0c2'], chair: '#3b5dc9', bg: '#05060c', win: 'porthole', frame: '#94b0c2', sign: ['#1a1c2c', '#73eff7'], view: 'moon' },
 };
+
+// Estilos de decoración: cambian suelo, paredes, muebles y (salvo en el
+// espacio) las ventanas.
+const STYLE_THEMES = {
+  cyberpunk: { wall: '#2a1a3d', trim: '#140b22', floor: ['#1b1530', '#1e1836'], desk: ['#2b2d42', '#1b1c2c'], chair: '#ff3dac', bg: '#07050d', win: 'glass', frame: '#140b22', sign: ['#140b22', '#ff3dac'] },
+  zen: { wall: '#f1ead8', trim: '#6b4024', floor: ['#b7c28a', '#aebb80'], desk: ['#c9a06a', '#8a6340'], chair: '#5d6b3a', bg: '#1e2416', win: 'std', frame: '#8a6340', sign: ['#3a2a1a', '#f1ead8'] },
+  retro: { wall: '#f7b5c8', trim: '#5ec4b6', floor: ['#f4e9d8', '#f0e3cf'], desk: ['#f4f4f4', '#5ec4b6'], chair: '#ff6b8b', bg: '#2a1f3d', win: 'std', frame: '#f4f4f4', sign: ['#29366f', '#ffcd75'] },
+  beach: { wall: '#bfe3f0', trim: '#f4f4f4', floor: ['#efe4cc', '#e8dcc2', '#f4ead6'], desk: ['#f4f4f4', '#d9c7a3'], chair: '#41a6f6', bg: '#123a4a', win: 'std', frame: '#f4f4f4', sign: ['#257179', '#f4f4f4'], view: 'sea' },
+};
+const SPACE = new Set(['orbital', 'moon']);
+
+// Tema final de una oficina con su estilo: kind elige cómo se pintan suelo y
+// paredes; view, qué se ve por las ventanas.
+export function themeFor(office, style) {
+  const base = THEMES[office];
+  const st = style && STYLE_THEMES[style];
+  if (!st) return { ...base, kind: office, view: base.view || office };
+  const t = { ...base, ...st, kind: style, view: st.view || base.view || office };
+  if (SPACE.has(office)) Object.assign(t, { win: base.win, frame: base.frame, view: base.view || office });
+  if (office === 'garage') t.win = null;
+  return t;
+}
 
 // ---------------------------------------------------------------- utilidades
 
@@ -148,6 +172,62 @@ const FLOORS = {
     R(g, zx + 3, zy + zh, zw - 6, 1, 'rgba(10,8,24,.18)');
     R(g, zx + 3, zy, zw - 6, 1, '#7fd477');
   },
+  island(g, x0, y0, w, h, T) {
+    planks(g, x0, y0, w, h, 6, T.floor, 71, true);
+  },
+  beach(g, x0, y0, w, h, T) {
+    planks(g, x0, y0, w, h, 7, T.floor, 81);
+  },
+  moon(g, x0, y0, w, h, T) {
+    for (let y = y0; y < y0 + h; y += 24) {
+      for (let x = x0; x < x0 + w; x += 24) {
+        const c = T.floor[((x - x0) / 24 + (y - y0) / 24) % 2];
+        R(g, x, y, 24, 24, c);
+        R(g, x, y, 24, 1, shade(c, 0.2));
+        R(g, x, y, 1, 24, shade(c, 0.1));
+        R(g, x + 23, y, 1, 24, shade(c, -0.25));
+        R(g, x, y + 23, 24, 1, shade(c, -0.25));
+      }
+    }
+    speckle(g, x0, y0, w, h, 91, [[0.05, shade(T.floor[0], -0.15)], [0.08, shade(T.floor[0], 0.12)]]);
+  },
+  cyberpunk(g, x0, y0, w, h, T) {
+    R(g, x0, y0, w, h, T.floor[0]);
+    for (let x = x0; x < x0 + w; x += 16) R(g, x, y0, 1, h, '#2e2050');
+    for (let y = y0; y < y0 + h; y += 16) R(g, x0, y, w, 1, '#2e2050');
+    for (let x = x0 + 8; x < x0 + w; x += 48) R(g, x, y0, 1, h, (x / 48) % 2 < 1 ? 'rgba(255,61,172,.55)' : 'rgba(61,242,255,.5)');
+    for (let y = y0 + 24; y < y0 + h; y += 48) R(g, x0, y, w, 1, 'rgba(61,242,255,.35)');
+  },
+  zen(g, x0, y0, w, h, T) {
+    for (let y = y0, row = 0; y < y0 + h; y += 16, row++) {
+      for (let x = x0 - (row % 2) * 16; x < x0 + w; x += 32) {
+        const c = T.floor[(row + Math.floor(x / 32)) % 2 ? 0 : 1];
+        R(g, x, y, 32, 16, c);
+        for (let k = 2; k < 16; k += 2) R(g, x + 1, y + k, 30, 1, shade(c, 0.06));
+        R(g, x, y, 32, 1, '#5d6b3a');
+        R(g, x, y, 1, 16, '#5d6b3a');
+      }
+    }
+  },
+  retro(g, x0, y0, w, h, T) {
+    R(g, x0, y0, w, h, T.floor[0]);
+    const cs = ['#ff6b8b', '#5ec4b6', '#ffcd75', '#3b5dc9'];
+    for (let i = 0; i < (w * h) / 180; i++) {
+      const x = x0 + Math.floor(hash(i, 1, 101) * w);
+      const y = y0 + Math.floor(hash(i, 2, 101) * h);
+      const c = cs[i % 4];
+      const k = i % 3;
+      if (k === 0) {
+        R(g, x, y, 3, 1, c);
+        R(g, x + 1, y + 1, 1, 1, c);
+      } else if (k === 1) {
+        px(g, x, y, c);
+        px(g, x + 1, y + 1, c);
+        px(g, x + 2, y, c);
+        px(g, x + 3, y + 1, c);
+      } else R(g, x, y, 2, 2, c);
+    }
+  },
   orbital(g, x0, y0, w, h, T) {
     for (let y = y0; y < y0 + h; y += 16) {
       for (let x = x0; x < x0 + w; x += 32) {
@@ -253,6 +333,60 @@ const WALLS = {
     R(g, gx, 27, gw, 2, '#8a6340');
     R(g, gx, 27, gw, 1, '#b4895f');
   },
+  island(g, L, T) {
+    R(g, 0, 0, L.W, WALL, T.wall);
+    for (let x = 0; x < L.W; x += 6) {
+      R(g, x, 0, 4, WALL, x % 12 ? '#dcc592' : '#e8d5a8');
+      R(g, x + 3, 0, 1, WALL, '#b89a62');
+      for (let y = 6 + (x % 18); y < WALL; y += 14) R(g, x, y, 4, 1, '#b89a62');
+    }
+  },
+  beach(g, L, T) {
+    R(g, 0, 0, L.W, WALL, T.wall);
+    for (let y = 3; y < WALL; y += 5) {
+      R(g, 0, y, L.W, 1, shade(T.wall, -0.1));
+      R(g, 0, y + 1, L.W, 1, shade(T.wall, 0.15));
+    }
+  },
+  moon(g, L, T) {
+    const W = L.W;
+    for (let x = 0; x < W; x += 32) {
+      R(g, x, 0, 32, WALL, x % 64 ? T.wall : shade(T.wall, -0.04));
+      R(g, x, 0, 1, WALL, shade(T.wall, 0.2));
+      R(g, x + 31, 0, 1, WALL, shade(T.wall, -0.2));
+      px(g, x + 3, 5, PAL.silver);
+      px(g, x + 28, 5, PAL.silver);
+    }
+    R(g, 0, 30, W, 3, PAL.blue);
+    R(g, 0, 30, W, 1, shade(PAL.blue, 0.3));
+    R(g, 0, 1, W, 1, PAL.cyan);
+  },
+  cyberpunk(g, L, T) {
+    R(g, 0, 0, L.W, WALL, T.wall);
+    for (let x = 0; x < L.W; x += 24) R(g, x, 0, 1, WALL, '#3a2656');
+    for (let x = 12; x < L.W; x += 72) {
+      const c = (x / 72) % 2 < 1 ? '#ff3dac' : '#3df2ff';
+      R(g, x - 1, 4, 3, WALL - 10, c === '#ff3dac' ? 'rgba(255,61,172,.25)' : 'rgba(61,242,255,.25)');
+      R(g, x, 4, 1, WALL - 10, c);
+    }
+    R(g, 0, 3, L.W, 1, 'rgba(61,242,255,.6)');
+  },
+  zen(g, L, T) {
+    R(g, 0, 0, L.W, WALL, T.wall);
+    for (let x = 0; x < L.W; x += 12) R(g, x, 0, 1, WALL, '#8a6340');
+    for (let y = 0; y < WALL; y += 10) R(g, 0, y, L.W, 1, '#a07a50');
+    R(g, 0, 0, L.W, 2, '#6b4024');
+  },
+  retro(g, L, T) {
+    R(g, 0, 0, L.W, WALL, T.wall);
+    for (let x = 0; x < L.W; x += 8) {
+      const y = 8 + ((x / 8) % 2) * 3;
+      R(g, x, y, 5, 1, '#5ec4b6');
+    }
+    for (let i = 0; i < L.W / 10; i++) px(g, Math.floor(hash(i, 3, 111) * L.W), 14 + Math.floor(hash(i, 4, 111) * 20), i % 2 ? '#ffcd75' : '#3b5dc9');
+    R(g, 0, 32, L.W, WALL - 32, '#5ec4b6');
+    R(g, 0, 32, L.W, 1, shade('#5ec4b6', 0.3));
+  },
   orbital(g, L, T) {
     const W = L.W;
     for (let x = 0; x < W; x += 24) {
@@ -348,9 +482,24 @@ function cloud(g, x, y, big) {
   R(g, x + 1, y + 4, big ? 12 : 8, 1, '#dbe6ee');
 }
 
-function landscape(g, theme, w) {
+function landscape(g, theme, w, night) {
   const bx = w.x;
   const by = w.y + w.h;
+  if (theme === 'sea') {
+    const sea = night ? '#16305a' : PAL.sky;
+    R(g, bx, by - 11, w.w, 11, sea);
+    R(g, bx, by - 11, w.w, 1, night ? '#2b4a80' : '#8fdcf2');
+    R(g, bx, by - 6, w.w, 3, night ? '#122848' : PAL.blue);
+    for (let i = 0; i < w.w; i += 7) px(g, bx + i + Math.floor(hash(w.x + i, 1, 5) * 4), by - 9 + (i % 3), night ? '#4a6aa0' : PAL.white);
+    R(g, bx, by - 3, w.w, 3, night ? '#8a7a5a' : '#f2d8a0');
+    if (hash(w.x, 7, 5) < 0.6) {
+      const px0 = bx + w.w - 10;
+      R(g, px0 + 3, by - 16, 1, 13, '#6b4024');
+      R(g, px0 + 2, by - 10, 1, 7, '#6b4024');
+      for (const [dx, dy, ww] of [[-2, -17, 5], [3, -18, 6], [0, -16, 3], [4, -16, 4]]) R(g, px0 + dx, by + dy, ww, 1, night ? '#1f4a35' : PAL.green);
+    }
+    return;
+  }
   if (theme === 'campus') {
     R(g, bx, by - 6, w.w, 6, '#5ab552');
     for (let i = 0; i < w.w; i += 6) R(g, bx + i, by - 7 - Math.floor(hash(w.x + i, 1, 7) * 3), 6, 3, '#5ab552');
@@ -385,14 +534,24 @@ function landscape(g, theme, w) {
     R(g, tx - 1, by - 17, 9, 1, '#6b4024');
     return;
   }
-  // Ciudad a lo lejos
+  // Ciudad a lo lejos (con más ventanas encendidas de noche)
   for (let i = 0; i < w.w; i += 6) {
     const h = 3 + Math.floor(hash(w.x + i, 2, 17) * 9);
-    const c = mix(PAL.navy, '#8fa5b8', 0.55 + hash(w.x + i, 3, 17) * 0.2);
+    const c = night ? mix(PAL.navy, '#070a1e', 0.3) : mix(PAL.navy, '#8fa5b8', 0.55 + hash(w.x + i, 3, 17) * 0.2);
     R(g, bx + i, by - h, 6, h, c);
-    if (h > 5) px(g, bx + i + 2, by - h + 2, mix(PAL.yellow, c, 0.4));
+    if (h > 5) px(g, bx + i + 2, by - h + 2, night ? PAL.yellow : mix(PAL.yellow, c, 0.4));
+    if (night && h > 7 && hash(w.x + i, 6, 17) < 0.6) px(g, bx + i + 4, by - h + 5, PAL.yellow);
   }
-  R(g, bx, by - 2, w.w, 2, '#6f8196');
+  R(g, bx, by - 2, w.w, 2, night ? '#1d2440' : '#6f8196');
+}
+
+// Cielo según la hora del día (6:00 = amanecer).
+function skyFor(hour, season) {
+  const h = hour % 24;
+  if (h >= 21 || h < 5.5) return { c: ['#070a1e', '#0d1330', '#161e45'], night: true };
+  if (h < 7.5) return { c: ['#3a3470', '#d9707a', '#ffc28a'], dawn: true };
+  if (h >= 19) return { c: ['#2a2a6a', '#b13e53', '#ef7d57'], dusk: true };
+  return { c: SKIES[season] };
 }
 
 // ---------------------------------------------------------------- API
@@ -402,7 +561,7 @@ export function paintBackground(g, L, s) {
   const T = L.theme;
   const th = L.o.theme;
   g.clearRect(0, 0, L.W, L.H);
-  FLOORS[th](g, 0, WALL, L.W, L.H - WALL, T, L);
+  FLOORS[T.kind](g, 0, WALL, L.W, L.H - WALL, T, L);
   // Sala de servidores
   const r = L.room;
   R(g, r.x, r.y, r.w, r.h, '#1d2136');
@@ -426,7 +585,7 @@ export function paintBackground(g, L, s) {
   R(g, r.x + 4, r.y + 5, S.textWidth('SERVIDORES') + 4, 7, '#12152a');
   S.drawText(g, 'SERVIDORES', r.x + 6, r.y + 6, PAL.sky);
   // Pared
-  WALLS[th](g, L, T);
+  WALLS[T.kind](g, L, T);
   R(g, 0, 0, L.W, 1, 'rgba(10,8,24,.35)');
   R(g, 0, 1, L.W, 1, 'rgba(10,8,24,.18)');
   R(g, 0, 2, L.W, 1, 'rgba(10,8,24,.08)');
@@ -488,17 +647,18 @@ export function paintBackground(g, L, s) {
   R(g, 0, WALL - 1, L.W, 1, shade(T.trim, -0.3));
   for (let i = 0; i < 4; i++) R(g, 0, WALL + i, L.W, 1, `rgba(10,8,24,${(0.2 - i * 0.05).toFixed(2)})`);
   // Corcho o póster
-  if (th === 'garage' || th === 'cowork') S.drawCorkboard(g, 4, 20);
+  if (T.kind === 'garage' || T.kind === 'cowork') S.drawCorkboard(g, 4, 20);
   else S.drawPoster(g, 6, 20);
   return { windows, clock };
 }
 
 // Cielo, nubes y paisaje de cada ventana; se llama en cada fotograma.
-export function paintWindows(g, L, s, t, windows) {
-  const th = L.o.theme;
+export function paintWindows(g, L, s, t, windows, hour = 12) {
+  const view = L.theme.view;
   const m = dateOf(s.day).m;
   const season = seasonSky(m);
-  const sky = SKIES[season];
+  const sk = skyFor(hour, season);
+  const sky = sk.c;
   for (const w of windows) {
     if (w.kind === 'porthole') {
       const r = w.w / 2;
@@ -511,11 +671,21 @@ export function paintWindows(g, L, s, t, windows) {
         const sx = w.x + ((i * 13 + Math.floor(t * 2) + w.x) % w.w);
         px(g, sx, w.y + ((i * 7) % w.h), i % 3 ? PAL.white : PAL.cyan);
       }
-      const ex = w.x + ((w.x + t * 1.5) % (w.w + 24)) - 12;
-      blob(g, ex + 6, w.y + 16, 7, 7, PAL.blue);
-      blob(g, ex + 4, w.y + 14, 3, 2, PAL.green);
-      blob(g, ex + 8, w.y + 18, 2, 1, PAL.green);
-      R(g, ex + 1, w.y + 12, 3, 1, 'rgba(255,255,255,.6)');
+      if (view === 'moon') {
+        // La Tierra sale sobre el horizonte lunar
+        blob(g, w.x + 8, w.y + 8, 4, 4, PAL.blue);
+        blob(g, w.x + 7, w.y + 7, 2, 1, PAL.green);
+        R(g, w.x, w.y + 16, w.w, 8, '#9aa0ad');
+        R(g, w.x, w.y + 16, w.w, 1, '#c9ced8');
+        blob(g, w.x + 16, w.y + 19, 3, 1, '#7d8292');
+        blob(g, w.x + 6, w.y + 21, 2, 1, '#7d8292');
+      } else {
+        const ex = w.x + ((w.x + t * 1.5) % (w.w + 24)) - 12;
+        blob(g, ex + 6, w.y + 16, 7, 7, PAL.blue);
+        blob(g, ex + 4, w.y + 14, 3, 2, PAL.green);
+        blob(g, ex + 8, w.y + 18, 2, 1, PAL.green);
+        R(g, ex + 1, w.y + 12, 3, 1, 'rgba(255,255,255,.6)');
+      }
       g.restore();
     } else {
       clip(g, w.x, w.y, w.w, w.h, () => {
@@ -523,16 +693,24 @@ export function paintWindows(g, L, s, t, windows) {
         R(g, w.x, w.y, w.w, b, sky[0]);
         R(g, w.x, w.y + b, w.w, b, sky[1]);
         R(g, w.x, w.y + b * 2, w.w, w.h - b * 2, sky[2]);
-        if (season === 'summer' || season === 'spring') {
-          const sx = w.x + w.w - 9;
-          blob(g, sx, w.y + 5, 2, 2, PAL.yellow);
-          px(g, sx - 1, w.y + 4, '#fff4c0');
+        if (sk.night) {
+          for (let i = 0; i < 6; i++) px(g, w.x + Math.floor(hash(i, w.x, 3) * w.w), w.y + Math.floor(hash(i, w.x, 4) * w.h * 0.6), i % 3 ? PAL.white : '#a8b8ff');
+          if (hash(w.x, 9, 9) < 0.35) {
+            blob(g, w.x + 8, w.y + 6, 3, 3, '#fff4c0');
+            blob(g, w.x + 10, w.y + 5, 2, 2, sky[0]);
+          }
+        } else {
+          if (!sk.dawn && !sk.dusk && (season === 'summer' || season === 'spring')) {
+            const sx = w.x + w.w - 9;
+            blob(g, sx, w.y + 5, 2, 2, PAL.yellow);
+            px(g, sx - 1, w.y + 4, '#fff4c0');
+          }
+          const cx = w.x + ((w.x * 3 + t * 3) % (w.w + 18)) - 14;
+          cloud(g, cx, w.y + 4, true);
+          const cx2 = w.x + ((w.x * 7 + t * 2) % (w.w + 18)) - 12;
+          cloud(g, cx2, w.y + 11, false);
         }
-        const cx = w.x + ((w.x * 3 + t * 3) % (w.w + 18)) - 14;
-        cloud(g, cx, w.y + 4, true);
-        const cx2 = w.x + ((w.x * 7 + t * 2) % (w.w + 18)) - 12;
-        cloud(g, cx2, w.y + 11, false);
-        landscape(g, th, w);
+        landscape(g, view, w, sk.night);
         if (season === 'winter') {
           for (let i = 0; i < 7; i++) px(g, w.x + ((i * 11 + t * 4) % w.w), w.y + ((i * 9 + t * 8) % w.h), PAL.white);
         }
@@ -545,7 +723,7 @@ export function paintWindows(g, L, s, t, windows) {
 // Viñeta suave para dar profundidad a la escena.
 export function paintVignette(g, L) {
   const grad = g.createRadialGradient(L.W / 2, L.H * 0.55, Math.min(L.W, L.H) * 0.35, L.W / 2, L.H * 0.55, Math.max(L.W, L.H) * 0.75);
-  const dark = L.o.theme === 'orbital' ? 'rgba(4,6,20,.4)' : 'rgba(12,8,30,.28)';
+  const dark = SPACE.has(L.o.theme) ? 'rgba(4,6,20,.4)' : 'rgba(12,8,30,.28)';
   grad.addColorStop(0, 'rgba(12,8,30,0)');
   grad.addColorStop(1, dark);
   g.clearRect(0, 0, L.W, L.H);

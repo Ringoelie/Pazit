@@ -40,6 +40,13 @@ export function addEffect(s, id, days, mods) {
   s.effects.push({ id, until: s.day + days, ...mods });
 }
 
+// Efectos visuales en la oficina (hackathon, Navidad, cumpleaños, apagón...).
+export function addOfficeFx(s, kind, days, extra = {}) {
+  s.officeFx = (s.officeFx || []).filter((f) => f.until >= s.day && f.kind !== kind);
+  s.officeFx.push({ kind, until: s.day + days, ...extra });
+}
+export const officeFx = (s, kind) => (s.officeFx || []).find((f) => f.kind === kind && f.until >= s.day);
+
 export function levelOf(skill) {
   let l = 0;
   for (let i = 0; i < LEVELS.length; i++) if (skill >= LEVELS[i].min) l = i;

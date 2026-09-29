@@ -3,7 +3,7 @@
 import {
   ROLES, HIRABLE, MAKERS, OFFICES, PERKS, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID,
   CAMPAIGNS, ROUNDS, CLIENTS, JOBS, QUESTS, ACHIEVEMENTS, MAX_FEATURE_LEVEL, LEVEL_COST, LEVEL_APPEAL,
-  PREMIUM_PRICES, STARTUP_SUFFIX, PRODUCT_NAMES, REGIONS, UNIVERSAL_WEIGHT,
+  PREMIUM_PRICES, STARTUP_SUFFIX, PRODUCT_NAMES, REGIONS, UNIVERSAL_WEIGHT, STYLES, STYLE_MOOD,
 } from './data.js';
 import { rnd, rint, rfloat, pick, chance, gauss, clamp, dateOf, fmtMoney, fmtNum, MONTHS } from './util.js';
 import {
@@ -16,6 +16,9 @@ import { sendMail, mailStep } from './mail.js';
 import { worldDay, seasonDemand, seasonTx, regionMarket, regionArpu, regionRent, regionStaff } from './world.js';
 import { ensureRivals, rivalMonth, onShip, warFx } from './rivals.js';
 import { isHW, hwStep } from './hw.js';
+import { securityDay } from './security.js';
+import { storeCut, adsHit, platformDemand, platformsMonth, cloudMult } from './platforms.js';
+import { relationsWeek, relFx } from './relations.js';
 
 export { has, officeOf, findEmp, findProduct, perkStats, expectedSalary, levelOf };
 
@@ -47,6 +50,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     equity: 100,
     speed: 1,
     tutorial: -1,
+    xmas: -1,
     nextId: 1,
     employees: [],
     candidates: [],
@@ -57,6 +61,10 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     office: { tier: 0, perks: {}, layout: defaultLayout(0, {}, { fixtures: true }) },
     policies: {},
     infra: { cloud: true, racks: 0, outages: 0 },
+    sec: { bounty: false, backups: false, audit: -999, incidents: 0, hidden: null },
+    plat: { fee: 0.3, webpay: false, webpayFree: false, adsHit: -1, cloud: 1, commit: -1 },
+    rel: [],
+    officeFx: [],
     competitors: [],
     mail: [],
     nextMailDay: 12,
@@ -116,10 +124,11 @@ export const freeDesks = (s) => officeOf(s).desks - onsite(s);
 export const canWork = (e) => e.off <= 0;
 
 export function teamPowers(s) {
-  const p = { ops: 0, sales: 0, people: 0, legal: 0 };
+  const p = { ops: 0, sales: 0, people: 0, legal: 0, sec: 0 };
   for (const e of s.employees) {
     if (e.off > 0) continue;
     if (e.role === 'devops') p.ops += e.skill / 50;
+    else if (e.role === 'security') p.sec += e.skill / 50;
     else if (e.role === 'sales') p.sales += e.skill / 50;
     else if (e.role === 'hr') p.people += e.skill / 50;
     else if (e.role === 'legal') p.legal += e.skill / 50;
@@ -261,9 +270,12 @@ export function productRevenue(s, p, tp = teamPowers(s)) {
   if (f.bank) tx += 1.2 + 0.3 * (f.bank - 1);
   if (tx) out.tx = p.users * 0.003 * cat.monet.tx * tx * seasonTx(s, p.cat);
   if (f.api) out.api = p.users * 0.0004 * cat.monet.api * (1 + 0.3 * (f.api - 1));
-  out.ads *= mult;
-  out.subs *= mult;
-  out.tx *= mult;
+  out.ads *= mult * (1 - adsHit(s, p));
+  // La tienda de apps se queda su parte de lo que se paga desde el móvil.
+  const cut = storeCut(s, p);
+  out.store = (out.subs + out.tx) * mult * cut;
+  out.subs *= mult * (1 - cut);
+  out.tx *= mult * (1 - cut);
   out.api *= mult;
   out.total = out.ads + out.subs + out.tx + out.api;
   return out;
@@ -299,7 +311,7 @@ export function rackUnits(s) {
   return u;
 }
 export const rackCapacity = (s) => s.infra.racks * rackUnits(s);
-export const cloudPrice = (s) => CLOUD_PRICE * (has(s, 'edge') ? 0.7 : 1);
+export const cloudPrice = (s) => CLOUD_PRICE * (has(s, 'edge') ? 0.7 : 1) * cloudMult(s);
 export const rackCoverage = (s, tp = teamPowers(s)) => Math.floor(tp.ops * 20) + 3;
 export { RACK_COST, RACK_UPKEEP, RACK_UNITS };
 
@@ -740,6 +752,25 @@ export function buyPerk(s, id) {
 }
 
 // Instalación gratuita (por ejemplo, desde un evento).
+// Estilos de decoración: se compran una vez y se cambian gratis.
+export function buyStyle(s, id) {
+  const st = STYLES[id];
+  if (!st) return fail();
+  const owned = (s.office.styles ||= []);
+  if (!owned.includes(id)) {
+    if (s.money < st.cost) return fail(`Cuesta ${fmtMoney(st.cost)}.`);
+    money(s, -st.cost, 'office');
+    owned.push(id);
+  }
+  s.office.style = id;
+  return ok(`${st.icon} Oficina decorada con estilo ${st.name}.`);
+}
+
+export function clearStyle(s) {
+  s.office.style = null;
+  return ok('Vuelves a la decoración original.');
+}
+
 export function installPerk(s, id) {
   addItem(ensureLayout(s), s.office.tier, id);
   s.office.perks[id] = (s.office.perks[id] || 0) + 1;
@@ -982,18 +1013,25 @@ export function stepDay(s) {
   marketing(s, ps);
   products(s, tp);
   infra(s, tp);
+  securityDay(s, tp);
   costs(s, tp);
   contracts(s);
   market(s, newMonth);
   funding(s);
   if (s.day - s.candidatesDay >= 14) refreshCandidates(s);
-  if (newMonth) monthly(s, today);
+  if (newMonth) {
+    monthly(s, today);
+    platformsMonth(s);
+  }
   mailStep(s);
   worldDay(s, newMonth);
   maybeEvent(s);
   quests(s);
   achievements(s);
-  if (s.day % 7 === 0) record(s, tp);
+  if (s.day % 7 === 0) {
+    record(s, tp);
+    relationsWeek(s);
+  }
   s.stats.peakUsers = Math.max(s.stats.peakUsers, totalUsers(s));
 
   if (s.money < 0) {
@@ -1022,6 +1060,7 @@ function workAndPeople(s, ps, tp) {
   if (s.policies.food) policyMood += 6;
   if (s.policies.stock) policyMood += 8;
   const quits = [];
+  const rfx = relFx(s);
 
   for (const e of s.employees) {
     if (e.off > 0) {
@@ -1030,7 +1069,8 @@ function workAndPeople(s, ps, tp) {
       if (e.off <= 0) e.offReason = '';
       continue;
     }
-    const out = output(s, e, ps);
+    const rel = rfx.get(e.id);
+    const out = output(s, e, ps) * (1 + (rel?.prod || 0));
     const produces = ROLES[e.role].produces;
     const a = e.assign;
     if (MAKERS.includes(e.role) && a && (a.startsWith('p:') || a.startsWith('c:'))) {
@@ -1063,6 +1103,19 @@ function workAndPeople(s, ps, tp) {
     if (s.policies.fourday) rec += 3;
     if (isRemote(e)) rec += 1;
     e.energy = clamp(e.energy - fatigue + rec, 0, 100);
+    // Agotamiento: la tensión se acumula cada día sin energía y unas
+    // vacaciones cortas no la borran; si sigue así, acaba en baja.
+    if (e.energy < 30) e.strain = (e.strain || 0) + 1;
+    else if (e.energy >= 50) e.strain = Math.max(0, (e.strain || 0) - 0.5);
+    const burnRisk = 0.12 * (e.traits.includes('fragile') ? 2 : 1) * (1 - Math.min(0.6, tp.people * 0.1));
+    if (e.strain >= 12 && e.role !== 'founder' && chance(s, burnRisk)) {
+      e.off = rint(s, 8, 15);
+      e.offReason = 'Baja por agotamiento';
+      e.mood = Math.max(0, e.mood - 8);
+      e.strain = 0;
+      notify(s, `😵 ${e.name} está de baja por agotamiento (${e.off} días).`, 'bad');
+      continue;
+    }
     if (e.energy < 12) {
       e.off = 5;
       e.offReason = 'Vacaciones';
@@ -1078,7 +1131,7 @@ function workAndPeople(s, ps, tp) {
       target += clamp((ratio - 1) * 60, e.traits.includes('ambitious') ? -40 : -30, 12);
     }
     if (crowded && !isRemote(e)) target -= 3;
-    target += deskFx(s, e).comfort;
+    target += deskFx(s, e).comfort + (rel?.mood || 0) + (s.office.style ? STYLE_MOOD : 0);
     target += effectMult(s, 'mood') * 10 - 10;
     e.mood = clamp(e.mood + (target - e.mood) * 0.08, 0, 100);
     if (e.role !== 'founder' && !e.traits.includes('loyal')) {
@@ -1091,6 +1144,7 @@ function workAndPeople(s, ps, tp) {
     let xpMult = 1 + ps.xp;
     if (e.traits.includes('ambitious')) xpMult *= 2;
     if (mentor) xpMult *= 1.2;
+    if (e.mentor) xpMult *= 1.5;
     if (s.policies.training) xpMult *= 1.5;
     e.xp += out * xpMult;
     const need = 25 + e.skill * 2.5;
@@ -1237,7 +1291,7 @@ function products(s, tp) {
     }
     const pot = potential(s, p);
     const boost = isAIProduct(p) ? aiHype : 1;
-    const limits = seasonDemand(s, p.cat) * warFx(s, p).target * (p.antitrust > s.day ? 0.8 : 1);
+    const limits = seasonDemand(s, p.cat) * warFx(s, p).target * (p.antitrust > s.day ? 0.8 : 1) * platformDemand(s, p);
     const target = pot * sh * (0.12 + 0.88 * p.awareness) * (0.35 + 0.65 * sat) * boost * limits;
     if (p.down > 0) {
       p.users *= 0.985;
@@ -1453,7 +1507,9 @@ const ACH_CHECK = {
   allResearch: (s) => RESEARCH.every((r) => has(s, r.id)),
   acquire: (s) => s.stats.acquired > 0,
   leader: (s) => s.products.some((p) => p.launched && p.share > 0.5),
-  orbital: (s) => s.office.tier >= OFFICES.length - 1,
+  orbital: (s) => s.office.tier >= OFFICES.findIndex((o) => o.id === 'orbital'),
+  moon: (s) => OFFICES[s.office.tier].id === 'moon',
+  friends: (s) => s.rel.filter((r) => r.kind === 'friend').length >= 10,
   happy: (s) => s.employees.length >= 20 && s.employees.reduce((a, e) => a + e.mood, 0) / s.employees.length > 85,
   crunchSurvivor: (s) => s.stats.breaches > 0,
   bootstrapped: (s) => !s.stats.soldShares && mrr(s) >= 1e5,

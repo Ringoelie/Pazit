@@ -2,7 +2,7 @@
 // que un evento pendiente sobreviva a guardar y cargar la partida.
 import { PERKS } from './data.js';
 import { rint, chance, pick, dateOf, fmtMoney } from './util.js';
-import { has, findEmp, findProduct, news, money, addEffect, makePerson, expectedSalary } from './core.js';
+import { has, findEmp, findProduct, news, money, addEffect, makePerson, expectedSalary, addOfficeFx } from './core.js';
 import { valuation, queueFeature, isAIProduct, featureAvailable, installPerk, teamPowers } from './sim.js';
 import { isHW } from './hw.js';
 
@@ -10,7 +10,113 @@ const live = (s) => s.products.filter((p) => p.launched && p.users > 500);
 const best = (s) => live(s).sort((a, b) => b.users - a.users)[0];
 const pname = (s, ctx) => findProduct(s, ctx.pid)?.name ?? 'tu producto';
 
+const CELEBS = ['la cantante Luna Vega', 'el futbolista Dani Rayo', 'la actriz Marta Solís', 'el streamer PixelKing', 'la chef Aitana Mar', 'el rapero MC Bit'];
+
 export const EVENTS = {
+  xmas: {
+    weight: (s) => {
+      const d = dateOf(s.day);
+      return d.m === 11 && d.d >= 5 && s.xmas !== d.y && s.employees.length >= 2 ? 40 : 0;
+    },
+    setup: (s) => {
+      s.xmas = dateOf(s.day).y;
+      return { n: s.employees.length };
+    },
+    view: (s, ctx) => ({
+      icon: '🎄',
+      title: 'Fiesta de Navidad',
+      text: 'El equipo pregunta si este año habrá fiesta de empresa. Ya hay quien ha comprado un jersey feo.',
+      choices: [
+        { label: `Fiesta por todo lo alto (${fmtMoney(300 * ctx.n)})`, hint: '+15 ánimo, +1 reputación' },
+        { label: `Cena sencilla (${fmtMoney(80 * ctx.n)})`, hint: '+6 ánimo' },
+        { label: 'Este año no hay fiesta', hint: '-6 ánimo' },
+      ],
+    }),
+    resolve: (s, ctx, i) => {
+      const cost = [300, 80, 0][i] * s.employees.length;
+      if (i < 2 && s.money >= cost) {
+        money(s, -cost, 'other');
+        for (const e of s.employees) e.mood = Math.min(100, e.mood + (i === 0 ? 15 : 6));
+        if (i === 0) s.reputation = Math.min(100, s.reputation + 1);
+        addOfficeFx(s, 'xmasParty', i === 0 ? 3 : 1);
+        return i === 0 ? '🎄 ¡Fiestón! Hasta el perro llevaba gorro de Papá Noel.' : '🍽️ Una cena tranquila y agradable.';
+      }
+      for (const e of s.employees) e.mood = Math.max(0, e.mood - 6);
+      return 'Sin fiesta. Alguien ha dejado una nota triste en la nevera.';
+    },
+  },
+
+  celebrity: {
+    weight: (s) => (s.reputation >= 35 && live(s).length ? 0.6 : 0),
+    setup: (s) => ({ name: pick(s, CELEBS), pid: best(s).id }),
+    view: (s, ctx) => ({
+      icon: '🌟',
+      title: 'Visita famosa',
+      text: `${ctx.name[0].toUpperCase() + ctx.name.slice(1)} usa ${pname(s, ctx)} cada día y se presenta en la oficina con un fotógrafo.`,
+      choices: [
+        { label: 'Fotos y a las redes', hint: '+150 hype, +3 reputación' },
+        { label: 'Proponerle ser imagen de marca ($50k)', hint: '+600 hype, +5 reputación' },
+        { label: 'Pedirle que no distraiga al equipo', hint: '+2 ánimo' },
+      ],
+    }),
+    resolve: (s, ctx, i) => {
+      const p = findProduct(s, ctx.pid);
+      addOfficeFx(s, 'celebrity', 1);
+      if (i === 1 && s.money >= 50000 && p) {
+        money(s, -50000, 'marketing');
+        p.hype += 600;
+        s.reputation = Math.min(100, s.reputation + 5);
+        return `🌟 ${ctx.name} será la cara de ${p.name}.`;
+      }
+      if (i <= 1 && p) {
+        p.hype += 150;
+        s.reputation = Math.min(100, s.reputation + 3);
+        return '📸 Las fotos arrasan en redes.';
+      }
+      for (const e of s.employees) e.mood = Math.min(100, e.mood + 2);
+      return 'Se va encantado/a y el equipo sigue a lo suyo.';
+    },
+  },
+
+  blackout: {
+    weight: (s) => (s.employees.length >= 3 ? (s.office.generator ? 0.2 : 0.7) : 0),
+    view: (s) =>
+      s.office.generator
+        ? { icon: '🔌', title: 'Apagón en el barrio', text: 'Se va la luz en toda la zona... pero tu generador arranca solo.', choices: [{ label: '¡Bien por el generador!' }] }
+        : {
+          icon: '🔌',
+          title: 'Apagón en el barrio',
+          text: `Se va la luz en toda la zona: sin ordenadores y sin café.${s.infra.racks ? ' Tus servidores propios también se apagan.' : ''}`,
+          choices: [
+            { label: 'Comprar un generador ($8k)', hint: 'Medio día perdido; los próximos apagones no te afectarán' },
+            { label: 'Mandar a todo el mundo a casa', hint: 'Un día sin trabajo, +10 energía' },
+            { label: 'Seguir con portátiles a oscuras', hint: '2 días al 50%, -4 ánimo' },
+          ],
+        },
+    resolve: (s, ctx, i) => {
+      if (s.office.generator) return '⚡ El generador salva el día.';
+      if (s.infra.racks) for (const p of live(s)) if (!isHW(p)) p.down = Math.max(p.down, 1);
+      if (i === 0 && s.money >= 8000) {
+        money(s, -8000, 'office');
+        s.office.generator = true;
+        addEffect(s, 'blackout', 1, { prod: 0.5 });
+        addOfficeFx(s, 'blackout', 0);
+        return '⚡ Generador instalado. La próxima vez ni te enterarás.';
+      }
+      if (i <= 1) {
+        addEffect(s, 'blackout', 1, { prod: 0 });
+        for (const e of s.employees) e.energy = Math.min(100, e.energy + 10);
+        addOfficeFx(s, 'blackout', 1);
+        return 'Todo el mundo a casa. Mañana será otro día.';
+      }
+      addEffect(s, 'blackout', 2, { prod: 0.5 });
+      for (const e of s.employees) e.mood = Math.max(0, e.mood - 4);
+      addOfficeFx(s, 'blackout', 2);
+      return 'Se trabaja a la luz de las pantallas... y de alguna vela.';
+    },
+  },
+
+
   viral: {
     weight: (s) => (live(s).length ? 3 : 0),
     setup: (s) => ({ pid: pick(s, live(s)).id }),
@@ -99,47 +205,6 @@ export const EVENTS = {
     },
   },
 
-  breach: {
-    weight: (s) => {
-      const list = s.products.filter((p) => p.launched && p.users > 5000);
-      if (!list.length) return 0;
-      return list.some((p) => !p.features.security) ? 2 : 0.3;
-    },
-    setup: (s) => {
-      const list = s.products.filter((p) => p.launched && p.users > 5000);
-      const weak = list.filter((p) => !p.features.security);
-      const p = pick(s, weak.length ? weak : list);
-      return { pid: p.id, fine: Math.round(Math.max(5000, p.users * 0.2) / 1000) * 1000 };
-    },
-    view: (s, ctx) => ({
-      icon: '🕵️',
-      title: 'Brecha de seguridad',
-      text: `Unos hackers han accedido a datos de ${pname(s, ctx)}. La multa podría ser de ${fmtMoney(ctx.fine)}.`,
-      choices: [
-        { label: 'Comunicarlo con transparencia', hint: 'Multa, -10% usuarios, -3 reputación' },
-        { label: 'Taparlo y rezar', hint: 'Si se descubre: el doble de todo' },
-      ],
-    }),
-    resolve: (s, ctx, i) => {
-      const p = findProduct(s, ctx.pid);
-      s.stats.breaches += 1;
-      if (!p) return '';
-      if (i === 0) {
-        money(s, -ctx.fine, 'other');
-        p.users *= 0.9;
-        s.reputation = Math.max(0, s.reputation - 3);
-        if (featureAvailable(s, p, 'security') && !p.features.security) queueFeature(s, p.id, 'security');
-        return 'La gente valora tu honestidad. Seguridad y 2FA añadida a la cola.';
-      }
-      if (chance(s, 0.5)) return 'Nadie se enteró... esta vez.';
-      money(s, -ctx.fine * 2, 'other');
-      p.users *= 0.75;
-      s.reputation = Math.max(0, s.reputation - 15);
-      news(s, `Escándalo: ${s.company} ocultó una brecha de datos en ${p.name}.`, 'bad');
-      return 'Se descubrió el pastel. Multa doble y reputación por los suelos.';
-    },
-  },
-
   aiHype: {
     weight: (s) => (has(s, 'ml') ? 1.5 : 0),
     view: (s) => ({
@@ -189,6 +254,7 @@ export const EVENTS = {
           e.mood = Math.min(100, e.mood + 10);
           e.energy = Math.max(0, e.energy - 15);
         }
+        addOfficeFx(s, 'hackathon', 2);
         return '🍕 ¡Hackathon épico! Ideas nuevas para el laboratorio.';
       }
       for (const e of s.employees) e.mood = Math.max(0, e.mood - 3);
@@ -273,6 +339,7 @@ export const EVENTS = {
       if (i === 0) {
         money(s, -100, 'other');
         for (const o of s.employees) o.mood = Math.min(100, o.mood + 5);
+        addOfficeFx(s, 'birthday', 1, { eid: ctx.eid });
         return '🎂 ¡Qué rica estaba!';
       }
       if (e) e.mood = Math.max(0, e.mood - 10);

@@ -1,11 +1,37 @@
 // Vista de la oficina en canvas: fondo cacheado, empleados animados, cámara
 // con zoom y arrastre, y modo edición para recolocar mesas y muebles.
 import { OFFICES, ROLES, PAL, PERKS } from './data.js';
+import { dateOf } from './util.js';
+import { officeFx } from './core.js';
 import * as S from './sprites.js';
-import { THEMES, paintBackground, paintWindows, paintVignette } from './scenery.js';
+import { themeFor, paintBackground, paintWindows, paintVignette } from './scenery.js';
+import { PET_IDS, updatePets, petDrawables, drawPetHome, petLove, petLights } from './pets.js';
 import {
-  WALL, FLAT, NEAR_RADIUS, isWall, deskRect, itemRect, serverRoom, loungeX, canPlace, snapPos, getRef, deskEffects,
+  WALL, FLAT, NEAR_RADIUS, isWall, deskRect, itemRect, serverRoom, loungeX, canPlace, snapPos, getRef, deskEffects, findSpot,
 } from './layout.js';
+
+// Reloj de la oficina: un día visual dura 150 s a velocidad normal. Cada tramo
+// acaba en [fracción del ciclo, hora]; 0 son las 6:00 de la mañana.
+const CYCLE = 150;
+const DAY_PARTS = [[0, 6], [0.04, 8], [0.08, 9], [0.74, 18], [0.78, 19], [0.86, 22], [1, 30]];
+function hourOf(tod) {
+  for (let i = 1; i < DAY_PARTS.length; i++) {
+    const [f1, h1] = DAY_PARTS[i];
+    const [f0, h0] = DAY_PARTS[i - 1];
+    if (tod <= f1) return h0 + ((tod - f0) / (f1 - f0)) * (h1 - h0);
+  }
+  return 6;
+}
+// Oscuridad del exterior según la hora (0 = pleno día).
+function darknessAt(hour) {
+  const h = hour % 24;
+  if (h >= 8 && h < 18) return 0;
+  if (h >= 6 && h < 8) return 0.5 * (1 - (h - 6) / 2);
+  if (h >= 18 && h < 19) return 0.08 * (h - 18);
+  if (h >= 19 && h < 22) return 0.08 + 0.37 * ((h - 19) / 3);
+  return h >= 22 && h < 23 ? 0.45 + 0.1 * (h - 22) : 0.55;
+}
+const frac = (v) => v - Math.floor(v);
 
 // Muebles a los que el equipo va a descansar.
 const BREAK = new Set(['coffee', 'snacks', 'arcade', 'sofa', 'foosball', 'ballpit', 'gym', 'nappods', 'chef', 'robot', 'library', 'cooler', 'aquarium', 'meeting']);
@@ -17,6 +43,7 @@ const PARTY_TEXT = {
 const GLYPH = {
   code: ['</>', PAL.sky], design: ['~', PAL.orange], ai: ['01', PAL.silver], flex: ['*', PAL.yellow],
   hype: ['!', '#ff6b8b'], rp: ['?', PAL.lime], ops: ['%', PAL.green], sales: ['$', PAL.cyan], people: ['♥', '#ff6b8b'], lead: ['>', PAL.cyan],
+  sec: ['#', PAL.lime], legal: ['&', PAL.silver],
 };
 
 function drawItem(g, id, x, y, t) {
@@ -82,9 +109,20 @@ export class OfficeView {
     this.banner = null;
     this.balloons = [];
     this.visitors = [];
-    this.pet = null;
+    this.pets = new Map();
     this.petCoat = S.DOG_COATS[0];
+    this.catCoat = S.CAT_COATS[0];
     this.crisis = false;
+    this.tod = 0.2;
+    this.hour = 10;
+    this.dark = 0;
+    this.style = null;
+    this.monitors = [];
+    this.relIdx = new Map();
+    this.relDay = -1;
+    this.treeSpot = null;
+    this.treeDay = -1;
+    this.celebDay = -1;
     this.bindInput();
   }
 
@@ -372,8 +410,9 @@ export class OfficeView {
     }
   }
 
-  // Un inversor entra junto a la pared, se sienta a la mesa de reuniones y se va.
-  visit() {
+  // Un inversor (o una persona famosa) entra junto a la pared, se queda un rato
+  // en la mesa de reuniones y se va.
+  visit(kind = 'investor') {
     if (!this.L || !this.s) return;
     const meet = this.s.office.layout.items.find((it) => it.id === 'meeting');
     const tx = meet ? meet.x + 14 : this.L.loungeX + 20;
@@ -385,7 +424,10 @@ export class OfficeView {
       path: [{ x: tx, y: WALL + 6 }, { x: tx, y: ty }],
       mode: 'in',
       timer: 0,
-      looks: { skin: pick(['#f6d2b5', '#e8b48f', '#c98a60', '#9a5f3c']), hair: pick(['#94b0c2', PAL.ink, PAL.white, '#4a2f1f']), style: pick([0, 4]), pants: PAL.ink, glasses: Math.random() < 0.5, beard: false },
+      kind,
+      looks: kind === 'celebrity'
+        ? { skin: pick(['#f6d2b5', '#c98a60', '#9a5f3c']), hair: pick(['#d9a441', '#b13e53', '#5d275d']), style: pick([1, 3, 5]), pants: PAL.plum, glasses: false, beard: false }
+        : { skin: pick(['#f6d2b5', '#e8b48f', '#c98a60', '#9a5f3c']), hair: pick(['#94b0c2', PAL.ink, PAL.white, '#4a2f1f']), style: pick([0, 4]), pants: PAL.ink, glasses: Math.random() < 0.5, beard: false },
     });
   }
 
@@ -428,95 +470,60 @@ export class OfficeView {
     g.fillStyle = 'rgba(14,10,30,.28)';
     g.fillRect(x, y + 19, 10, 1);
     g.fillRect(x + 1, y + 20, 8, 1);
-    S.drawStanding(g, x - 1, y - 2, v.looks, PAL.white, v.mode === 'stay' ? 'idle' : Math.floor(t * 8) % 2, t, 90, 'legal');
+    const frame = v.mode === 'stay' ? 'idle' : Math.floor(t * 8) % 2;
+    if (v.kind === 'celebrity') {
+      S.drawStanding(g, x - 1, y - 2, v.looks, PAL.yellow, frame, t, 90, 'marketer');
+      S.R(g, x + 1, y + 4, 8, 1, PAL.ink);
+      if (v.mode === 'stay' && t % 1.3 < 0.12) {
+        g.fillStyle = 'rgba(255,255,255,.7)';
+        g.fillRect(x - 8, y - 6, 26, 30);
+      }
+      if (v.mode === 'stay' && t % 2 < 1.2) S.drawBubble(g, x + 7, y - 11, 'star');
+      return;
+    }
+    S.drawStanding(g, x - 1, y - 2, v.looks, PAL.white, frame, t, 90, 'legal');
     S.R(g, x + 9, y + 13, 4, 3, '#6b4024');
     S.R(g, x + 10, y + 12, 2, 1, PAL.ink);
     if (v.mode === 'stay' && t % 2 < 1.2) S.drawBubble(g, x + 7, y - 11, 'money');
   }
 
-  // ---------------------------------------------------------------- mascota
-
-  updatePet(s, layout, dt, speed) {
-    const bed = layout.items.find((it) => it.id === 'pet');
-    if (!bed) {
-      this.pet = null;
-      return;
-    }
-    const home = { x: bed.x + 2, y: bed.y };
-    let p = this.pet;
-    if (!p || p.bed !== bed.uid) p = this.pet = { bed: bed.uid, x: home.x, y: home.y, mode: 'sleep', timer: 4 + Math.random() * 6, left: false, love: 0 };
-    p.love = Math.max(0, p.love - dt);
-    if (this.edit) {
-      Object.assign(p, { mode: 'sleep', x: home.x, y: home.y, timer: 3 });
-      return;
-    }
-    if (speed === 0) return;
-    const mult = [0, 1, 1.4, 1.8][speed] || 1;
-    if (p.mode === 'walk') {
-      const dx = p.tx - p.x;
-      const dy = p.ty - p.y;
-      const d = Math.hypot(dx, dy);
-      const v = 22 * mult * dt;
-      if (d <= v) {
-        p.x = p.tx;
-        p.y = p.ty;
-        p.mode = p.home ? 'sleep' : 'sit';
-        p.timer = p.home ? 8 + Math.random() * 8 : 3 + Math.random() * 4;
-      } else {
-        p.x += (dx / d) * v;
-        p.y += (dy / d) * v;
-        p.left = dx < 0;
+  // Una vez por día de juego: con quién tiene relación cada uno y dónde va el árbol.
+  indexDay(s, layout) {
+    this.relDay = s.day;
+    this.relIdx = new Map();
+    for (const r of s.rel || []) {
+      if (!r.kind) continue;
+      for (const [a, b] of [[r.a, r.b], [r.b, r.a]]) {
+        const cur = this.relIdx.get(a);
+        const rank = { couple: 3, rival: 2, friend: 1 };
+        if (!cur || rank[r.kind] > rank[cur.kind]) this.relIdx.set(a, { kind: r.kind, other: b });
       }
-      return;
     }
-    p.timer -= dt * mult;
-    if (p.timer > 0) return;
-    // Siguiente paseo: visitar a alguien, dar una vuelta o volver a la cama.
-    const r = Math.random();
-    const busy = new Set(s.employees.filter((e) => !e.region && !e.traits.includes('remote')).map((e) => e.desk));
-    const desks = layout.desks.filter((_, i) => busy.has(i));
-    let to;
-    p.home = false;
-    if (p.mode !== 'sleep' && r < 0.3) {
-      to = home;
-      p.home = true;
-    } else if (desks.length && r < 0.8) {
-      const d = desks[Math.floor(Math.random() * desks.length)];
-      to = { x: d.x + 8, y: d.y + 20 };
-    } else {
-      to = { x: this.L.loungeX + Math.random() * Math.max(10, this.L.W - this.L.loungeX - 24), y: WALL + 8 + Math.random() * 60 };
-    }
-    p.tx = to.x;
-    p.ty = to.y;
-    p.mode = 'walk';
+    this.treeSpot = null;
+    if (dateOf(s.day).m === 11 || officeFx(s, 'xmasParty')) this.treeSpot = findSpot(layout, s.office.tier, 'xmastree');
   }
 
-  // Tocar al perro: se despierta y pide mimos.
-  petLove() {
-    if (!this.pet) return;
-    this.pet.love = 1.8;
-    if (this.pet.mode === 'sleep') this.pet.timer = 0;
+  treeFor(s) {
+    if (this.edit || !this.treeSpot) return null;
+    return dateOf(s.day).m === 11 || officeFx(s, 'xmasParty') ? this.treeSpot : null;
   }
 
-  drawPet(g, t) {
-    const p = this.pet;
-    const x = Math.round(p.x);
-    const y = Math.round(p.y);
-    g.fillStyle = 'rgba(14,10,30,.25)';
-    g.fillRect(x + 2, y + 9, 10, 1);
-    const pose = p.mode === 'walk' ? (Math.floor(t * 8) % 2 ? 'w1' : 'w0') : 'sit';
-    S.drawDog(g, x, y, this.petCoat, pose, p.left);
-    this.hits.push({ id: 'pet', x: x - 1, y: y - 1, w: 15, h: 11 });
-    if (p.love > 0) S.drawBubble(g, x + 6, y - 10, 'heart');
+  // ---------------------------------------------------------------- mascotas
+
+  // Tocar a una mascota. Devuelve su especie (o null).
+  petLove(id) {
+    return petLove(this, id);
   }
 
   // ---------------------------------------------------------------- fondo
 
   ensureView(s) {
+    const style = s.office.style || null;
     if (s.office.tier !== this.tier) {
       this.tier = s.office.tier;
       const o = OFFICES[this.tier];
-      this.L = { o, W: o.w, H: o.h, theme: THEMES[o.theme], loungeX: loungeX(this.tier), room: serverRoom(this.tier) };
+      this.style = style;
+      this.L = { o, W: o.w, H: o.h, theme: themeFor(o.theme, style), loungeX: loungeX(this.tier), room: serverRoom(this.tier) };
       this.world.width = this.L.W;
       this.world.height = this.L.H;
       this.bg.width = this.L.W;
@@ -526,16 +533,21 @@ export class OfficeView {
       paintVignette(this.shadeLayer.getContext('2d'), this.L);
       this.bgKey = '';
       this.people.clear();
-      this.pet = null;
+      this.pets.clear();
       this.visitors = [];
       this.canvas.parentElement?.style.setProperty('--office-ar', `${this.L.W} / ${this.L.H}`);
       this.userZoom = false;
       this.resize();
     }
-    const key = this.tier + ':' + s.company;
+    if (style !== this.style) {
+      this.style = style;
+      this.L.theme = themeFor(this.L.o.theme, style);
+    }
+    const key = this.tier + ':' + s.company + ':' + style;
     if (key !== this.bgKey) {
       this.bgKey = key;
       this.petCoat = S.DOG_COATS[strHash(s.company) % S.DOG_COATS.length];
+      this.catCoat = S.CAT_COATS[(strHash(s.company) >> 3) % S.CAT_COATS.length];
       this.drawBackground(s);
     }
   }
@@ -566,10 +578,16 @@ export class OfficeView {
     return pts;
   }
 
+  // ¿Se queda trabajando por la noche? Crunch, hackathon o noctámbulos.
+  staysLate(s, e) {
+    return !!s.policies.crunch || !!officeFx(s, 'hackathon') || e.traits.includes('nightowl');
+  }
+
   updatePeople(s, layout, dt, speed) {
     const alive = new Set();
     const mult = [0, 1, 1.5, 2.2][speed] || 1;
     const points = this.usePoints(layout);
+    const h = this.hour % 24;
     for (const e of s.employees) {
       if (e.traits.includes('remote') || e.region) continue;
       alive.add(e.id);
@@ -583,6 +601,41 @@ export class OfficeView {
       }
       if (e.off > 0 || this.edit) {
         st.mode = 'desk';
+        continue;
+      }
+      // Fuera de horario se va a casa (y vuelve por la mañana), cada cual a su hora.
+      const away = !this.staysLate(s, e) && (h >= 18 + frac(st.phase) || h < 8 + frac(st.phase * 3));
+      if (away && st.mode !== 'home' && st.mode !== 'leave') {
+        if (st.mode === 'desk') {
+          st.x = home.x;
+          st.y = home.y + 8;
+        }
+        st.mode = 'leave';
+        st.path = [{ x: st.x, y: WALL + 6 }, { x: -14, y: WALL + 6 }];
+      } else if (!away && (st.mode === 'home' || st.mode === 'leave')) {
+        if (st.mode === 'home') {
+          st.x = -14;
+          st.y = WALL + 6;
+        }
+        st.mode = 'arrive';
+        st.path = [{ x: home.x, y: WALL + 6 }, { x: home.x, y: home.y + 8 }];
+      }
+      if (st.mode === 'home') continue;
+      if (st.mode === 'leave' || st.mode === 'arrive') {
+        const p = st.path[0];
+        const dx = p.x - st.x;
+        const dy = p.y - st.y;
+        const dist = Math.hypot(dx, dy);
+        const v = 30 * mult * dt;
+        if (dist <= v) {
+          st.x = p.x;
+          st.y = p.y;
+          st.path.shift();
+          if (!st.path.length) st.mode = st.mode === 'leave' ? 'home' : 'desk';
+        } else {
+          st.x += (dx / dist) * v;
+          st.y += (dy / dist) * v;
+        }
         continue;
       }
       if (st.mode === 'desk') {
@@ -633,19 +686,29 @@ export class OfficeView {
     this.t += dt;
     this.ensureView(s);
     const layout = this.viewLayout();
+    // El reloj avanza con el juego y se para en pausa.
+    this.tod = frac(this.tod + (dt * ([0, 1, 1.5, 2][speed] || 0)) / CYCLE);
+    this.hour = hourOf(this.tod);
+    this.blackout = !!officeFx(s, 'blackout');
+    this.dark = this.edit ? 0 : Math.max(darknessAt(this.hour), this.blackout ? 0.6 : 0);
     this.updatePeople(s, layout, dt, speed);
-    this.updatePet(s, layout, dt, speed);
+    updatePets(this, s, layout, dt, speed);
     this.updateVisitors(dt);
     this.crisis = s.money < 0;
+    if (s.day !== this.relDay) this.indexDay(s, layout);
+    if (officeFx(s, 'celebrity') && this.celebDay !== s.day) {
+      this.celebDay = s.day;
+      this.visit('celebrity');
+    }
     const L = this.L;
     const g = this.wctx;
     const t = this.t;
     const dragRef = this.drag?.moved ? this.drag.ref : null;
     g.drawImage(this.bg, 0, 0);
-    paintWindows(g, L, s, t, this.windows);
+    paintWindows(g, L, s, t, this.windows, this.hour);
     this.drawWallDecor(g, s, t);
     this.drawRacks(g, s, t);
-    if (this.partyUntil > t) S.drawGarland(g, L.W, 3, t);
+    if (this.partyUntil > t || officeFx(s, 'xmasParty') || officeFx(s, 'hackathon')) S.drawGarland(g, L.W, 3, t);
     if (this.edit) this.drawGrid(g);
     this.hits = [];
     this.editHits = [];
@@ -667,12 +730,8 @@ export class OfficeView {
       const r = itemRect(it);
       const draw = () => {
         S.floorShadow(g, r.x, r.y + r.h - 1, r.w);
-        if (it.id === 'pet') {
-          const asleep = !this.pet || this.pet.mode === 'sleep';
-          S.drawDogBed(g, it.x, it.y, this.petCoat, asleep, t);
-          if (asleep && this.pet) this.hits.push({ id: 'pet', x: r.x, y: r.y, w: r.w, h: r.h });
-          if (asleep && this.pet?.love > 0) S.drawBubble(g, it.x + 8, it.y - 10, 'heart');
-        } else drawItem(g, it.id, it.x, it.y, t);
+        if (PET_IDS.includes(it.id)) drawPetHome(this, g, it, t);
+        else drawItem(g, it.id, it.x, it.y, t);
       };
       drawables.push({ y: r.y + r.h, ref: 'i:' + it.uid, rect: r, draw });
     }
@@ -683,11 +742,14 @@ export class OfficeView {
     });
     for (const e of s.employees) {
       const st = this.people.get(e.id);
-      if (!st || st.mode === 'desk' || e.off > 0) continue;
+      if (!st || st.mode === 'desk' || st.mode === 'home' || e.off > 0) continue;
       drawables.push({ y: st.y + 18, draw: () => this.drawWalker(g, e, st, t) });
     }
-    if (this.pet && this.pet.mode !== 'sleep' && !this.edit) drawables.push({ y: this.pet.y + 9, draw: () => this.drawPet(g, t) });
+    drawables.push(...petDrawables(this, g, t));
     for (const v of this.visitors) drawables.push({ y: v.y + 18, draw: () => this.drawVisitor(g, v, t) });
+    const tree = this.treeFor(s, layout);
+    if (tree) drawables.push({ y: tree.y + 26, draw: () => S.drawXmasTree(g, tree.x, tree.y, t) });
+    this.monitors = [];
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) {
       d.draw();
@@ -781,7 +843,7 @@ export class OfficeView {
 
   // Reloj y pantalla de videollamada con el equipo en remoto.
   drawWallDecor(g, s, t) {
-    if (this.clockPos) S.drawClock(g, this.clockPos.x, this.clockPos.y, t);
+    if (this.clockPos) S.drawClock(g, this.clockPos.x, this.clockPos.y, this.hour);
     const remote = s.employees.filter((e) => e.traits.includes('remote') || e.region);
     if (!remote.length) return;
     const x = 32;
@@ -804,13 +866,36 @@ export class OfficeView {
   }
 
   // Halos de luz de las lámparas y viñeta final.
+  // De noche el interior se oscurece salvo que haya luces encendidas (queda
+  // gente dentro o es por la tarde). Encima, halos de lámparas y pantallas.
   drawLights(g, layout, t) {
+    const L = this.L;
+    const h = this.hour % 24;
+    const inside = [...this.people.values()].some((st) => st.mode !== 'home');
+    const lightsOn = !this.blackout && (inside || (h >= 18 && h < 22));
+    const dark = lightsOn ? Math.min(this.dark, 0.14) : this.dark;
+    if (dark > 0.01) {
+      g.fillStyle = `rgba(8,10,34,${dark.toFixed(3)})`;
+      g.fillRect(0, WALL - 4, L.W, L.H - WALL + 4);
+      g.fillStyle = `rgba(8,10,34,${(dark * 0.8).toFixed(3)})`;
+      g.fillRect(0, 0, L.W, WALL - 4);
+    }
     g.globalCompositeOperation = 'lighter';
+    const boost = 0.6 + this.dark;
     for (const it of layout.items) {
       if (it.id !== 'lamp' || (t + it.x) % 9 <= 0.15) continue;
-      g.drawImage(S.glowSprite('rgba(255,196,110,.38)', 26), it.x + 4 - 26, it.y + 5 - 26);
+      g.drawImage(S.glowSprite(`rgba(255,196,110,${(0.3 * boost).toFixed(2)})`, 26), it.x + 4 - 26, it.y + 5 - 26);
     }
-    const r = this.L.room;
+    if (this.dark > 0.15) {
+      for (const m of this.monitors) {
+        g.drawImage(S.glowSprite(m.candle ? 'rgba(255,170,80,.4)' : 'rgba(140,220,255,.3)', 10), m.x - 10, m.y - 10);
+      }
+      for (const it of layout.items) {
+        if (it.id === 'snacks' || it.id === 'arcade' || it.id === 'aquarium') g.drawImage(S.glowSprite('rgba(115,239,247,.22)', 14), it.x - 7, it.y);
+      }
+    }
+    petLights(this, g, this.dark);
+    const r = L.room;
     if (this.s.infra.racks) g.drawImage(S.glowSprite('rgba(65,166,246,.12)', 30), r.x + r.w - 50, r.y - 10);
     g.globalCompositeOperation = 'source-over';
     g.drawImage(this.shadeLayer, 0, 0);
@@ -842,15 +927,28 @@ export class OfficeView {
     // Con la mesa vacía la silla queda metida bajo el tablero.
     S.drawChair(g, cx + 8, seated ? cy + 4 : cy + 8, T.chair);
     const roleColor = e ? ROLES[e.role].color : PAL.slate;
-    const cheer = seated && this.partyUntil > t && !this.edit;
+    const s = this.s;
+    const cheer = seated && (this.partyUntil > t || !!officeFx(s, 'xmasParty')) && !this.edit;
+    const bday = officeFx(s, 'birthday');
+    const isBday = seated && bday?.eid === e.id;
+    // Quien se queda de noche (o va sin energía) tiene ojeras.
+    const night = this.hour % 24 >= 20 || this.hour % 24 < 7;
+    const tired = !!seated && ((night && !this.edit) || e.energy < 25);
     if (seated) {
-      const bob = cheer ? (Math.sin(t * 10 + phase * 3) > 0 ? 2 : 0) : busy && Math.sin(t * 6 + phase) > 0.7 ? 1 : 0;
-      S.drawSeated(g, cx + 9, cy - 1 + bob, e.looks, roleColor, t + phase, e.mood, e.role);
+      const bob = cheer || isBday ? (Math.sin(t * 10 + phase * 3) > 0 ? 2 : 0) : busy && Math.sin(t * 6 + phase) > 0.7 ? 1 : 0;
+      S.drawSeated(g, cx + 9, cy - 1 + bob, e.looks, roleColor, t + phase, e.mood, e.role, tired);
+      if (officeFx(s, 'xmasParty') && !this.edit) S.drawHat(g, cx + 10, cy - 1 + bob, 'santa');
+      else if (isBday) S.drawHat(g, cx + 10, cy - 1 + bob, 'party');
       this.hits.push({ id: e.id, x: cx + 8, y: cy - 2, w: 14, h: 20 });
     }
     S.drawDesk(g, cx + 2, cy + 14, T.desk[0], T.desk[1]);
-    S.drawMonitor(g, cx + 1, cy + 6, S.shade(roleColor, 0.25), !!seated, t + phase, i, busy);
-    S.drawDeskProp(g, cx + 22, cy + 11, i % 7, t + phase, busy);
+    // En un apagón las pantallas se apagan y salen las velas.
+    S.drawMonitor(g, cx + 1, cy + 6, S.shade(roleColor, 0.25), !!seated && !this.blackout, t + phase, i, busy && !this.blackout);
+    if (isBday) S.drawCake(g, cx + 21, cy + 9, t);
+    else if (seated && officeFx(s, 'hackathon') && i % 2 === 0) S.drawPizzaBox(g, cx + 19, cy + 12);
+    else S.drawDeskProp(g, cx + 22, cy + 11, i % 7, t + phase, busy);
+    if (seated && this.blackout) S.drawCandle(g, cx + 6, cy + 9, t + phase);
+    if (seated) this.monitors.push({ x: cx + 5, y: cy + 9, candle: this.blackout });
     if (seated) {
       S.R(g, cx + 11, cy + 14, 8, 2, '#c9d3dc');
       S.R(g, cx + 11, cy + 15, 8, 1, PAL.slate);
@@ -868,6 +966,12 @@ export class OfficeView {
   statusIcon(e, t) {
     if (e.energy < 25) return 'zz';
     if (e.mood < 30) return 'bang';
+    if (officeFx(this.s, 'birthday')?.eid === e.id) return t % 2 < 1 ? 'cake' : 'heart';
+    // Parejas, roces y amistades se notan de vez en cuando.
+    const rel = this.relIdx.get(e.id);
+    if (rel?.kind === 'couple' && t % 9 < 0.9) return 'heart';
+    if (rel?.kind === 'rival' && t % 8 < 0.9) return 'angry';
+    if (rel?.kind === 'friend' && t % 11 < 0.9) return 'note';
     // Con la empresa en números rojos, el equipo suda.
     if (this.crisis && (t + e.id) % 7 < 1.2) return 'sweat';
     if (MAKERS_VIEW.includes(e.role) && !e.assign) return t % 3 < 2 ? 'q' : null;

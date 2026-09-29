@@ -9,6 +9,11 @@ import { ensureRivals, warFx, poachFrom, smear, rivalMonth } from '../public/js/
 import { orderUnits, unitCost, leadTime, hwPrice } from '../public/js/hw.js';
 import { makePerson } from '../public/js/core.js';
 import { fmtNum, fmtMoney } from '../public/js/util.js';
+import { secLevel, attackSurface, yearlyAttacks } from '../public/js/security.js';
+import { storeCut, platformDemand, MOBILE_SHARE } from '../public/js/platforms.js';
+import { relFx, relOf, relationsWeek } from '../public/js/relations.js';
+import { EVENTS } from '../public/js/events.js';
+import { officeFx } from '../public/js/core.js';
 
 const fresh = (seed = 1) => {
   const s = G.newGame({ seed });
@@ -218,6 +223,131 @@ function quickProduct(s, cat, features) {
   answerMail(s, m.id, 0);
   assert.equal(e.salary, 99999);
 }
+// 8. Ciberseguridad.
+{
+  const s = fresh(11);
+  s.money = 1e7;
+  const p = quickProduct(s, 'blog', { landing: 1, articles: 1 });
+  assert.ok(p.launched);
+  p.users = 2000;
+  assert.equal(attackSurface(s), 0, 'nadie ataca a una startup diminuta');
+  p.users = 2e6;
+  const base = secLevel(s);
+  s.research.infosec = 0;
+  const e = makePerson(s, 'security', { skill: 60 });
+  s.employees.push(e);
+  assert.ok(secLevel(s) > base + 15, 'investigación y especialistas suben la seguridad');
+  assert.ok(yearlyAttacks(s) > 0);
+  // Ransomware sin copias: 6 días caído; con copias, 1.
+  const r = sendMail(s, 'secRansom', { pid: p.id, amount: 20000 });
+  answerMail(s, r.id, r.choices.length - 1);
+  assert.equal(p.down, 6);
+  s.sec.backups = true;
+  const r2 = sendMail(s, 'secRansom', { pid: p.id, amount: 20000 });
+  answerMail(s, r2.id, r2.choices.length - 1);
+  assert.equal(p.down, 1);
+  // Filtración: avisar (la opción por defecto) cuesta reputación; ocultarla y que salga, mucho más.
+  s.reputation = 50;
+  const b = sendMail(s, 'secBreach', { pid: p.id, n: 1000 });
+  answerMail(s, b.id, b.choices.length - 1);
+  assert.equal(s.reputation, 46);
+  s.sec.hidden = { pid: p.id, n: 1000, day: s.day + 1 };
+  s.event = null;
+  G.stepDay(s);
+  G.stepDay(s);
+  assert.ok(s.reputation <= 31, 'la filtración oculta sale a la luz');
+}
+
+// 9. Plataformas.
+{
+  const s = fresh(12);
+  s.money = 1e7;
+  for (const r of ['monetization', 'mobile', 'payments', 'webpay']) s.research[r] = 0;
+  const p = quickProduct(s, 'blog', { landing: 1, articles: 1, subs: 1, mobile: 1 });
+  p.users = 1e5;
+  p.price = 5;
+  const q = quickProduct(s, 'blog', { landing: 1, articles: 1, subs: 1 });
+  q.users = 1e5;
+  q.price = 5;
+  assert.equal(storeCut(s, q), 0, 'sin app móvil no hay comisión');
+  assert.ok(Math.abs(storeCut(s, p) - MOBILE_SHARE * 0.15) < 1e-9, 'programa para pequeños: 15%');
+  const withApp = G.productRevenue(s, p).subs;
+  const noApp = G.productRevenue(s, q).subs;
+  assert.ok(withApp < noApp, 'la tienda se queda parte de las suscripciones');
+  s.plat.webpay = true;
+  assert.ok(Math.abs(storeCut(s, p) - MOBILE_SHARE * 0.15 * 0.5) < 1e-9, 'cobrar por la web reduce la comisión');
+  p.storeBan = s.day + 10;
+  assert.ok(platformDemand(s, p) < 0.7, 'expulsada de la tienda, menos demanda');
+  const price = G.cloudPrice(s);
+  s.plat.cloud = 1.2;
+  assert.ok(Math.abs(G.cloudPrice(s) - price * 1.2) < 1e-9, 'la subida de la nube encarece la carga');
+  const ban = sendMail(s, 'platBan', { pid: p.id, why: 'webpay' });
+  answerMail(s, ban.id, ban.choices.length - 1);
+  assert.equal(s.plat.webpay, false);
+  assert.equal(p.storeBan, s.day + 3);
+}
+
+// 10. Relaciones entre empleados.
+{
+  const s = fresh(13);
+  const a = makePerson(s, 'dev', { skill: 45, traits: [] });
+  const b = makePerson(s, 'dev', { skill: 45, traits: [] });
+  a.desk = 1;
+  b.desk = 2;
+  a.assign = b.assign = null;
+  s.employees.push(a, b);
+  s.rel.push({ a: a.id, b: b.id, v: -60, kind: 'rival', since: 0 });
+  const fx = relFx(s);
+  assert.ok(fx.get(a.id).mood < 0 && fx.get(a.id).prod < 0, 'los roces bajan ánimo y productividad');
+  const m = sendMail(s, 'relRival', { a: a.id, b: b.id });
+  answerMail(s, m.id, 0);
+  assert.equal(relOf(s, a.id, b.id).kind, null, 'separarlos calma las cosas');
+  assert.equal(b.desk, 3, 'se va a la mesa libre más lejana');
+  // Mentoría: un senior adopta a un junior y le hace aprender más rápido.
+  const j = makePerson(s, 'dev', { skill: 12, traits: [] });
+  const sr = makePerson(s, 'dev', { skill: 80, traits: [] });
+  s.employees.push(j, sr);
+  for (let w = 0; w < 60 && !j.mentor; w++) relationsWeek(s);
+  assert.ok(j.mentor, 'aparece una mentoría');
+  // Bajas por agotamiento tras muchos días sin energía.
+  const t = makePerson(s, 'dev', { skill: 40, traits: ['fragile'] });
+  t.desk = 0;
+  s.employees.push(t);
+  s.policies.crunch = true;
+  for (let d = 0; d < 300 && t.offReason !== 'Baja por agotamiento'; d++) {
+    t.energy = 5;
+    s.event = null;
+    G.stepDay(s);
+    s.notes.length = 0;
+  }
+  assert.equal(t.offReason, 'Baja por agotamiento');
+}
+
+// 11. Estilos y eventos de oficina.
+{
+  const s = fresh(14);
+  s.money = 1e6;
+  const before = s.money;
+  assert.equal(G.buyStyle(s, 'zen').ok, true);
+  assert.equal(s.office.style, 'zen');
+  assert.equal(before - s.money, 6000);
+  G.clearStyle(s);
+  assert.equal(G.buyStyle(s, 'zen').ok, true);
+  assert.equal(before - s.money, 6000, 'un estilo comprado se vuelve a poner gratis');
+  s.employees.push(makePerson(s, 'dev'), makePerson(s, 'design'));
+  s.day = 340;
+  assert.ok(EVENTS.xmas.weight(s) > 0, 'en diciembre toca fiesta de Navidad');
+  s.event = { id: 'xmas', ctx: EVENTS.xmas.setup(s) };
+  const mood = s.employees[1].mood;
+  G.resolveEvent(s, 0);
+  assert.ok(officeFx(s, 'xmasParty') && s.employees[1].mood > mood);
+  assert.equal(EVENTS.xmas.weight(s), 0, 'solo una vez al año');
+  s.event = { id: 'blackout', ctx: {} };
+  G.resolveEvent(s, 0);
+  assert.equal(s.office.generator, true);
+  assert.ok(EVENTS.blackout.weight(s) < 0.5, 'con generador, los apagones importan menos');
+}
+
 assert.equal(fmtNum(999999), '1M');
 assert.equal(fmtNum(999.7), '1k');
 assert.equal(fmtMoney(999.6e6), '$1B');

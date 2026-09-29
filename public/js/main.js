@@ -8,10 +8,13 @@ import { answerMail, pendingMail, markAllRead } from './mail.js';
 import { openRegion, seasonOf } from './world.js';
 import { poachFrom, smear } from './rivals.js';
 import { orderUnits, setHwPrice } from './hw.js';
+import { toggleBackups, toggleBounty, buyAudit } from './security.js';
+import { toggleWebpay } from './platforms.js';
 import { OfficeView } from './office.js';
 import { sfx, setSound } from './audio.js';
 import { setMusic, setMusicMood, unlockMusic } from './music.js';
 import { renderTutorial } from './tutorial.js';
+import { PET_NAMES } from './pets.js';
 import {
   patch, openModal, closeModal, closeAllModals, topModal, modalOpen, refreshModals, confirmModal, toast, avatar, pixIcon, btn,
 } from './ui.js';
@@ -98,8 +101,8 @@ function boot() {
   buildTabs();
   office = new OfficeView($('#office'), {
     onPick: (id) => {
-      if (id === 'pet') {
-        office.petLove();
+      if (String(id).startsWith('pet:')) {
+        office.petLove(id);
         sfx('good');
         return;
       }
@@ -309,14 +312,15 @@ function flashSaved() {
 
 function showTip(id, x, y) {
   const tip = $('#tip');
-  const e = id != null && id !== 'pet' && G.findEmp(s, id);
-  if (!e && id !== 'pet') {
+  const pet = String(id).startsWith('pet:') ? office.pets.get(+String(id).slice(4)) : null;
+  const e = id != null && !pet && G.findEmp(s, id);
+  if (!e && !pet) {
     tip.hidden = true;
     return;
   }
   tip.hidden = false;
-  if (id === 'pet') {
-    tip.innerHTML = '<b>🐕 Bit</b><br>El perro de la oficina. Tócalo para darle mimos.';
+  if (pet) {
+    tip.innerHTML = `<b>${PET_NAMES[pet.kind]}</b><br>${pet.kind === 'parrot' ? 'Tócalo y te dirá algo.' : 'Tócalo para darle mimos.'}`;
     placeTip(tip, x, y);
     return;
   }
@@ -509,6 +513,8 @@ const ACTIONS = {
 
   research: (d) => result(G.doResearch(s, d.id), 'good'),
   buyPerk: (d) => result(G.buyPerk(s, d.id), 'coin'),
+  buyStyle: (d) => result(G.buyStyle(s, d.id), 'good'),
+  clearStyle: () => result(G.clearStyle(s)),
   sellPerk: (d) => result(G.sellPerk(s, d.id)),
   moveOffice: (d) => {
     const r = G.moveOffice(s, +d.tier);
@@ -517,6 +523,10 @@ const ACTIONS = {
   },
   policy: (d) => result(G.togglePolicy(s, d.id)),
   cloud: () => result(G.setCloud(s, !s.infra.cloud)),
+  secBackups: () => result(toggleBackups(s)),
+  secBounty: () => result(toggleBounty(s)),
+  secAudit: () => result(buyAudit(s), 'coin'),
+  webpay: () => result(toggleWebpay(s)),
   buyRacks: (d) => result(G.buyRacks(s, +d.n), 'coin'),
   sellRacks: (d) => result(G.sellRacks(s, +d.n)),
   mktPick: (d) => {

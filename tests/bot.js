@@ -5,12 +5,18 @@ import { FEATURES, CATEGORIES, RESEARCH, OFFICES, PERKS, CAMPAIGNS, REGIONS } fr
 import { pendingMail, answerMail } from '../public/js/mail.js';
 import { openRegion, complianceIssues } from '../public/js/world.js';
 import { isHW, orderUnits, incoming, unitCost } from '../public/js/hw.js';
+import { toggleBackups, toggleBounty } from '../public/js/security.js';
 
 export function botDay(s) {
   // Eventos: primera opción salvo vender la empresa.
   if (s.event) G.resolveEvent(s, s.event.id === 'buyout' ? 0 : 0);
-  // Correo: primera opción, salvo antimonopolio (colaborar).
-  for (const m of pendingMail(s)) answerMail(s, m.id, m.type === 'antitrust' ? m.choices.length - 1 : 0);
+  // Correo: primera opción, salvo donde la prudente es la última (la que se
+  // aplicaría sola al caducar).
+  const LAST = ['antitrust', 'secBreach', 'secReport', 'platBan'];
+  for (const m of pendingMail(s)) answerMail(s, m.id, LAST.includes(m.type) ? m.choices.length - 1 : 0);
+  // Seguridad: copias en cuanto hay usuarios y bug bounty cuando se puede.
+  if (G.totalUsers(s) > 50000 && !s.sec.backups) toggleBackups(s);
+  if (G.has(s, 'infosec') && G.totalUsers(s) > 500000 && !s.sec.bounty) toggleBounty(s);
   // Sedes internacionales cuando sobra el dinero.
   for (const id of ['latam', 'na', 'africa', 'asia']) {
     if (s.regions[id] == null && s.money > REGIONS[id].open * 12) {
@@ -75,6 +81,7 @@ export function botDay(s) {
     if (G.roleUnlocked(s, 'sales') && count('sales') < s.employees.length / 10) wants.push('sales');
     if (G.roleUnlocked(s, 'pm') && count('pm') < s.products.length) wants.push('pm');
     if (G.roleUnlocked(s, 'legal') && count('legal') < 1 + Math.floor(s.employees.length / 50)) wants.push('legal');
+    if (G.roleUnlocked(s, 'security') && count('security') < 1 + Math.floor(s.employees.length / 40)) wants.push('security');
     if (count('marketer') < s.products.filter((p) => p.launched).length) wants.push('marketer');
     wants.push('dev');
     for (const role of wants) {
