@@ -8,9 +8,9 @@ import {
 import { rnd, rint, rfloat, pick, chance, gauss, clamp, dateOf, fmtMoney, fmtNum, MONTHS } from './util.js';
 import {
   uid, has, officeOf, findEmp, findProduct, notify, news, money, effectMult, addEffect, levelOf,
-  expectedSalary, makeLooks, makePerson, perkStats,
+  expectedSalary, makeLooks, makePerson, perkStats, isBirthday,
 } from './core.js';
-import { EVENTS } from './events.js';
+import { EVENTS, deliverEvent } from './events.js';
 import { defaultLayout, addItem, canPlace, getRef, snapPos, deskEffects, itemDef } from './layout.js';
 import { sendMail, mailStep } from './mail.js';
 import { worldDay, seasonDemand, seasonTx, regionMarket, regionArpu, regionRent, regionStaff } from './world.js';
@@ -980,29 +980,16 @@ export function paidRefresh(s) {
   return ok('Nuevos candidatos disponibles.');
 }
 
-export function currentEvent(s) {
-  if (!s.event) return null;
-  const def = EVENTS[s.event.id];
-  if (!def) {
-    s.event = null;
-    return null;
-  }
-  return def.view(s, s.event.ctx);
-}
-
-export function resolveEvent(s, idx) {
-  if (!s.event) return fail();
-  const def = EVENTS[s.event.id];
-  const ctx = s.event.ctx;
-  s.event = null;
-  const msg = def.resolve(s, ctx, idx);
-  return ok(msg);
-}
-
 // ---------------------------------------------------------------- paso diario
 
 export function stepDay(s) {
-  if (s.gameOver || s.event) return;
+  if (s.gameOver) return;
+  // Partidas guardadas con un evento a medias: pasa al correo.
+  if (s.event) {
+    const ev = s.event;
+    s.event = null;
+    deliverEvent(s, ev.id, ev.ctx);
+  }
   s.day += 1;
   const today = dateOf(s.day);
   const newMonth = today.m !== dateOf(s.day - 1).m;
@@ -1010,6 +997,7 @@ export function stepDay(s) {
   const tp = teamPowers(s);
 
   workAndPeople(s, ps, tp);
+  birthdays(s);
   marketing(s, ps);
   products(s, tp);
   infra(s, tp);
@@ -1435,7 +1423,7 @@ function monthly(s, today) {
 }
 
 function maybeEvent(s) {
-  if (s.day < s.nextEventDay || s.event) return;
+  if (s.day < s.nextEventDay) return;
   const pool = [];
   for (const [id, def] of Object.entries(EVENTS)) {
     const w = def.weight(s);
@@ -1455,7 +1443,16 @@ function maybeEvent(s) {
   }
   const ctx = EVENTS[chosen.id].setup ? EVENTS[chosen.id].setup(s) : {};
   if (ctx === null) return;
-  s.event = { id: chosen.id, ctx };
+  deliverEvent(s, chosen.id, ctx);
+}
+
+// Cumpleaños: cada persona celebra el suyo una vez al año y el equipo lo nota.
+function birthdays(s) {
+  const today = s.employees.filter((e) => e.off <= 0 && isBirthday(s, e));
+  for (const e of today) e.mood = Math.min(100, e.mood + 8);
+  if (!today.length || s.employees.length > 40) return;
+  const names = today.map((e) => e.name).join(' y ');
+  notify(s, `🎂 Hoy ${today.length > 1 ? 'cumplen' : 'cumple'} años ${names}. ¡Hay tarta!`, 'good');
 }
 
 // ---- objetivos y logros

@@ -8,10 +8,9 @@ import { isHW, orderUnits, incoming, unitCost } from '../public/js/hw.js';
 import { toggleBackups, toggleBounty } from '../public/js/security.js';
 
 export function botDay(s) {
-  // Eventos: primera opción salvo vender la empresa.
-  if (s.event) G.resolveEvent(s, s.event.id === 'buyout' ? 0 : 0);
-  // Correo: primera opción, salvo donde la prudente es la última (la que se
-  // aplicaría sola al caducar).
+  // Correo (y eventos, que llegan por correo): primera opción, salvo donde la
+  // prudente es la última (la que se aplicaría sola al caducar). En una
+  // oferta de compra, la primera es rechazarla.
   const LAST = ['antitrust', 'secBreach', 'secReport', 'platBan'];
   for (const m of pendingMail(s)) answerMail(s, m.id, LAST.includes(m.type) ? m.choices.length - 1 : 0);
   // Seguridad: copias en cuanto hay usuarios y bug bounty cuando se puede.

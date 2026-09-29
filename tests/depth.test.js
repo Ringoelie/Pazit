@@ -12,8 +12,8 @@ import { fmtNum, fmtMoney } from '../public/js/util.js';
 import { secLevel, attackSurface, yearlyAttacks } from '../public/js/security.js';
 import { storeCut, platformDemand, MOBILE_SHARE } from '../public/js/platforms.js';
 import { relFx, relOf, relationsWeek } from '../public/js/relations.js';
-import { EVENTS } from '../public/js/events.js';
-import { officeFx } from '../public/js/core.js';
+import { EVENTS, deliverEvent } from '../public/js/events.js';
+import { officeFx, birthdayOf, isBirthday } from '../public/js/core.js';
 
 const fresh = (seed = 1) => {
   const s = G.newGame({ seed });
@@ -22,7 +22,6 @@ const fresh = (seed = 1) => {
 };
 const step = (s, n) => {
   for (let i = 0; i < n; i++) {
-    s.event = null;
     G.stepDay(s);
     s.notes.length = 0;
   }
@@ -179,8 +178,8 @@ function quickProduct(s, cat, features) {
   const p = quickProduct(s, 'phone', { hwdesign: 2, os: 2 });
   p.users = 2e5;
   p.stock = 1e6;
-  s.event = { id: 'cloudDown', ctx: {} };
-  G.resolveEvent(s, 0);
+  const cd = deliverEvent(s, 'cloudDown', {});
+  assert.equal(cd.choices, null, 'un evento que solo informa no pide decisión');
   assert.equal(p.down, 0, 'la caída de la nube no afecta al hardware');
   p.down = 1;
   step(s, 2);
@@ -252,7 +251,6 @@ function quickProduct(s, cat, features) {
   answerMail(s, b.id, b.choices.length - 1);
   assert.equal(s.reputation, 46);
   s.sec.hidden = { pid: p.id, n: 1000, day: s.day + 1 };
-  s.event = null;
   G.stepDay(s);
   G.stepDay(s);
   assert.ok(s.reputation <= 31, 'la filtración oculta sale a la luz');
@@ -314,9 +312,9 @@ function quickProduct(s, cat, features) {
   t.desk = 0;
   s.employees.push(t);
   s.policies.crunch = true;
+  s.money = 1e9;
   for (let d = 0; d < 300 && t.offReason !== 'Baja por agotamiento'; d++) {
     t.energy = 5;
-    s.event = null;
     G.stepDay(s);
     s.notes.length = 0;
   }
@@ -337,15 +335,58 @@ function quickProduct(s, cat, features) {
   s.employees.push(makePerson(s, 'dev'), makePerson(s, 'design'));
   s.day = 340;
   assert.ok(EVENTS.xmas.weight(s) > 0, 'en diciembre toca fiesta de Navidad');
-  s.event = { id: 'xmas', ctx: EVENTS.xmas.setup(s) };
+  const xm = deliverEvent(s, 'xmas', EVENTS.xmas.setup(s));
   const mood = s.employees[1].mood;
-  G.resolveEvent(s, 0);
+  answerMail(s, xm.id, 0);
   assert.ok(officeFx(s, 'xmasParty') && s.employees[1].mood > mood);
   assert.equal(EVENTS.xmas.weight(s), 0, 'solo una vez al año');
-  s.event = { id: 'blackout', ctx: {} };
-  G.resolveEvent(s, 0);
+  const bo = deliverEvent(s, 'blackout', {});
+  assert.ok(officeFx(s, 'blackout'), 'el apagón pasa en cuanto llega el aviso');
+  answerMail(s, bo.id, 0);
   assert.equal(s.office.generator, true);
   assert.ok(EVENTS.blackout.weight(s) < 0.5, 'con generador, los apagones importan menos');
+}
+
+// 12. Los eventos no paran la partida y no hacen nada drástico solos.
+{
+  const s = fresh(15);
+  s.money = 1e8;
+  const offer = deliverEvent(s, 'buyout', { amount: 1e9 });
+  assert.ok(offer.choices, 'la oferta de compra pide una decisión');
+  const day = s.day;
+  step(s, 12);
+  assert.equal(s.day, day + 12, 'el tiempo sigue corriendo con eventos pendientes');
+  assert.ok(!s.gameOver, 'si no contestas, la empresa no se vende');
+  assert.equal(offer.done, 0);
+  // Una partida guardada con un evento a medias lo recibe por correo.
+  s.event = { id: 'viral', ctx: { pid: -1 } };
+  G.stepDay(s);
+  assert.equal(s.event, null);
+  assert.equal(s.mail[0].type, 'event');
+  // La ola de calor empieza al llegar y el aire acondicionado la corta.
+  const hw = deliverEvent(s, 'heatwave', {});
+  assert.ok(s.effects.some((e) => e.id === 'heat' && e.until > s.day));
+  answerMail(s, hw.id, 0);
+  assert.ok(!s.effects.some((e) => e.id === 'heat' && e.until > s.day), 'con aire acondicionado se acaba el calor');
+}
+
+// 13. Cada persona cumple años una vez al año, en su fecha.
+{
+  const s = fresh(16);
+  for (let i = 0; i < 30; i++) s.employees.push(makePerson(s, 'dev'));
+  const old = makePerson(s, 'dev');
+  delete old.bday;
+  s.employees.push(old);
+  const b = birthdayOf(old);
+  assert.deepEqual(birthdayOf(old), b, 'sin fecha guardada, siempre la misma');
+  const count = new Map();
+  for (let d = 0; d < 365; d++) {
+    s.day += 1;
+    for (const e of s.employees) if (isBirthday(s, e)) count.set(e.id, (count.get(e.id) || 0) + 1);
+  }
+  const leap = (e) => birthdayOf(e).m === 1 && birthdayOf(e).d === 29;
+  for (const e of s.employees) if (!leap(e)) assert.equal(count.get(e.id), 1, `${e.name} cumple una vez al año`);
+  assert.ok(!Object.keys(EVENTS).includes('birthday'), 'ya no hay cumpleaños aleatorios');
 }
 
 assert.equal(fmtNum(999999), '1M');

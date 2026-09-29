@@ -5,7 +5,7 @@ import {
   QUESTS, ACHIEVEMENTS, POINT_TYPES, PREMIUM_PRICES, MAX_FEATURE_LEVEL, LEVELS, HW_PRICES, UNIVERSAL_WEIGHT,
   REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD,
 } from './data.js';
-import { pendingMail } from './mail.js';
+import { pendingMail, defaultChoice } from './mail.js';
 import { seasonOf, seasonDemand, regionMarket, langReach, regionStaff, complianceIssues, lawActive } from './world.js';
 import { warFx, poachCost, smearCost, rivalCooldown } from './rivals.js';
 import { isHW, unitCost, hwPrice, leadTime } from './hw.js';
@@ -13,7 +13,7 @@ import { secLevel, yearlyAttacks, BOUNTY_COST, BACKUP_COST, AUDIT_COST, AUDIT_DA
 import { STORES, CLOUD_NAME, onMobile, storeBanned, storeFee, storeMonthly, cloudMult, adsHit } from './platforms.js';
 import { REL_KINDS, relationsOf, relSummary } from './relations.js';
 import * as G from './sim.js';
-import { perkStats } from './core.js';
+import { perkStats, birthdayOf, isBirthday } from './core.js';
 import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, MONTHS } from './util.js';
 import { bar, btn, avatar } from './ui.js';
 
@@ -294,7 +294,7 @@ export function employeeModal(s, id) {
   const need = 25 + e.skill * 2.5;
   return `<div class="row gap">${avatar(e).replace('class="avatar"', 'class="avatar big"')}
     <div class="grow"><b class="lg">${esc(e.name)}</b><div>${role.icon} ${role.name} · ${levelName(e.skill)} · habilidad ${Math.round(e.skill)}</div>
-    <small class="muted">En la empresa desde el ${fmtDate(e.hired)}</small></div></div>
+    <small class="muted">En la empresa desde el ${fmtDate(e.hired)} · 🎂 ${birthdayOf(e).d} ${MONTHS[birthdayOf(e).m]}${isBirthday(s, e) ? ' (¡hoy!)' : ''}</small></div></div>
     <div class="kpis">
       ${kpi('Producción', out.toFixed(1) + '/día', role.produces === 'flex' ? 'Cubre lo que falte' : '')}
       ${kpi('Ánimo', Math.round(e.mood), '', e.mood < 30 ? 'warn' : '')}
@@ -867,7 +867,7 @@ function mailPanel(s) {
       const choices = open
         ? `<div class="mail-choices">${m.choices
             .map((c, i) => `<button class="btn choice ${i === 0 ? 'primary' : ''}" data-act="answerMail" data-id="${m.id}" data-i="${i}"><b>${esc(c.label)}</b>${c.hint ? `<small>${esc(c.hint)}</small>` : ''}</button>`)
-            .join('')}</div><small class="muted">Caduca en ${fmtDays(m.expires - s.day)}. Si no contestas: "${esc(m.choices[m.choices.length - 1].label)}".</small>`
+            .join('')}</div><small class="muted">Caduca en ${fmtDays(m.expires - s.day)}. Si no contestas: "${esc(m.choices[defaultChoice(m)].label)}".</small>`
         : m.choices
           ? `<p class="mail-out">➡️ ${esc(m.choices[m.done]?.label || '')}${m.outcome ? ` — ${esc(m.outcome)}` : ''}</p>`
           : '';

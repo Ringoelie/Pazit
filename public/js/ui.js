@@ -129,6 +129,8 @@ export function toast(text, kind = 'info') {
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
   el.textContent = text;
+  // Los avisos de correo llevan a la bandeja al tocarlos.
+  if (kind === 'mail') Object.assign(el.dataset, { act: 'tab', tab: 'mail' });
   root.appendChild(el);
   const max = window.matchMedia('(max-width: 640px)').matches ? 2 : 4;
   while (root.children.length > max) root.firstChild.remove();

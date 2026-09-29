@@ -18,19 +18,19 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 - **Ciberseguridad**: cuantos más usuarios tienes, más te atacan. Filtraciones de datos (¿ocultarlo o avisar?), ransomware (pagar, llamar a la policía o restaurar las copias), DDoS y phishing. Tu nivel de seguridad sube con investigación, especialistas en seguridad, auditorías, bug bounty y copias de seguridad.
 - **Plataformas**: las tiendas de apps se quedan hasta un 30% de lo que pagan tus usuarios del móvil (15% si facturas poco), cambian sus comisiones, recortan tus anuncios con nuevas reglas de privacidad o te expulsan. Puedes cobrar por la web, recurrir o denunciarlas. La nube también sube precios: firma un compromiso anual o negocia.
 - **Rivales con personalidad**: cada competidor tiene CEO, un estilo (agresivo, copión, cazatalentos, innovador o dormido) y un nivel de rivalidad contigo. Te declaran guerras de precios, te demandan, intentan fichar a tu gente o copian tus funciones. Tú puedes robarles talento, lanzar campañas comparativas o comprarlos.
-- **Correo**: empleados que piden aumentos o teletrabajo, ideas para tus productos, clientes con proyectos grandes, inversores, rivales y reguladores. Las decisiones caducan: si no contestas, se aplica la última opción.
+- **Correo**: empleados que piden aumentos o teletrabajo, ideas para tus productos, clientes con proyectos grandes, inversores, rivales, reguladores y los imprevistos del día a día. Nada detiene la partida: llega un aviso que puedes tocar para ir al correo. Las decisiones caducan y, si no contestas, se aplica la opción por defecto, que nunca es drástica (una oferta de compra sin respuesta no vende tu empresa).
 - **Expansión internacional**: sedes en Latinoamérica, África, Norteamérica y Asia. Cada una suma mercado (si tus productos hablan el idioma, gracias a Multi-idioma), cambia lo que paga cada usuario y te deja contratar allí con otros sueldos y otro talento.
 - **Leyes y reguladores**: ley de protección de datos, ley de IA, tasa digital e investigaciones antimonopolio si dominas un mercado. Auditorías, multas y juicios; los abogados mejoran tus opciones.
 - **Productos físicos**: smartphones, relojes, gafas VR y robots domésticos. Fabricas por lotes que tardan en llegar, gestionas el stock, fijas el precio, pagas almacenaje y sufres devoluciones si la calidad es mala.
 - **Temporadas**: San Valentín, verano, vuelta al cole, Black Friday y Navidades cambian la demanda de cada tipo de producto.
 - **Dinero**: rondas de inversión (business angel → IPO), préstamos, bolsa y bancarrota.
-- **Vida en la oficina**: fiestas con guirnaldas, globos y confeti cuando lanzas un producto, cierras una ronda o sales a bolsa; inversores que vienen de visita; un equipo que suda cuando la empresa está en números rojos; y eventos como el hackathon nocturno con pizzas, la fiesta de Navidad con árbol y gorros, cumpleaños con tarta, la visita de una persona famosa o un apagón a la luz de las velas.
+- **Vida en la oficina**: fiestas con guirnaldas, globos y confeti cuando lanzas un producto, cierras una ronda o sales a bolsa; inversores que vienen de visita; un equipo que suda cuando la empresa está en números rojos; y eventos como el hackathon nocturno con pizzas, la fiesta de Navidad con árbol y gorros, cumpleaños con tarta y gorro (cada persona tiene su fecha y lo celebra una vez al año), la visita de una persona famosa o un apagón a la luz de las velas.
 - **Mascotas**: perro, gato (que duerme en su cesta y se sube a las mesas), loro (que vuela a los monitores y repite lo que oye) y perro robot que patrulla de noche. Tócalas para darles mimos.
 - **Estilos de oficina**: cyberpunk, zen japonés, retro de los 80 y casa en la playa cambian suelo, paredes y muebles en cualquier oficina, y suben el ánimo.
 - **Música chiptune** generada al momento: cambia de ritmo y tonalidad si todo va bien, si hay crisis y con cada oficina. Se puede apagar en el menú.
 - **Tutorial guiado** para la primera partida: señala cada botón y avanza cuando haces lo que te pide. Se puede repetir desde el menú.
 - **App instalable**: se puede instalar en el móvil o el ordenador y jugar sin conexión.
-- **Más cosas**: 25 muebles y mejoras de oficina, 7 políticas de empresa (semana de 4 días, crunch, copilotos de IA...), 25 eventos aleatorios con decisiones, 15 objetivos, 25 logros, gráficos, sonido chiptune y guardado automático.
+- **Más cosas**: 25 muebles y mejoras de oficina, 7 políticas de empresa (semana de 4 días, crunch, copilotos de IA...), 24 eventos aleatorios, 15 objetivos, 25 logros, gráficos, sonido chiptune y guardado automático.
 - Funciona en **móvil y escritorio**, sin dependencias ni paso de build.
 
 ## Jugar en local
@@ -90,7 +90,7 @@ public/
     data.js     tablas del juego (roles, funciones, investigación...)
     core.js     helpers de estado compartidos
     sim.js      motor: cálculos, acciones y el paso diario (sin DOM)
-    events.js   eventos aleatorios con decisiones
+    events.js   eventos aleatorios, que llegan al correo
     mail.js     bandeja de entrada con decisiones que caducan
     rivals.js   rivales con personalidad y tus acciones contra ellos
     world.js    temporadas, expansión internacional y leyes

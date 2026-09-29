@@ -1,9 +1,12 @@
-// Eventos aleatorios con decisiones. El contexto (ctx) es JSON plano para
-// que un evento pendiente sobreviva a guardar y cargar la partida.
+// Eventos aleatorios. No interrumpen la partida: llegan al correo. Los que
+// piden una decisión caducan como cualquier correo (se aplica la opción por
+// defecto, `def`, o la última); los que solo informan se aplican al llegar.
+// El contexto (ctx) es JSON plano para que sobreviva a guardar y cargar.
 import { PERKS } from './data.js';
 import { rint, chance, pick, dateOf, fmtMoney } from './util.js';
 import { has, findEmp, findProduct, news, money, addEffect, makePerson, expectedSalary, addOfficeFx } from './core.js';
 import { valuation, queueFeature, isAIProduct, featureAvailable, installPerk, teamPowers } from './sim.js';
+import { registerMail, sendMail } from './mail.js';
 import { isHW } from './hw.js';
 
 const live = (s) => s.products.filter((p) => p.launched && p.users > 500);
@@ -14,6 +17,7 @@ const CELEBS = ['la cantante Luna Vega', 'el futbolista Dani Rayo', 'la actriz M
 
 export const EVENTS = {
   xmas: {
+    from: 'El equipo',
     weight: (s) => {
       const d = dateOf(s.day);
       return d.m === 11 && d.d >= 5 && s.xmas !== d.y && s.employees.length >= 2 ? 40 : 0;
@@ -47,8 +51,11 @@ export const EVENTS = {
   },
 
   celebrity: {
+    from: 'Recepción',
     weight: (s) => (s.reputation >= 35 && live(s).length ? 0.6 : 0),
     setup: (s) => ({ name: pick(s, CELEBS), pid: best(s).id }),
+    arrive: (s) => addOfficeFx(s, 'celebrity', 1),
+    days: 3,
     view: (s, ctx) => ({
       icon: '🌟',
       title: 'Visita famosa',
@@ -61,7 +68,6 @@ export const EVENTS = {
     }),
     resolve: (s, ctx, i) => {
       const p = findProduct(s, ctx.pid);
-      addOfficeFx(s, 'celebrity', 1);
       if (i === 1 && s.money >= 50000 && p) {
         money(s, -50000, 'marketing');
         p.hype += 600;
@@ -79,45 +85,39 @@ export const EVENTS = {
   },
 
   blackout: {
+    from: 'Mantenimiento',
     weight: (s) => (s.employees.length >= 3 ? (s.office.generator ? 0.2 : 0.7) : 0),
+    // El apagón pasa en cuanto llega el aviso: medio día perdido.
+    arrive: (s) => {
+      if (s.office.generator) return;
+      if (s.infra.racks) for (const p of live(s)) if (!isHW(p)) p.down = Math.max(p.down, 1);
+      addEffect(s, 'blackout', 1, { prod: 0.5 });
+      addOfficeFx(s, 'blackout', 1);
+    },
     view: (s) =>
       s.office.generator
-        ? { icon: '🔌', title: 'Apagón en el barrio', text: 'Se va la luz en toda la zona... pero tu generador arranca solo.', choices: [{ label: '¡Bien por el generador!' }] }
+        ? { icon: '🔌', title: 'Apagón en el barrio', text: 'Se ha ido la luz en toda la zona... pero tu generador ha arrancado solo.', choices: [{ label: '¡Bien por el generador!' }] }
         : {
           icon: '🔌',
           title: 'Apagón en el barrio',
-          text: `Se va la luz en toda la zona: sin ordenadores y sin café.${s.infra.racks ? ' Tus servidores propios también se apagan.' : ''}`,
+          text: `Se ha ido la luz en toda la zona: medio día sin ordenadores y sin café.${s.infra.racks ? ' Tus servidores propios también se han apagado.' : ''}`,
           choices: [
-            { label: 'Comprar un generador ($8k)', hint: 'Medio día perdido; los próximos apagones no te afectarán' },
-            { label: 'Mandar a todo el mundo a casa', hint: 'Un día sin trabajo, +10 energía' },
-            { label: 'Seguir con portátiles a oscuras', hint: '2 días al 50%, -4 ánimo' },
+            { label: 'Comprar un generador ($8k)', hint: 'Los próximos apagones no te afectarán' },
+            { label: 'No hace falta', hint: 'El próximo apagón volverá a parar la oficina' },
           ],
         },
     resolve: (s, ctx, i) => {
       if (s.office.generator) return '⚡ El generador salva el día.';
-      if (s.infra.racks) for (const p of live(s)) if (!isHW(p)) p.down = Math.max(p.down, 1);
-      if (i === 0 && s.money >= 8000) {
-        money(s, -8000, 'office');
-        s.office.generator = true;
-        addEffect(s, 'blackout', 1, { prod: 0.5 });
-        addOfficeFx(s, 'blackout', 0);
-        return '⚡ Generador instalado. La próxima vez ni te enterarás.';
-      }
-      if (i <= 1) {
-        addEffect(s, 'blackout', 1, { prod: 0 });
-        for (const e of s.employees) e.energy = Math.min(100, e.energy + 10);
-        addOfficeFx(s, 'blackout', 1);
-        return 'Todo el mundo a casa. Mañana será otro día.';
-      }
-      addEffect(s, 'blackout', 2, { prod: 0.5 });
-      for (const e of s.employees) e.mood = Math.max(0, e.mood - 4);
-      addOfficeFx(s, 'blackout', 2);
-      return 'Se trabaja a la luz de las pantallas... y de alguna vela.';
+      if (i !== 0) return 'Sin generador. A cruzar los dedos.';
+      if (s.money < 8000) return 'No tienes $8k para el generador.';
+      money(s, -8000, 'office');
+      s.office.generator = true;
+      return '⚡ Generador instalado. La próxima vez ni te enterarás.';
     },
   },
 
-
   viral: {
+    from: 'Marketing',
     weight: (s) => (live(s).length ? 3 : 0),
     setup: (s) => ({ pid: pick(s, live(s)).id }),
     view: (s, ctx) => ({
@@ -143,12 +143,14 @@ export const EVENTS = {
   },
 
   poach: {
+    from: 'Personas (RR.HH.)',
     weight: (s) => (s.employees.some((e) => e.role !== 'founder' && e.skill >= 50 && !e.traits.includes('loyal')) ? 1 : 0),
     setup: (s) => {
       const list = s.employees.filter((e) => e.role !== 'founder' && e.skill >= 50 && !e.traits.includes('loyal'));
       const e = pick(s, list);
       return { eid: e.id, offer: Math.round((e.salary * 1.3) / 50) * 50 };
     },
+    days: 5,
     view: (s, ctx) => {
       const e = findEmp(s, ctx.eid);
       return {
@@ -181,31 +183,34 @@ export const EVENTS = {
   },
 
   heatwave: {
+    from: 'Mantenimiento',
     weight: (s) => {
       const m = dateOf(s.day).m;
       return m >= 5 && m <= 7 && !s.office.perks.ac ? 4 : 0;
     },
+    arrive: (s) => addEffect(s, 'heat', 20, { heat: 0.8 }),
     view: () => ({
       icon: '🥵',
       title: 'Ola de calor',
       text: 'La oficina es un horno. El equipo rinde menos y se derrite frente al teclado.',
       choices: [
         { label: `Instalar aire acondicionado (${fmtMoney(PERKS.ac.cost)})`, hint: 'Problema resuelto' },
-        { label: 'Aguantar con ventiladores', hint: '-20% producción 20 días' },
+        { label: 'Aguantar con ventiladores', hint: '-20% producción hasta que pase (20 días)' },
       ],
     }),
     resolve: (s, ctx, i) => {
       if (i === 0 && s.money >= PERKS.ac.cost) {
         money(s, -PERKS.ac.cost, 'office');
         installPerk(s, 'ac');
+        addEffect(s, 'heat', 0, {});
         return '❄️ Aire acondicionado instalado. ¡Qué gloria!';
       }
-      addEffect(s, 'heat', 20, { heat: 0.8 });
-      return 'Toca sudar. -20% de producción durante 20 días.';
+      return i === 0 ? `No tienes ${fmtMoney(PERKS.ac.cost)}: toca sudar.` : 'Toca sudar hasta que pase la ola de calor.';
     },
   },
 
   aiHype: {
+    from: 'TechDiario',
     weight: (s) => (has(s, 'ml') ? 1.5 : 0),
     view: (s) => ({
       icon: '🧠',
@@ -221,6 +226,7 @@ export const EVENTS = {
   },
 
   recession: {
+    from: 'Prensa económica',
     weight: (s) => (s.day > 365 ? 1 : 0),
     view: () => ({
       icon: '📉',
@@ -236,6 +242,7 @@ export const EVENTS = {
   },
 
   hackathon: {
+    from: 'El equipo',
     weight: (s) => (s.employees.length >= 3 ? 2 : 0),
     view: (s) => ({
       icon: '🧑‍💻',
@@ -263,6 +270,7 @@ export const EVENTS = {
   },
 
   llama: {
+    from: 'Un millonario',
     weight: (s) => (s.day > 60 && s.products.length ? 0.8 : 0),
     setup: (s) => ({ amount: Math.round((20000 + s.reputation * 1500) / 1000) * 1000 }),
     view: (s, ctx) => ({
@@ -282,6 +290,7 @@ export const EVENTS = {
   },
 
   patent: {
+    from: 'Bufete Troll & Asociados',
     weight: (s) => (live(s).length && s.day > 120 ? 1.2 : 0),
     setup: (s) => ({ amount: Math.round(Math.max(8000, valuation(s) * 0.004) / 1000) * 1000 }),
     view: (s, ctx) => ({
@@ -309,6 +318,7 @@ export const EVENTS = {
   },
 
   press: {
+    from: 'TechDiario',
     weight: (s) => (s.products.some((p) => p.launched) ? 1.5 : 0),
     view: (s) => ({
       icon: '🎤',
@@ -325,29 +335,8 @@ export const EVENTS = {
     },
   },
 
-  birthday: {
-    weight: (s) => (s.employees.length >= 2 ? 1.5 : 0),
-    setup: (s) => ({ eid: pick(s, s.employees.filter((e) => e.role !== 'founder')).id }),
-    view: (s, ctx) => ({
-      icon: '🎂',
-      title: '¡Cumpleaños en la oficina!',
-      text: `Hoy es el cumpleaños de ${findEmp(s, ctx.eid)?.name ?? 'alguien del equipo'}.`,
-      choices: [{ label: 'Tarta para todos ($100)', hint: '+5 ánimo a todos' }, { label: 'Un simple "felicidades"', hint: '-10 ánimo a esa persona' }],
-    }),
-    resolve: (s, ctx, i) => {
-      const e = findEmp(s, ctx.eid);
-      if (i === 0) {
-        money(s, -100, 'other');
-        for (const o of s.employees) o.mood = Math.min(100, o.mood + 5);
-        addOfficeFx(s, 'birthday', 1, { eid: ctx.eid });
-        return '🎂 ¡Qué rica estaba!';
-      }
-      if (e) e.mood = Math.max(0, e.mood - 10);
-      return 'Un poco triste, la verdad.';
-    },
-  },
-
   conference: {
+    from: 'TechConf',
     weight: (s) => (s.reputation >= 15 ? 1.2 : 0),
     view: () => ({
       icon: '🎟️',
@@ -365,6 +354,7 @@ export const EVENTS = {
   },
 
   cloudDown: {
+    from: 'Tu proveedor de nube',
     weight: (s) => (s.infra.cloud && live(s).some((p) => !isHW(p)) ? 0.6 : 0),
     view: () => ({
       icon: '☁️',
@@ -379,8 +369,11 @@ export const EVENTS = {
   },
 
   buyout: {
+    from: 'MegaCorp',
     weight: (s) => (valuation(s) > 5e7 && !s.funding.ipo ? 0.5 : 0),
     setup: (s) => ({ amount: Math.round((valuation(s) * 1.5) / 1e6) * 1e6 }),
+    def: 0,
+    days: 10,
     view: (s, ctx) => ({
       icon: '🤑',
       title: 'Oferta de compra',
@@ -398,6 +391,7 @@ export const EVENTS = {
   },
 
   burnout: {
+    from: 'Personas (RR.HH.)',
     weight: (s) => (s.policies.crunch && s.employees.length >= 3 ? 4 : 0),
     view: () => ({
       icon: '🫠',
@@ -420,6 +414,7 @@ export const EVENTS = {
   },
 
   grant: {
+    from: 'Ministerio de Innovación',
     weight: (s) => (Object.keys(s.research).length >= 3 ? 1 : 0),
     setup: (s) => ({ amount: Math.round((15000 + Object.keys(s.research).length * 4000) / 1000) * 1000 }),
     view: (s, ctx) => ({
@@ -437,6 +432,7 @@ export const EVENTS = {
   },
 
   cryptoCrash: {
+    from: 'Prensa económica',
     weight: (s) => (s.products.some((p) => p.features.crypto && p.launched) ? 2 : 0),
     view: () => ({
       icon: '🪙',
@@ -454,6 +450,7 @@ export const EVENTS = {
   },
 
   darkmodeDemand: {
+    from: 'Soporte',
     weight: (s) => (s.products.some((p) => p.launched && !p.features.darkmode && !p.queue.some((t) => t.f === 'darkmode') && featureAvailable(s, p, 'darkmode')) ? 1.2 : 0),
     setup: (s) => ({
       pid: pick(s, s.products.filter((p) => p.launched && !p.features.darkmode && !p.queue.some((t) => t.f === 'darkmode') && featureAvailable(s, p, 'darkmode'))).id,
@@ -478,6 +475,7 @@ export const EVENTS = {
   },
 
   influencer: {
+    from: 'Redes sociales',
     weight: (s) => (live(s).length ? 1.2 : 0),
     setup: (s) => ({ pid: pick(s, live(s)).id }),
     view: (s, ctx) => ({
@@ -504,6 +502,7 @@ export const EVENTS = {
   },
 
   rackFire: {
+    from: 'Mantenimiento',
     weight: (s) => (s.infra.racks >= 3 ? 0.8 : 0),
     setup: (s) => ({ lost: Math.min(s.infra.racks, rint(s, 1, 2)) }),
     view: (s, ctx) => ({
@@ -520,6 +519,7 @@ export const EVENTS = {
   },
 
   legend: {
+    from: 'Selección de personal',
     weight: (s) => (s.day > 90 ? 0.8 : 0),
     view: () => ({
       icon: '🌟',
@@ -537,6 +537,7 @@ export const EVENTS = {
   },
 
   layoffs: {
+    from: 'Prensa económica',
     weight: (s) => (s.day > 200 ? 0.9 : 0),
     view: () => ({
       icon: '📦',
@@ -552,6 +553,7 @@ export const EVENTS = {
   },
 
   festival: {
+    from: 'El equipo',
     weight: (s) => (s.employees.length >= 5 ? 1 : 0),
     view: () => ({
       icon: '🎉',
@@ -571,3 +573,32 @@ export const EVENTS = {
   },
 };
 
+// Un evento llega al correo. Si solo informa, se aplica ya.
+export function deliverEvent(s, id, ctx = {}) {
+  const def = EVENTS[id];
+  if (!def) return null;
+  def.arrive?.(s, ctx);
+  if (def.view(s, ctx).choices.length > 1) return sendMail(s, 'event', { id, ctx });
+  return sendMail(s, 'event', { id, ctx, out: def.resolve(s, ctx, 0) || '' });
+}
+
+registerMail({
+  event: {
+    make: (s, { id, ctx, out }) => {
+      const def = EVENTS[id];
+      if (!def) return null;
+      const v = def.view(s, ctx);
+      const info = out != null;
+      return {
+        from: def.from || 'Oficina',
+        icon: v.icon,
+        subject: v.title,
+        body: info && out ? `${v.text} ${out}` : v.text,
+        choices: info ? null : v.choices,
+        days: def.days || 7,
+        def: def.def,
+      };
+    },
+    resolve: (s, { id, ctx }, i) => EVENTS[id]?.resolve(s, ctx, i) || 'Hecho.',
+  },
+});

@@ -83,7 +83,7 @@ export function renderTutorial(s, U) {
   let el = sel ? document.querySelector(sel) : null;
   if (el && !el.getClientRects().length) el = null;
   // Si una ventana tapa lo que toca pulsar, se señala su ✕. Si no se puede
-  // cerrar (un evento), el tutorial espera detrás.
+  // cerrar (la de fin de partida), el tutorial espera detrás.
   const top = document.querySelector('#modals .modal-back:last-child');
   let text = st.text;
   let key = String(i);

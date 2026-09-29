@@ -2,7 +2,7 @@
 // con zoom y arrastre, y modo edición para recolocar mesas y muebles.
 import { OFFICES, ROLES, PAL, PERKS } from './data.js';
 import { dateOf } from './util.js';
-import { officeFx } from './core.js';
+import { officeFx, isBirthday } from './core.js';
 import * as S from './sprites.js';
 import { themeFor, paintBackground, paintWindows, paintVignette } from './scenery.js';
 import { PET_IDS, updatePets, petDrawables, drawPetHome, petLove, petLights } from './pets.js';
@@ -121,6 +121,7 @@ export class OfficeView {
     this.relIdx = new Map();
     this.relDay = -1;
     this.treeSpot = null;
+    this.bdays = new Set();
     this.treeDay = -1;
     this.celebDay = -1;
     this.bindInput();
@@ -499,6 +500,7 @@ export class OfficeView {
         if (!cur || rank[r.kind] > rank[cur.kind]) this.relIdx.set(a, { kind: r.kind, other: b });
       }
     }
+    this.bdays = new Set(s.employees.filter((e) => isBirthday(s, e)).map((e) => e.id));
     this.treeSpot = null;
     if (dateOf(s.day).m === 11 || officeFx(s, 'xmasParty')) this.treeSpot = findSpot(layout, s.office.tier, 'xmastree');
   }
@@ -929,8 +931,7 @@ export class OfficeView {
     const roleColor = e ? ROLES[e.role].color : PAL.slate;
     const s = this.s;
     const cheer = seated && (this.partyUntil > t || !!officeFx(s, 'xmasParty')) && !this.edit;
-    const bday = officeFx(s, 'birthday');
-    const isBday = seated && bday?.eid === e.id;
+    const isBday = seated && this.bdays.has(e.id);
     // Quien se queda de noche (o va sin energía) tiene ojeras.
     const night = this.hour % 24 >= 20 || this.hour % 24 < 7;
     const tired = !!seated && ((night && !this.edit) || e.energy < 25);
@@ -966,7 +967,7 @@ export class OfficeView {
   statusIcon(e, t) {
     if (e.energy < 25) return 'zz';
     if (e.mood < 30) return 'bang';
-    if (officeFx(this.s, 'birthday')?.eid === e.id) return t % 2 < 1 ? 'cake' : 'heart';
+    if (this.bdays.has(e.id)) return t % 2 < 1 ? 'cake' : 'heart';
     // Parejas, roces y amistades se notan de vez en cuando.
     const rel = this.relIdx.get(e.id);
     if (rel?.kind === 'couple' && t % 9 < 0.9) return 'heart';
