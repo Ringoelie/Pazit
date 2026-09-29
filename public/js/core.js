@@ -1,6 +1,6 @@
 // Helpers de estado compartidos por la simulación y los eventos.
 import { ROLES, LEVELS, TRAITS, LOOKS, FIRST_NAMES, LAST_NAMES, OFFICES, PERKS, REGIONS } from './data.js';
-import { rnd, rint, rfloat, pick, chance, gauss, clamp } from './util.js';
+import { rnd, rint, rfloat, pick, chance, gauss, clamp, dateOf } from './util.js';
 
 export const uid = (s) => s.nextId++;
 export const has = (s, id) => s.research[id] != null;
@@ -27,17 +27,22 @@ export function money(s, amount, cat) {
   if (amount > 0 && ['ads', 'subs', 'tx', 'api', 'contracts', 'hardware', 'store'].includes(cat)) s.stats.revenue += amount;
 }
 
+// Un efecto de N días añadido hoy dura del día siguiente al día de hoy + N,
+// ambos incluidos (el día de hoy ya se ha simulado).
 export function effectMult(s, key) {
   let m = 1;
-  for (const ef of s.effects) if (ef.until > s.day && ef[key] != null) m *= ef[key];
+  for (const ef of s.effects) if (ef.until >= s.day && ef[key] != null) m *= ef[key];
   return m;
 }
 export function hasEffect(s, id) {
-  return s.effects.some((ef) => ef.id === id && ef.until > s.day);
+  return s.effects.some((ef) => ef.id === id && ef.until >= s.day);
 }
 export function addEffect(s, id, days, mods) {
   s.effects = s.effects.filter((ef) => ef.id !== id);
   s.effects.push({ id, until: s.day + days, ...mods });
+}
+export function removeEffect(s, id) {
+  s.effects = s.effects.filter((ef) => ef.id !== id);
 }
 
 // Efectos visuales en la oficina (hackathon, Navidad, cumpleaños, apagón...).
@@ -82,6 +87,21 @@ export function makeName(s) {
 
 const TRAIT_POOL = Object.keys(TRAITS).filter((t) => t !== 'remote');
 
+// Cumpleaños: un día fijo del año para cada persona.
+const MONTH_LEN = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function dayToDate(n) {
+  let m = 0;
+  while (n >= MONTH_LEN[m]) n -= MONTH_LEN[m++];
+  return { m, d: n + 1 };
+}
+// Las partidas antiguas no guardaban la fecha: se saca del id, siempre la misma.
+export const birthdayOf = (e) => e.bday || dayToDate((e.id * 7919) % 365);
+export function isBirthday(s, e) {
+  const b = birthdayOf(e);
+  const t = dateOf(s.day);
+  return b.m === t.m && b.d === t.d;
+}
+
 export function makePerson(s, role, { skill, traits, remote, region } = {}) {
   const hr = s.employees.filter((e) => e.role === 'hr' && !e.off).reduce((a, e) => a + e.skill, 0);
   const boost = s.reputation * 0.35 + Math.min(15, hr / 25) + (effectMult(s, 'talent') - 1) * 100;
@@ -112,6 +132,7 @@ export function makePerson(s, role, { skill, traits, remote, region } = {}) {
     offReason: '',
     hired: s.day,
     unhappy: 0,
+    bday: dayToDate(rint(s, 0, 364)),
   };
   if (region) e.region = region;
   e.salary = Math.round((expectedSalary(e, s) * rfloat(s, 0.95, 1.15) * effectMult(s, 'salary')) / 50) * 50;

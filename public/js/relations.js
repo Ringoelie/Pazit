@@ -87,16 +87,21 @@ function couples(s) {
       r.since = s.day;
       A.mood = Math.max(0, A.mood - 15);
       B.mood = Math.max(0, B.mood - 15);
-      const leaver = [A, B].filter((x) => x.role !== 'founder' && !x.traits.includes('loyal'))[rint(s, 0, 1)];
+      const pool = [A, B].filter((x) => x.role !== 'founder' && !x.traits.includes('loyal'));
+      const leaver = pool.length ? pool[rint(s, 0, pool.length - 1)] : null;
       if (leaver && chance(s, 0.3)) {
         s.employees = s.employees.filter((x) => x !== leaver);
         notify(s, `💔 ${A.name} y ${B.name} lo han dejado. ${leaver.name} no puede más y se va de la empresa.`, 'bad');
-      } else notify(s, `💔 ${A.name} y ${B.name} lo han dejado. El ambiente está tenso.`, 'bad');
+      } else {
+        notify(s, `💔 ${A.name} y ${B.name} lo han dejado. El ambiente está tenso.`, 'bad');
+        if (!s.mail.some((m) => m.type === 'relRival' && m.done == null)) sendMail(s, 'relRival', { a: r.a, b: r.b });
+      }
     }
   }
 }
 
-// Mentorías: un senior (o alguien con el rasgo Mentor) adopta a un junior.
+// Mentorías: un senior (o alguien con el rasgo Mentor que ya no sea junior)
+// adopta a un junior.
 function mentors(s) {
   const count = new Map();
   for (const e of s.employees) if (e.mentor) count.set(e.mentor, (count.get(e.mentor) || 0) + 1);
@@ -110,8 +115,9 @@ function mentors(s) {
       continue;
     }
     if (j.role === 'founder' || levelOf(j.skill) > 0 || !chance(s, 0.25)) continue;
-    const pool = s.employees.filter((m) => m !== j && m.off <= 0 && (count.get(m.id) || 0) < 2
-      && (m.role === j.role || (m.traits.includes('mentor') && levelOf(m.skill) >= 1))
+    const pool = s.employees.filter((m) => m !== j && m.off <= 0 && !m.mentor && (count.get(m.id) || 0) < 2
+      && levelOf(m.skill) >= 1
+      && (m.role === j.role || m.traits.includes('mentor'))
       && (levelOf(m.skill) >= 2 || m.traits.includes('mentor')));
     if (!pool.length) continue;
     const m = pool[rint(s, 0, pool.length - 1)];

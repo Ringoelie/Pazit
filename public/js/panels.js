@@ -5,15 +5,15 @@ import {
   QUESTS, ACHIEVEMENTS, POINT_TYPES, PREMIUM_PRICES, MAX_FEATURE_LEVEL, LEVELS, HW_PRICES, UNIVERSAL_WEIGHT,
   REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD,
 } from './data.js';
-import { pendingMail } from './mail.js';
+import { pendingMail, defaultChoice } from './mail.js';
 import { seasonOf, seasonDemand, regionMarket, langReach, regionStaff, complianceIssues, lawActive } from './world.js';
 import { warFx, poachCost, smearCost, rivalCooldown } from './rivals.js';
 import { isHW, unitCost, hwPrice, leadTime } from './hw.js';
 import { secLevel, yearlyAttacks, BOUNTY_COST, BACKUP_COST, AUDIT_COST, AUDIT_DAYS } from './security.js';
-import { STORES, CLOUD_NAME, onMobile, storeBanned, storeFee, storeMonthly, cloudMult, adsHit } from './platforms.js';
+import { STORES, CLOUD_NAME, onMobile, storeFee, storeMonthly, cloudMult, adsHit } from './platforms.js';
 import { REL_KINDS, relationsOf, relSummary } from './relations.js';
 import * as G from './sim.js';
-import { perkStats } from './core.js';
+import { perkStats, birthdayOf, isBirthday } from './core.js';
 import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, MONTHS } from './util.js';
 import { bar, btn, avatar } from './ui.js';
 
@@ -128,9 +128,9 @@ function officePanel(s) {
     <h3>Estilo de la oficina</h3>
     <p class="muted">Cambia suelo, paredes y muebles en cualquier oficina. Con un estilo puesto, el equipo gana +${STYLE_MOOD} de ánimo.</p>
     <div class="cards">${styleCards(s)}</div>
-    <p class="muted">Al mudarte te llevas las mejoras, pero el coche y las cajas se quedan en el garaje.</p>
     <h3>Políticas de empresa</h3><div class="cards">${policies}</div>
-    <h3>Mudanza</h3><div class="cards">${moves || '<p class="muted">Ya estás en la mejor oficina del sistema solar.</p>'}</div>`;
+    <h3>Mudanza</h3>${moves ? '<p class="muted">Al mudarte te llevas las mejoras, pero el coche y las cajas se quedan en el garaje.</p>' : ''}
+    <div class="cards">${moves || '<p class="muted">Ya estás en la mejor oficina del sistema solar.</p>'}</div>`;
 }
 
 function styleCards(s) {
@@ -197,7 +197,7 @@ function teamPanel(s, U) {
   return `<div class="kpis">
       ${kpi('Plantilla', s.employees.length, `${G.onsite(s)}/${o.desks} escritorios`)}
       ${kpi('Nóminas', fmtMoney(G.payroll(s)) + '/mes')}
-      ${kpi('Ánimo medio', Math.round(s.employees.reduce((a, e) => a + e.mood, 0) / s.employees.length), '', '')}
+      ${kpi('Ánimo medio', Math.round(s.employees.reduce((a, e) => a + e.mood, 0) / Math.max(1, s.employees.length)), '', '')}
       ${kpi('Sin tarea', idle, idle ? 'Asígnales algo' : 'Todo el mundo ocupado', idle ? 'warn' : '')}
     </div>
     <div class="row gap wrap">${btn('➕ Contratar', 'hireOpen', {}, { kind: 'primary big' })}
@@ -294,7 +294,7 @@ export function employeeModal(s, id) {
   const need = 25 + e.skill * 2.5;
   return `<div class="row gap">${avatar(e).replace('class="avatar"', 'class="avatar big"')}
     <div class="grow"><b class="lg">${esc(e.name)}</b><div>${role.icon} ${role.name} · ${levelName(e.skill)} · habilidad ${Math.round(e.skill)}</div>
-    <small class="muted">En la empresa desde el ${fmtDate(e.hired)}</small></div></div>
+    <small class="muted">En la empresa desde el ${fmtDate(e.hired)} · 🎂 ${birthdayOf(e).d} ${MONTHS[birthdayOf(e).m]}${isBirthday(s, e) ? ' (¡hoy!)' : ''}</small></div></div>
     <div class="kpis">
       ${kpi('Producción', out.toFixed(1) + '/día', role.produces === 'flex' ? 'Cubre lo que falte' : '')}
       ${kpi('Ánimo', Math.round(e.mood), '', e.mood < 30 ? 'warn' : '')}
@@ -515,7 +515,7 @@ function productAlerts(s, p) {
     out.push(`<div class="banner warn">⚔️ Guerra de precios con ${esc(c?.name || 'un rival')}: ${how}. Quedan ${fmtDays(p.war.until - s.day)}.</div>`);
   }
   if (p.antitrust > s.day) out.push(`<div class="banner warn">🏛️ Bajo vigilancia antimonopolio: crecimiento limitado ${fmtDays(p.antitrust - s.day)} más.</div>`);
-  if (storeBanned(s, p)) out.push(`<div class="banner warn">⛔ Fuera de las tiendas de apps ${fmtDays(p.storeBan - s.day)} más: casi nadie puede instalar la app.</div>`);
+  if (p.storeBan > s.day) out.push(`<div class="banner warn">⛔ Fuera de las tiendas de apps ${fmtDays(p.storeBan - s.day)} más: casi nadie puede instalar la app.</div>`);
   if (adsHit(s, p)) out.push('<div class="banner warn">🙈 Nueva política de rastreo: los anuncios rinden menos en el móvil.</div>');
   if (p.down > 0) out.push(`<div class="banner warn">🔥 Caído ${fmtDays(p.down)} más: sin ingresos y perdiendo usuarios.</div>`);
   const m = seasonDemand(s, p.cat);
@@ -867,7 +867,7 @@ function mailPanel(s) {
       const choices = open
         ? `<div class="mail-choices">${m.choices
             .map((c, i) => `<button class="btn choice ${i === 0 ? 'primary' : ''}" data-act="answerMail" data-id="${m.id}" data-i="${i}"><b>${esc(c.label)}</b>${c.hint ? `<small>${esc(c.hint)}</small>` : ''}</button>`)
-            .join('')}</div><small class="muted">Caduca en ${fmtDays(m.expires - s.day)}. Si no contestas: "${esc(m.choices[m.choices.length - 1].label)}".</small>`
+            .join('')}</div><small class="muted">Caduca en ${fmtDays(m.expires - s.day)}. Si no contestas: "${esc(m.choices[defaultChoice(m)].label)}".</small>`
         : m.choices
           ? `<p class="mail-out">➡️ ${esc(m.choices[m.done]?.label || '')}${m.outcome ? ` — ${esc(m.outcome)}` : ''}</p>`
           : '';
@@ -927,7 +927,7 @@ function worldPanel(s) {
 function platformsSection(s) {
   const mobile = s.products.filter((p) => p.launched && onMobile(p));
   const fee = storeFee(s);
-  const banned = mobile.filter((p) => storeBanned(s, p));
+  const banned = mobile.filter((p) => p.storeBan > s.day);
   const hasWeb = G.has(s, 'webpay');
   return `<h3>Plataformas</h3>
     <div class="cards">

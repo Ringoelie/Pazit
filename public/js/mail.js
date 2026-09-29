@@ -1,6 +1,7 @@
 // Bandeja de entrada: mensajes de empleados, clientes, inversores, rivales y
 // reguladores. Los que piden una decisión caducan y, si no contestas, se
-// aplica la última opción. Otros módulos añaden tipos con registerMail().
+// aplica la opción por defecto (la última, salvo que el correo diga otra).
+// Otros módulos añaden tipos con registerMail().
 import { LEVELS, CATEGORIES, FEATURES, MAX_FEATURE_LEVEL } from './data.js';
 import { rnd, rint, pick, fmtMoney } from './util.js';
 import { uid, has, findEmp, findProduct, notify, levelOf, expectedSalary } from './core.js';
@@ -27,6 +28,7 @@ export function sendMail(s, type, ctx = {}) {
     subject: m.subject,
     body: m.body,
     choices: m.choices || null,
+    def: m.choices && m.def != null ? m.def : null,
     expires: m.choices ? s.day + (m.days || 14) : null,
     read: false,
     done: null,
@@ -51,6 +53,9 @@ export function answerMail(s, id, idx) {
   return { ok: true, msg: m.outcome };
 }
 
+// Opción que se aplica si el correo caduca sin respuesta.
+export const defaultChoice = (m) => m.def ?? m.choices.length - 1;
+
 export const pendingMail = (s) => s.mail.filter((m) => m.choices && m.done == null);
 export const unreadMail = (s) => s.mail.filter((m) => !m.read).length;
 
@@ -62,7 +67,7 @@ export function markAllRead(s) {
 export function mailStep(s) {
   for (const m of s.mail) {
     if (m.choices && m.done == null && m.expires <= s.day) {
-      const idx = m.choices.length - 1;
+      const idx = defaultChoice(m);
       m.done = idx;
       m.expired = true;
       m.outcome = '⌛ Sin respuesta: ' + (MAIL_TYPES[m.type]?.resolve?.(s, m.ctx, idx) || 'se aplicó la opción por defecto.');
@@ -94,7 +99,7 @@ registerMail({
       from: 'Tu yo del futuro',
       icon: '💌',
       subject: 'Bienvenida a tu bandeja de entrada',
-      body: 'Aquí te escribirán empleados, clientes, inversores, rivales y reguladores. Algunos correos piden una decisión: si no contestas a tiempo, se aplica la última opción. ¡Suerte!',
+      body: 'Aquí te escribirán empleados, clientes, inversores, rivales y reguladores, y aquí llegan también los imprevistos. Algunos correos piden una decisión: si no contestas a tiempo, se aplica la opción por defecto. ¡Suerte!',
     }),
   },
 

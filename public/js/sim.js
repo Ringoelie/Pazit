@@ -8,15 +8,15 @@ import {
 import { rnd, rint, rfloat, pick, chance, gauss, clamp, dateOf, fmtMoney, fmtNum, MONTHS } from './util.js';
 import {
   uid, has, officeOf, findEmp, findProduct, notify, news, money, effectMult, addEffect, levelOf,
-  expectedSalary, makeLooks, makePerson, perkStats,
+  expectedSalary, makeLooks, makePerson, perkStats, isBirthday,
 } from './core.js';
-import { EVENTS } from './events.js';
+import { EVENTS, deliverEvent } from './events.js';
 import { defaultLayout, addItem, canPlace, getRef, snapPos, deskEffects, itemDef } from './layout.js';
 import { sendMail, mailStep } from './mail.js';
 import { worldDay, seasonDemand, seasonTx, regionMarket, regionArpu, regionRent, regionStaff } from './world.js';
 import { ensureRivals, rivalMonth, onShip, warFx } from './rivals.js';
 import { isHW, hwStep } from './hw.js';
-import { securityDay } from './security.js';
+import { securityDay, BOUNTY_COST, BACKUP_COST } from './security.js';
 import { storeCut, adsHit, platformDemand, platformsMonth, cloudMult } from './platforms.js';
 import { relationsWeek, relFx } from './relations.js';
 
@@ -62,7 +62,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     policies: {},
     infra: { cloud: true, racks: 0, outages: 0 },
     sec: { bounty: false, backups: false, audit: -999, incidents: 0, hidden: null },
-    plat: { fee: 0.3, webpay: false, webpayFree: false, adsHit: -1, cloud: 1, commit: -1 },
+    plat: { fee: 0.3, webpay: false, webpayFree: false, adsHit: -1, cloud: 1, commit: -1, prepaid: 0 },
     rel: [],
     officeFx: [],
     competitors: [],
@@ -361,6 +361,7 @@ export function monthlyCosts(s, tp = teamPowers(s)) {
     policies: policyMonthly(s),
     regions: regionRent(s),
     interest: s.loans.reduce((a, l) => a + l.left * LOAN_RATE, 0),
+    security: (s.sec.bounty ? BOUNTY_COST : 0) + (s.sec.backups ? BACKUP_COST : 0),
   };
   out.total = Object.values(out).reduce((a, b) => a + b, 0);
   return out;
@@ -980,29 +981,16 @@ export function paidRefresh(s) {
   return ok('Nuevos candidatos disponibles.');
 }
 
-export function currentEvent(s) {
-  if (!s.event) return null;
-  const def = EVENTS[s.event.id];
-  if (!def) {
-    s.event = null;
-    return null;
-  }
-  return def.view(s, s.event.ctx);
-}
-
-export function resolveEvent(s, idx) {
-  if (!s.event) return fail();
-  const def = EVENTS[s.event.id];
-  const ctx = s.event.ctx;
-  s.event = null;
-  const msg = def.resolve(s, ctx, idx);
-  return ok(msg);
-}
-
 // ---------------------------------------------------------------- paso diario
 
 export function stepDay(s) {
-  if (s.gameOver || s.event) return;
+  if (s.gameOver) return;
+  // Partidas guardadas con un evento a medias: pasa al correo.
+  if (s.event) {
+    const ev = s.event;
+    s.event = null;
+    deliverEvent(s, ev.id, ev.ctx);
+  }
   s.day += 1;
   const today = dateOf(s.day);
   const newMonth = today.m !== dateOf(s.day - 1).m;
@@ -1010,6 +998,7 @@ export function stepDay(s) {
   const tp = teamPowers(s);
 
   workAndPeople(s, ps, tp);
+  birthdays(s);
   marketing(s, ps);
   products(s, tp);
   infra(s, tp);
@@ -1295,7 +1284,6 @@ function products(s, tp) {
     const target = pot * sh * (0.12 + 0.88 * p.awareness) * (0.35 + 0.65 * sat) * boost * limits;
     if (p.down > 0) {
       p.users *= 0.985;
-      p.down -= 1;
     } else {
       const rate = p.users < target ? 0.012 + Math.min(0.05, Math.sqrt(p.hype) * 0.002) : 0.02 + (1 - sat) * 0.02;
       p.users += (target - p.users) * rate;
@@ -1308,6 +1296,8 @@ function products(s, tp) {
     p.share = sh;
     p.peak = Math.max(p.peak, p.users);
     const rev = productRevenue(s, p, tp);
+    // El día caído cuenta después de calcular los ingresos (que son cero).
+    if (p.down > 0) p.down -= 1;
     p.rev = rev;
     money(s, rev.ads, 'ads');
     money(s, rev.subs, 'subs');
@@ -1323,7 +1313,12 @@ function infra(s, tp) {
   const st = infraStatus(s, tp);
   // Los productos físicos no dependen de tus servidores.
   for (const p of s.products) p.overload = isHW(p) ? 0 : st.overload;
-  money(s, -st.cloudMonthly / 30, 'cloud');
+  // Lo pagado por adelantado (compromiso anual) se gasta antes de cobrar.
+  let cloud = st.cloudMonthly / 30;
+  const pre = Math.min(s.plat.prepaid || 0, cloud);
+  s.plat.prepaid = (s.plat.prepaid || 0) - pre;
+  cloud -= pre;
+  money(s, -cloud, 'cloud');
   money(s, -st.rackMonthly / 30, 'servers');
   const uncovered = Math.max(0, s.infra.racks - st.coverage);
   const risk = Math.min(0.2, uncovered * 0.004) + (st.cloudUnits > 0 ? 0.0005 : 0);
@@ -1435,7 +1430,7 @@ function monthly(s, today) {
 }
 
 function maybeEvent(s) {
-  if (s.day < s.nextEventDay || s.event) return;
+  if (s.day < s.nextEventDay) return;
   const pool = [];
   for (const [id, def] of Object.entries(EVENTS)) {
     const w = def.weight(s);
@@ -1455,7 +1450,16 @@ function maybeEvent(s) {
   }
   const ctx = EVENTS[chosen.id].setup ? EVENTS[chosen.id].setup(s) : {};
   if (ctx === null) return;
-  s.event = { id: chosen.id, ctx };
+  deliverEvent(s, chosen.id, ctx);
+}
+
+// Cumpleaños: cada persona celebra el suyo una vez al año y el equipo lo nota.
+function birthdays(s) {
+  const today = s.employees.filter((e) => e.off <= 0 && isBirthday(s, e));
+  for (const e of today) e.mood = Math.min(100, e.mood + 8);
+  if (!today.length || s.employees.length > 40) return;
+  const names = today.map((e) => e.name).join(' y ');
+  notify(s, `🎂 Hoy ${today.length > 1 ? 'cumplen' : 'cumple'} años ${names}. ¡Hay tarta!`, 'good');
 }
 
 // ---- objetivos y logros
@@ -1511,7 +1515,7 @@ const ACH_CHECK = {
   moon: (s) => OFFICES[s.office.tier].id === 'moon',
   friends: (s) => s.rel.filter((r) => r.kind === 'friend').length >= 10,
   happy: (s) => s.employees.length >= 20 && s.employees.reduce((a, e) => a + e.mood, 0) / s.employees.length > 85,
-  crunchSurvivor: (s) => s.stats.breaches > 0,
+  crunchSurvivor: (s) => s.sec.incidents > 0 || s.stats.breaches > 0,
   bootstrapped: (s) => !s.stats.soldShares && mrr(s) >= 1e5,
   agi: (s) => has(s, 'agi'),
 };

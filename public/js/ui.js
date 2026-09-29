@@ -129,6 +129,15 @@ export function toast(text, kind = 'info') {
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
   el.textContent = text;
+  // Los avisos de correo llevan un botón pequeño a la bandeja; el resto del
+  // aviso deja pasar los toques a lo que hay debajo.
+  if (kind === 'mail') {
+    const go = document.createElement('button');
+    go.className = 'toast-go';
+    go.textContent = 'Ver';
+    Object.assign(go.dataset, { act: 'tab', tab: 'mail' });
+    el.prepend(go);
+  }
   root.appendChild(el);
   const max = window.matchMedia('(max-width: 640px)').matches ? 2 : 4;
   while (root.children.length > max) root.firstChild.remove();

@@ -30,7 +30,6 @@ let last = performance.now();
 let dirty = true;
 let uiTimer = 0;
 let lastSaveDay = 0;
-let eventModal = null;
 let overModal = null;
 let lastSfx = 0;
 let tickerIdx = 0;
@@ -64,11 +63,13 @@ function start(state) {
   setMusic(s.settings.music !== false);
   acc = 0;
   lastSaveDay = s.day;
-  eventModal = null;
   overModal = null;
   draft = false;
   closeAllModals(true);
   if (U.edit) setEdit(false);
+  U.pid = null;
+  U.mktPid = null;
+  U.empModal = null;
   office.tier = -1;
   office.selected = null;
   dirty = true;
@@ -185,7 +186,7 @@ function loop(now) {
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  const blocked = !!s.event || !!s.gameOver;
+  const blocked = !!s.gameOver;
   let ticked = false;
   if (!blocked && s.speed > 0) {
     acc += dt * DAYS_PER_SEC[s.speed];
@@ -196,12 +197,11 @@ function frame(now) {
       office.onDay(s);
       ticked = true;
       n++;
-      if (s.event || s.gameOver) break;
+      if (s.gameOver) break;
     }
     if (n >= 4) acc = 0;
   }
   flushNotes();
-  if (s.event && !eventModal?.wrap.isConnected) showEvent();
   if (s.gameOver && !overModal?.wrap.isConnected) showGameOver();
   office.frame(s, dt, blocked ? 0 : s.speed);
   uiTimer -= dt;
@@ -355,7 +355,11 @@ function panelToTop() {
 }
 
 function setSpeed(n) {
-  s.speed = n;
+  // En el editor el juego sigue en pausa: la velocidad elegida se aplica al salir.
+  if (U.edit) {
+    U.prevSpeed = n;
+    toast(n ? 'El tiempo sigue parado mientras editas. Pulsa ✔ Listo para seguir.' : 'Al salir del editor, el juego seguirá en pausa.', 'info');
+  } else s.speed = n;
   dirty = true;
 }
 
@@ -519,7 +523,11 @@ const ACTIONS = {
   moveOffice: (d) => {
     const r = G.moveOffice(s, +d.tier);
     result(r, 'good');
-    if (r.ok) office.party('move');
+    if (!r.ok) return;
+    // El plano es nuevo: se suelta la selección y la fiesta ya usa el tamaño nuevo.
+    selectEdit(null);
+    office.ensureView(s);
+    office.party('move');
   },
   policy: (d) => result(G.togglePolicy(s, d.id)),
   cloud: () => result(G.setCloud(s, !s.infra.cloud)),
@@ -571,14 +579,6 @@ const ACTIONS = {
   hwPrice: (d) => result(setHwPrice(s, +d.pid, +d.m)),
   rivalPoach: (d) => result(poachFrom(s, +d.id), 'coin'),
   rivalSmear: (d) => result(smear(s, +d.id), 'good'),
-  eventChoice: (d) => {
-    const r = G.resolveEvent(s, +d.i);
-    if (eventModal) closeModal(eventModal);
-    eventModal = null;
-    if (r.msg) toast(r.msg, 'info');
-    sfx('click');
-    dirty = true;
-  },
 };
 
 function onClick(e) {
@@ -634,20 +634,6 @@ function openEmployee(id) {
     onClose: () => {
       office.selected = null;
     },
-  });
-}
-
-function showEvent() {
-  const v = G.currentEvent(s);
-  if (!v) return;
-  sfx('event');
-  eventModal = openModal({
-    title: `${v.icon} ${v.title}`,
-    closable: false,
-    cls: 'event',
-    body: `<p class="lg">${esc(v.text)}</p><div class="choices">${v.choices
-      .map((c, i) => `<button class="btn choice ${i === 0 ? 'primary' : ''}" data-act="eventChoice" data-i="${i}"><b>${esc(c.label)}</b>${c.hint ? `<small>${esc(c.hint)}</small>` : ''}</button>`)
-      .join('')}</div>`,
   });
 }
 

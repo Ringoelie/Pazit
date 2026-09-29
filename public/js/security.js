@@ -7,7 +7,7 @@ import { clamp, chance, rint, rfloat, fmtMoney, fmtNum } from './util.js';
 import { has, findProduct, notify, news, money, addEffect, hasEffect } from './core.js';
 import { registerMail, sendMail } from './mail.js';
 import { lawActive } from './world.js';
-import { teamPowers, totalUsers, mrr, queueFeature, featureAvailable } from './sim.js';
+import { teamPowers, totalUsers, mrr, queueFeature, featureAvailable, queuedLevel } from './sim.js';
 import { isHW } from './hw.js';
 
 export const BOUNTY_COST = 3000;
@@ -77,7 +77,8 @@ function attack(s, list, tp) {
     sendMail(s, 'secBreach', { pid: p.id, n: Math.round(p.users * rfloat(s, 0.05, 0.3)) });
   } else if (r < 5) {
     p.down = Math.max(p.down, 3);
-    sendMail(s, 'secRansom', { pid: p.id, amount: Math.round(Math.max(20000, mrr(s, tp) * 0.4) / 1000) * 1000 });
+    // Las copias que cuentan son las que había cuando llegó el ataque.
+    sendMail(s, 'secRansom', { pid: p.id, amount: Math.round(Math.max(20000, mrr(s, tp) * 0.4) / 1000) * 1000, backups: s.sec.backups });
   } else if (r < 7) {
     if (has(s, 'zerotrust') || has(s, 'edge')) {
       notify(s, `🛡️ Ataque DDoS contra ${p.name} mitigado sin problemas.`, 'good');
@@ -95,12 +96,20 @@ function attack(s, list, tp) {
   }
 }
 
-// Una filtración que ocultaste sale a la luz.
+// Filtraciones ocultas: si ya había una pendiente, se suman y sale a la luz
+// en la fecha más temprana.
+function hideLeak(s, pid, n, day) {
+  const h = s.sec.hidden;
+  s.sec.hidden = h ? { pid: h.pid, n: h.n + n, day: Math.min(h.day, day) } : { pid, n, day };
+}
+
+// Una filtración que ocultaste sale a la luz. La multa es el triple de la
+// que pagarías avisando.
 function exposeLeak(s, h) {
   const p = findProduct(s, h.pid);
   s.reputation = Math.max(0, s.reputation - 15);
   if (p) p.users *= 0.88;
-  const fine = lawActive(s, 'privacy') ? Math.round((h.n * 3) / 1000) * 1000 : 0;
+  const fine = lawActive(s, 'privacy') ? Math.round((h.n * 1.5) / 1000) * 1000 : 0;
   if (fine) money(s, -fine, 'fines');
   notify(s, `📰 Sale a la luz la filtración que ocultaste${p ? ` en ${p.name}` : ''}.${fine ? ` Multa: ${fmtMoney(fine)}.` : ''}`, 'bad');
   news(s, `Escándalo: ${s.company} ocultó una filtración de datos.`, 'bad');
@@ -151,39 +160,42 @@ registerMail({
       const p = findProduct(s, pid);
       if (!p) return 'Ese producto ya no existe.';
       if (i === 0) {
-        if (chance(s, 0.55)) s.sec.hidden = { pid, n, day: s.day + rint(s, 20, 60) };
+        if (chance(s, 0.55)) hideLeak(s, pid, n, s.day + rint(s, 20, 60));
         return 'Lo has ocultado... de momento.';
       }
       s.reputation = Math.max(0, s.reputation - 4);
       p.users *= 0.97;
-      if (featureAvailable(s, p, 'security') && !p.features.security) queueFeature(s, p.id, 'security');
+      // Refuerza la seguridad del producto si todavía no está en camino.
+      const queued = featureAvailable(s, p, 'security') && queuedLevel(p, 'security') === (p.features.security || 0) && queueFeature(s, p.id, 'security').ok;
       const fine = lawActive(s, 'privacy') ? Math.round((n * 0.5) / 1000) * 1000 : 0;
       if (fine) money(s, -fine, 'fines');
-      return `Has avisado a tiempo${fine ? `. Multa reducida: ${fmtMoney(fine)}` : ''}. ${FEATURES.security.name} va a la cola.`;
+      return `Has avisado a tiempo${fine ? `. Multa reducida: ${fmtMoney(fine)}` : ''}.${queued ? ` ${FEATURES.security.name} va a la cola.` : ''}`;
     },
   },
 
   secRansom: {
-    make: (s, { pid, amount }) => {
+    make: (s, { pid, amount, backups = s.sec.backups }) => {
       const p = findProduct(s, pid);
       if (!p) return null;
       return {
         from: 'Remitente desconocido',
         icon: '💀',
         subject: `Ransomware: han secuestrado ${p.name}`,
-        body: `Han cifrado los servidores de ${p.name} y piden ${fmtMoney(amount)} en cripto para devolverlos. ${s.sec.backups ? 'Tienes copias de seguridad al día.' : 'No tienes copias de seguridad recientes.'}`,
+        body: `Han cifrado los servidores de ${p.name} y piden ${fmtMoney(amount)} en cripto para devolverlos. ${backups ? 'Tienes copias de seguridad al día.' : 'No tienes copias de seguridad recientes.'}`,
         choices: [
           { label: `Pagar ${fmtMoney(amount)}`, hint: '3 de cada 4 veces cumplen' },
           { label: 'Llamar a la policía', hint: '4 días caído, +2 reputación' },
-          s.sec.backups ? { label: 'Restaurar las copias', hint: '1 día caído' } : { label: 'Reconstruir desde cero', hint: '6 días caído y pierdes usuarios' },
+          backups ? { label: 'Restaurar las copias', hint: '1 día caído' } : { label: 'Reconstruir desde cero', hint: '6 días caído y pierdes usuarios' },
         ],
         days: 3,
       };
     },
-    resolve: (s, { pid, amount }, i) => {
+    resolve: (s, { pid, amount, backups = s.sec.backups }, i) => {
       const p = findProduct(s, pid);
       if (!p) return 'Ese producto ya no existe.';
-      if (i === 0 && s.money >= amount) {
+      let pre = '';
+      if (i === 0 && s.money < amount) pre = `No tienes ${fmtMoney(amount)} para pagar. `;
+      else if (i === 0) {
         money(s, -amount, 'security');
         if (chance(s, 0.75)) {
           p.down = 1;
@@ -197,13 +209,13 @@ registerMail({
         s.reputation = Math.min(100, s.reputation + 2);
         return 'La policía investiga. Vuelves en 4 días.';
       }
-      if (s.sec.backups) {
+      if (backups) {
         p.down = 1;
-        return '💾 Copias restauradas: vuelves mañana.';
+        return pre + '💾 Copias restauradas: vuelves mañana.';
       }
       p.down = 6;
       p.users *= 0.95;
-      return 'Sin copias, toca reconstruir: 6 días caído.';
+      return pre + 'Sin copias, toca reconstruir: 6 días caído.';
     },
   },
 
@@ -229,9 +241,9 @@ registerMail({
       const list = targets(s);
       if (list.length && chance(s, 0.4)) {
         const p = list[rint(s, 0, list.length - 1)];
-        s.sec.hidden = { pid: p.id, n: Math.round(p.users * 0.1), day: s.day + rint(s, 15, 45) };
+        hideLeak(s, p.id, Math.round(p.users * 0.1), s.day + rint(s, 15, 45));
       }
-      return 'Has ignorado el aviso.';
+      return i === 1 ? `No tienes ${fmtMoney(reward)} para la recompensa: el fallo sigue abierto.` : 'Has ignorado el aviso.';
     },
   },
 });

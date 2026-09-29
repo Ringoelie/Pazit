@@ -63,7 +63,7 @@ export const OFFICES = [
   { id: 'tower', name: 'Planta en rascacielos', desks: 40, rent: 38000, move: 150000, mood: 6, w: 576, h: 300, theme: 'tower' },
   { id: 'campus', name: 'Campus tecnológico', desks: 70, rent: 95000, move: 500000, mood: 9, w: 704, h: 336, theme: 'campus' },
   { id: 'orbital', name: 'Estación orbital', desks: 120, rent: 320000, move: 3000000, mood: 12, w: 832, h: 368, theme: 'orbital', research: 'space' },
-  { id: 'island', name: 'Isla privada', desks: 160, rent: 900000, move: 12000000, mood: 15, w: 960, h: 400, theme: 'island' },
+  { id: 'island', name: 'Isla privada', desks: 160, rent: 900000, move: 12000000, mood: 15, w: 960, h: 400, theme: 'island', research: 'space' },
   { id: 'moon', name: 'Sede en la Luna', desks: 220, rent: 1500000, move: 40000000, mood: 18, w: 1088, h: 432, theme: 'moon', research: 'moonbase' },
 ];
 
@@ -321,7 +321,7 @@ export const RESEARCH = [
   { id: 'vr', name: 'Realidad virtual', icon: '🥽', cost: 1560, tier: 5, req: ['gamedev', 'mobile'], desc: 'Experiencia VR y la categoría Metaverso.' },
   { id: 'robots', name: 'Robótica', icon: '🦾', cost: 1800, tier: 5, req: ['genai'], desc: 'Robot barista IA para la oficina.' },
   { id: 'quantum', name: 'Computación cuántica', icon: '⚛️', cost: 2700, tier: 6, req: ['edge', 'genai'], desc: '-40% carga de servidores.' },
-  { id: 'space', name: 'Programa espacial', icon: '🛰️', cost: 4500, tier: 6, req: ['quantum'], desc: 'Desbloquea la Estación orbital.' },
+  { id: 'space', name: 'Programa espacial', icon: '🛰️', cost: 4500, tier: 6, req: ['quantum'], desc: 'Desbloquea la Estación orbital y la Isla privada.' },
   { id: 'agi', name: 'AGI', icon: '🌌', cost: 9000, tier: 7, req: ['quantum', 'genai'], desc: '+50% producción de todo el equipo. ¿El final... o el principio?' },
   { id: 'compliance', name: 'Cumplimiento normativo', icon: '⚖️', cost: 120, tier: 2, req: ['monetization'], desc: 'Abogados, Privacidad y RGPD y Auditoría de IA para esquivar multas.' },
   { id: 'hardware', name: 'Hardware y fabricación', icon: '🏭', cost: 450, tier: 3, req: ['mobile'], desc: 'Fabrica dispositivos: smartphones y relojes inteligentes.' },
