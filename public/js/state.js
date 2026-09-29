@@ -60,7 +60,7 @@ function migrate(s) {
   if (!s || typeof s !== 'object' || !s.v || !Array.isArray(s.employees)) return null;
   const base = newGame({ company: s.company, seed: 1 });
   for (const [k, v] of Object.entries(base)) if (s[k] === undefined) s[k] = v;
-  for (const k of ['stats', 'funding', 'infra', 'contracts', 'settings']) {
+  for (const k of ['stats', 'funding', 'infra', 'contracts', 'settings', 'sec', 'plat']) {
     for (const [kk, vv] of Object.entries(base[k])) if (s[k][kk] === undefined) s[k][kk] = vv;
   }
   s.notes = [];

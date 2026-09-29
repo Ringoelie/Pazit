@@ -295,7 +295,7 @@ function hairArt(g, L) {
   }
 }
 
-function personArt(g, L, shirt, role, pose, mood, blink) {
+function personArt(g, L, shirt, role, pose, mood, blink, tired) {
   const skin = L.skin;
   const skinD = shade(skin, -0.2);
   const standing = pose !== 's';
@@ -390,6 +390,11 @@ function personArt(g, L, shirt, role, pose, mood, blink) {
     R(g, 3, HY + 4, 1, 2, PAL.ink);
     R(g, 8, HY + 4, 1, 2, PAL.ink);
   }
+  // Ojeras de trasnochar
+  if (tired) {
+    px(g, 3, HY + 6, mix(skin, '#5d275d', 0.4));
+    px(g, 8, HY + 6, mix(skin, '#5d275d', 0.4));
+  }
   // Mofletes y boca según el ánimo
   const mouth = mix(skin, '#5a1f33', 0.65);
   if (mood > 0) {
@@ -480,6 +485,17 @@ function personArt(g, L, shirt, role, pose, mood, blink) {
       px(g, 2, HY + 4, WHITE);
       break;
     }
+    case 'security': { // capucha puesta, estilo hacker
+      const c = shade(shirt, 0.12);
+      const d = shade(shirt, -0.25);
+      R(g, 3, HY - 2, 6, 1, c);
+      R(g, 1, HY - 1, 10, 2, c);
+      R(g, 0, HY + 1, 2, 8, c);
+      R(g, 10, HY + 1, 2, 8, d);
+      R(g, 2, HY + 1, 8, 1, d);
+      R(g, 3, HY - 2, 2, 1, shade(c, 0.3));
+      break;
+    }
     case 'marketer': { // gafas de sol sobre el pelo
       R(g, 2, HY, 3, 1, PAL.ink);
       R(g, 7, HY, 3, 1, PAL.ink);
@@ -493,14 +509,14 @@ function personArt(g, L, shirt, role, pose, mood, blink) {
   }
 }
 
-function personSprite(L, shirt, role, pose, mood, blink) {
-  const key = `p|${pose}|${L.skin}|${L.hair}|${L.style}|${L.glasses ? 1 : 0}|${L.beard ? 1 : 0}|${L.pants}|${shirt}|${role}|${mood}|${blink ? 1 : 0}`;
-  return sprite(key, 12, 22, (g) => personArt(g, L, shirt, role, pose, mood, blink));
+function personSprite(L, shirt, role, pose, mood, blink, tired = false) {
+  const key = `p|${pose}|${L.skin}|${L.hair}|${L.style}|${L.glasses ? 1 : 0}|${L.beard ? 1 : 0}|${L.pants}|${shirt}|${role}|${mood}|${blink ? 1 : 0}|${tired ? 1 : 0}`;
+  return sprite(key, 12, 22, (g) => personArt(g, L, shirt, role, pose, mood, blink, tired));
 }
 
 // Persona sentada (12x16 visibles). Su cabeza empieza 2 px por debajo de y.
-export function drawSeated(ctx, x, y, L, shirt, t, mood, role = '') {
-  blit(ctx, personSprite(L, shirt, role, 's', moodKey(mood), blinking(L, t)), x, y);
+export function drawSeated(ctx, x, y, L, shirt, t, mood, role = '', tired = false) {
+  blit(ctx, personSprite(L, shirt, role, 's', moodKey(mood), blinking(L, t) && !tired, tired), x, y);
 }
 
 // Persona de pie (12x22). frame: 0 y 1 al caminar, otro valor = quieta.
@@ -529,8 +545,11 @@ const ICONS = {
   star: ['00100', '01110', '11111', '01110', '01010'],
   money: ['01111', '10100', '01110', '00101', '11110'],
   sweat: ['00100', '00100', '01110', '11111', '01110'],
+  angry: ['01010', '11011', '00000', '11011', '01010'],
+  note: ['00111', '00101', '00100', '11100', '11100'],
+  cake: ['00100', '00000', '11111', '10101', '11111'],
 };
-const ICON_COLOR = { zz: PAL.blue, bang: PAL.red, heart: BLUSH, q: PAL.slate, bulb: '#f2a531', palm: PAL.green, star: '#f2a531', money: PAL.green, sweat: PAL.sky };
+const ICON_COLOR = { zz: PAL.blue, bang: PAL.red, heart: BLUSH, q: PAL.slate, bulb: '#f2a531', palm: PAL.green, star: '#f2a531', money: PAL.green, sweat: PAL.sky, angry: PAL.red, note: PAL.blue, cake: '#c24d62' };
 
 export function drawBubble(ctx, x, y, icon) {
   const spr = sprite('bubble|' + icon, 9, 9, (g) => {
@@ -755,6 +774,224 @@ export function drawDogBed(ctx, x, y, coat, sleeping, t) {
     const k = Math.floor((t % 3) * 2);
     drawText(ctx, 'Z', x + 12 + k, y - 5 - k, PAL.white);
   }
+}
+
+export const CAT_COATS = ['#e8a15a', '#3a3440', '#d9dde3', '#8a6a4a'];
+
+// Gato de 11x8 visto de lado. pose: 'w0', 'w1' o 'sit'.
+function catArt(g, coat, pose) {
+  const d = shade(coat, -0.3);
+  const l = shade(coat, 0.3);
+  const eye = PAL.lime;
+  if (pose === 'sit') {
+    R(g, 3, 3, 5, 4, coat);
+    R(g, 3, 3, 5, 1, l);
+    R(g, 6, 0, 4, 4, coat);
+    px(g, 6, -1, coat);
+    px(g, 9, -1, coat);
+    px(g, 8, 1, eye);
+    px(g, 9, 2, BLUSH);
+    R(g, 1, 6, 3, 1, coat);
+    px(g, 0, 5, coat);
+    R(g, 4, 7, 1, 1, d);
+    R(g, 6, 7, 1, 1, d);
+    return;
+  }
+  const step = pose === 'w1';
+  R(g, 1, 3, 7, 3, coat);
+  R(g, 1, 3, 7, 1, l);
+  R(g, 7, 1, 4, 4, coat);
+  px(g, 7, 0, coat);
+  px(g, 10, 0, coat);
+  px(g, 9, 2, eye);
+  px(g, 10, 3, BLUSH);
+  for (const [x, up] of [[2, step], [3, !step], [6, step], [7, !step]]) R(g, x, 6, 1, up ? 1 : 2, x % 2 ? d : coat);
+  if (step) {
+    px(g, 0, 2, coat);
+    px(g, 0, 1, coat);
+  } else {
+    px(g, 0, 3, coat);
+    px(g, 0, 2, d);
+  }
+}
+
+export function drawCat(ctx, x, y, coat, pose, left) {
+  blit(ctx, sprite(`cat|${coat}|${pose}|${left ? 1 : 0}`, 11, 8, (g) => {
+    if (left) {
+      g.translate(11, 0);
+      g.scale(-1, 1);
+    }
+    catArt(g, coat, pose);
+  }), x, y);
+}
+
+export function drawCatBasket(ctx, x, y, coat, sleeping, t) {
+  blit(ctx, sprite(`basket|${sleeping ? coat : ''}`, 14, 9, (g) => {
+    blob(g, 7, 5, 7, 3, '#a0643c');
+    for (let i = 1; i < 14; i += 2) px(g, i, 6, '#6b4024');
+    R(g, 2, 3, 10, 1, '#c98a60');
+    blob(g, 7, 4, 5, 1, '#e8d0a0');
+    if (sleeping) {
+      blob(g, 7, 3, 4, 2, coat);
+      R(g, 4, 2, 4, 1, shade(coat, 0.3));
+      px(g, 10, 1, coat);
+      px(g, 11, 3, shade(coat, -0.3));
+      R(g, 8, 3, 2, 1, shade(coat, -0.4));
+    }
+  }), x, y);
+  if (sleeping && t % 3.5 < 1.6) drawText(ctx, 'Z', x + 11 + Math.floor((t % 3.5) * 2), y - 5 - Math.floor((t % 3.5) * 2), PAL.white);
+}
+
+// Loro de 7x9. pose: 'sit', 'fly0' o 'fly1'.
+export function drawParrot(ctx, x, y, pose, left) {
+  blit(ctx, sprite(`parrot|${pose}|${left ? 1 : 0}`, 8, 9, (g) => {
+    if (left) {
+      g.translate(8, 0);
+      g.scale(-1, 1);
+    }
+    const green = '#38b764';
+    R(g, 3, 0, 3, 3, green);
+    px(g, 5, 1, PAL.ink);
+    R(g, 6, 1, 1, 2, PAL.yellow);
+    px(g, 4, 0, PAL.lime);
+    R(g, 2, 3, 4, 3, green);
+    R(g, 3, 3, 2, 1, PAL.lime);
+    if (pose === 'sit') {
+      R(g, 1, 3, 2, 3, PAL.red);
+      R(g, 1, 6, 2, 3, PAL.blue);
+      px(g, 3, 6, PAL.ink);
+      px(g, 5, 6, PAL.ink);
+    } else if (pose === 'fly0') {
+      R(g, 0, 1, 3, 2, PAL.red);
+      R(g, 0, 5, 2, 1, PAL.blue);
+    } else {
+      R(g, 0, 5, 3, 2, PAL.red);
+      R(g, 0, 4, 2, 1, PAL.blue);
+    }
+  }), x, y);
+}
+
+export function drawPerch(ctx, x, y) {
+  blit(ctx, sprite('perch', 10, 20, (g) => {
+    R(g, 0, 3, 10, 2, WOOD_L);
+    R(g, 0, 4, 10, 1, WOOD);
+    R(g, 4, 5, 2, 13, WOOD);
+    px(g, 4, 5, WOOD_L);
+    R(g, 1, 18, 8, 2, PAL.dark);
+    R(g, 1, 18, 8, 1, PAL.slate);
+    R(g, 7, 1, 3, 2, PAL.silver);
+    px(g, 8, 1, PAL.yellow);
+  }), x, y);
+}
+
+// Perro robot de 13x9.
+export function drawRoboDog(ctx, x, y, pose, left, t) {
+  blit(ctx, sprite(`robodog|${pose}|${left ? 1 : 0}`, 13, 9, (g) => {
+    if (left) {
+      g.translate(13, 0);
+      g.scale(-1, 1);
+    }
+    const m = '#c9d3dc';
+    R(g, 2, 3, 8, 3, m);
+    R(g, 2, 3, 8, 1, WHITE);
+    R(g, 3, 5, 6, 1, PAL.slate);
+    R(g, 9, 1, 4, 3, m);
+    R(g, 9, 1, 4, 1, WHITE);
+    R(g, 11, 2, 2, 1, PAL.ink);
+    R(g, 9, 0, 1, 1, PAL.slate);
+    R(g, 0, 2, 2, 1, PAL.slate);
+    const step = pose === 'w1';
+    for (const [lx, up] of [[3, step], [5, !step], [7, step], [9, !step]]) {
+      R(g, lx, 6, 1, up ? 2 : 3, PAL.dark);
+      px(g, lx, 6, PAL.slate);
+    }
+  }), x, y);
+  px(ctx, x + 12 - (left ? 11 : 0), y + 2, (t * 3) % 2 < 1.6 ? PAL.cyan : PAL.teal);
+}
+
+export function drawRoboDock(ctx, x, y, t) {
+  blit(ctx, sprite('robodock', 16, 8, (g) => {
+    R(g, 1, 3, 14, 5, PAL.dark);
+    R(g, 0, 4, 16, 3, PAL.dark);
+    R(g, 1, 3, 14, 1, PAL.slate);
+    R(g, 3, 5, 10, 1, '#1d2033');
+    R(g, 7, 0, 2, 3, PAL.slate);
+  }), x, y);
+  R(ctx, x + 4 + (Math.floor(t * 4) % 8), y + 5, 1, 1, PAL.cyan);
+}
+
+// Bocadillo con texto (lo que dice el loro).
+export function drawSpeech(ctx, x, y, text) {
+  const w = textWidth(text) + 4;
+  R(ctx, x, y, w, 8, WHITE);
+  R(ctx, x + 1, y + 8, 2, 1, WHITE);
+  R(ctx, x, y + 7, w, 1, '#d6e0ea');
+  drawText(ctx, text, x + 2, y + 2, PAL.ink);
+}
+
+// ---------------------------------------------------------------- eventos de oficina
+
+export function drawXmasTree(ctx, x, y, t) {
+  blit(ctx, sprite('xmastree', 16, 26, (g) => {
+    const g1 = '#1f6f4a';
+    const g2 = PAL.green;
+    for (let i = 0; i < 4; i++) {
+      const w = 6 + i * 3;
+      const yy = 3 + i * 4;
+      R(g, 8 - w / 2, yy, w, 5, g1);
+      R(g, 8 - w / 2, yy, w, 1, g2);
+    }
+    R(g, 7, 20, 2, 3, '#6b4024');
+    R(g, 1, 22, 5, 4, PAL.red);
+    R(g, 3, 22, 1, 4, PAL.yellow);
+    R(g, 10, 23, 5, 3, PAL.blue);
+    R(g, 12, 23, 1, 3, WHITE);
+    R(g, 7, 0, 2, 2, PAL.yellow);
+    px(g, 8, 2, PAL.yellow);
+  }), x, y);
+  // Luces que parpadean
+  const cs = [PAL.red, PAL.yellow, PAL.cyan, BLUSH];
+  for (let i = 0; i < 9; i++) {
+    const on = (Math.floor(t * 3) + i) % 3 !== 0;
+    if (!on) continue;
+    const row = i % 4;
+    const w = 6 + row * 3;
+    px(ctx, x + 8 - w / 2 + 1 + ((i * 5) % Math.max(1, w - 2)), y + 5 + row * 4, cs[i % 4]);
+  }
+}
+
+export function drawPizzaBox(ctx, x, y) {
+  R(ctx, x, y, 6, 2, '#c98a60');
+  R(ctx, x, y, 6, 1, '#e0a878');
+  px(ctx, x + 2, y + 1, PAL.red);
+}
+
+export function drawCake(ctx, x, y, t) {
+  R(ctx, x, y + 2, 5, 3, WHITE);
+  R(ctx, x, y + 2, 5, 1, BLUSH);
+  px(ctx, x + 2, y + 1, PAL.yellow);
+  if ((t * 4) % 2 < 1) px(ctx, x + 2, y, PAL.orange);
+}
+
+// Gorro de Papá Noel o de cumpleaños sobre una cabeza de 10 px.
+export function drawHat(ctx, x, y, kind) {
+  if (kind === 'santa') {
+    R(ctx, x + 1, y + 1, 8, 2, WHITE);
+    R(ctx, x + 2, y - 2, 6, 3, PAL.red);
+    R(ctx, x + 6, y - 4, 3, 2, PAL.red);
+    px(ctx, x + 9, y - 4, WHITE);
+    return;
+  }
+  R(ctx, x + 4, y - 3, 2, 3, PAL.cyan);
+  R(ctx, x + 3, y - 1, 4, 2, PAL.cyan);
+  px(ctx, x + 4, y - 2, PAL.yellow);
+  px(ctx, x + 5, y - 4, PAL.yellow);
+}
+
+export function drawCandle(ctx, x, y, t) {
+  R(ctx, x, y + 2, 2, 3, WHITE);
+  px(ctx, x + ((t * 5) % 2 < 1 ? 0 : 1), y + 1, PAL.orange);
+  px(ctx, x, y, PAL.yellow);
 }
 
 // ---------------------------------------------------------------- fiesta
@@ -1360,7 +1597,7 @@ export function drawRack(ctx, x, y, t, i) {
   }
 }
 
-export function drawClock(ctx, x, y, t) {
+export function drawClock(ctx, x, y, hour) {
   blit(ctx, sprite('clock', 10, 10, (g) => {
     blob(g, 5, 5, 5, 5, '#eef3f7');
     blob(g, 5, 5, 4, 4, WHITE);
@@ -1370,9 +1607,10 @@ export function drawClock(ctx, x, y, t) {
     px(g, 1, 5, PAL.dark);
     R(g, 2, 8, 6, 1, '#dde5ee');
   }), x, y);
-  const m = t * 0.9;
+  const m = (hour % 1) * Math.PI * 2 - Math.PI / 2;
+  const h = ((hour % 12) / 12) * Math.PI * 2 - Math.PI / 2;
   line(ctx, x + 5, y + 5, x + 5 + Math.cos(m) * 3.4, y + 5 + Math.sin(m) * 3.4, PAL.slate);
-  line(ctx, x + 5, y + 5, x + 5 + Math.cos(m / 12) * 2, y + 5 + Math.sin(m / 12) * 2, PAL.ink);
+  line(ctx, x + 5, y + 5, x + 5 + Math.cos(h) * 2, y + 5 + Math.sin(h) * 2, PAL.ink);
   px(ctx, x + 5, y + 5, PAL.red);
 }
 

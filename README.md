@@ -6,13 +6,17 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 
 ## Qué incluye
 
-- **Oficina en pixel art animada**: tu equipo trabaja, se toma cafés, juega al arcade y se va de vacaciones. Cada perfil tiene su estilo (cascos para quien programa, boina para diseño, bata en I+D, traje para abogados...). Siete oficinas con su propio suelo, paredes y vistas, desde el garaje de hormigón hasta una estación orbital con ojos de buey, con luz que entra por las ventanas, sombras, zoom y arrastre.
+- **Oficina en pixel art animada**: tu equipo trabaja, se toma cafés, juega al arcade y se va de vacaciones. Cada perfil tiene su estilo (cascos para quien programa, boina para diseño, bata en I+D, traje para abogados...). Nueve oficinas con su propio suelo, paredes y vistas, desde el garaje de hormigón hasta una isla privada con vistas al mar y una sede en la Luna, con luz que entra por las ventanas, sombras, zoom y arrastre.
 - **Editor de oficina** (✏️ o tecla **E**): arrastra mesas y muebles donde quieras. La decoración cerca de una mesa (plantas, lámparas, alfombras, acuario, estatua) sube el ánimo de quien se sienta ahí; el arcade, el futbolín o el gimnasio pegados a las mesas restan productividad por el ruido. En el garaje puedes incluso vender el coche de tus padres.
-- **Equipo**: 10 perfiles para contratar (desarrollo, diseño, IA, DevOps, PM, marketing, ventas, I+D, RR.HH. y abogados), 12 rasgos de personalidad, niveles, ánimo, energía, sueldos, formación y renuncias.
+- **Día y noche**: la oficina amanece y anochece, se encienden las lámparas y los monitores, y la gente se va a casa por la tarde. En crunch (o en un hackathon) se quedan de noche con ojeras.
+- **Equipo**: 11 perfiles para contratar (desarrollo, diseño, IA, DevOps, PM, marketing, ventas, I+D, RR.HH., abogados y seguridad), 12 rasgos de personalidad, niveles, ánimo, energía, sueldos, formación, renuncias y bajas por agotamiento.
+- **Relaciones**: los compañeros de mesa y de equipo se hacen amigos (más ánimo), tienen roces (menos ánimo y productividad) o empiezan a salir, y a veces rompen. Los seniors adoptan juniors como mentores y los hacen crecer más rápido. Los roces llegan al correo: separarlos, mediar o dejarlo estar.
 - **Productos**: 11 categorías de software (medio digital, tienda online, red social, app de citas, SaaS, streaming, videojuego, buscador, neobanco, asistente de IA y metaverso), 4 de hardware y 45 funciones con 10 niveles cada una.
 - **Economía**: publicidad, suscripciones premium con precio ajustable, comisiones y API. Usuarios, cuota de mercado, satisfacción, bugs, hype y conocimiento de marca.
-- **Investigación**: árbol de 32 tecnologías, de "Modelos de negocio" a la AGI.
+- **Investigación**: árbol de 36 tecnologías, de "Modelos de negocio" a la AGI y la base lunar.
 - **Infraestructura**: nube con autoescalado o racks propios, DevOps y caídas de servicio.
+- **Ciberseguridad**: cuantos más usuarios tienes, más te atacan. Filtraciones de datos (¿ocultarlo o avisar?), ransomware (pagar, llamar a la policía o restaurar las copias), DDoS y phishing. Tu nivel de seguridad sube con investigación, especialistas en seguridad, auditorías, bug bounty y copias de seguridad.
+- **Plataformas**: las tiendas de apps se quedan hasta un 30% de lo que pagan tus usuarios del móvil (15% si facturas poco), cambian sus comisiones, recortan tus anuncios con nuevas reglas de privacidad o te expulsan. Puedes cobrar por la web, recurrir o denunciarlas. La nube también sube precios: firma un compromiso anual o negocia.
 - **Rivales con personalidad**: cada competidor tiene CEO, un estilo (agresivo, copión, cazatalentos, innovador o dormido) y un nivel de rivalidad contigo. Te declaran guerras de precios, te demandan, intentan fichar a tu gente o copian tus funciones. Tú puedes robarles talento, lanzar campañas comparativas o comprarlos.
 - **Correo**: empleados que piden aumentos o teletrabajo, ideas para tus productos, clientes con proyectos grandes, inversores, rivales y reguladores. Las decisiones caducan: si no contestas, se aplica la última opción.
 - **Expansión internacional**: sedes en Latinoamérica, África, Norteamérica y Asia. Cada una suma mercado (si tus productos hablan el idioma, gracias a Multi-idioma), cambia lo que paga cada usuario y te deja contratar allí con otros sueldos y otro talento.
@@ -20,11 +24,13 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 - **Productos físicos**: smartphones, relojes, gafas VR y robots domésticos. Fabricas por lotes que tardan en llegar, gestionas el stock, fijas el precio, pagas almacenaje y sufres devoluciones si la calidad es mala.
 - **Temporadas**: San Valentín, verano, vuelta al cole, Black Friday y Navidades cambian la demanda de cada tipo de producto.
 - **Dinero**: rondas de inversión (business angel → IPO), préstamos, bolsa y bancarrota.
-- **Vida en la oficina**: fiestas con guirnaldas, globos y confeti cuando lanzas un producto, cierras una ronda o sales a bolsa; inversores que vienen de visita; un perro de oficina que se pasea y visita a la gente (tócalo para darle mimos), y un equipo que suda cuando la empresa está en números rojos.
+- **Vida en la oficina**: fiestas con guirnaldas, globos y confeti cuando lanzas un producto, cierras una ronda o sales a bolsa; inversores que vienen de visita; un equipo que suda cuando la empresa está en números rojos; y eventos como el hackathon nocturno con pizzas, la fiesta de Navidad con árbol y gorros, cumpleaños con tarta, la visita de una persona famosa o un apagón a la luz de las velas.
+- **Mascotas**: perro, gato (que duerme en su cesta y se sube a las mesas), loro (que vuela a los monitores y repite lo que oye) y perro robot que patrulla de noche. Tócalas para darles mimos.
+- **Estilos de oficina**: cyberpunk, zen japonés, retro de los 80 y casa en la playa cambian suelo, paredes y muebles en cualquier oficina, y suben el ánimo.
 - **Música chiptune** generada al momento: cambia de ritmo y tonalidad si todo va bien, si hay crisis y con cada oficina. Se puede apagar en el menú.
 - **Tutorial guiado** para la primera partida: señala cada botón y avanza cuando haces lo que te pide. Se puede repetir desde el menú.
 - **App instalable**: se puede instalar en el móvil o el ordenador y jugar sin conexión.
-- **Más cosas**: 22 muebles y mejoras de oficina, 7 políticas de empresa (semana de 4 días, crunch, copilotos de IA...), 23 eventos aleatorios con decisiones, 15 objetivos, 23 logros, gráficos, sonido chiptune y guardado automático.
+- **Más cosas**: 25 muebles y mejoras de oficina, 7 políticas de empresa (semana de 4 días, crunch, copilotos de IA...), 25 eventos aleatorios con decisiones, 15 objetivos, 25 logros, gráficos, sonido chiptune y guardado automático.
 - Funciona en **móvil y escritorio**, sin dependencias ni paso de build.
 
 ## Jugar en local
@@ -89,11 +95,15 @@ public/
     rivals.js   rivales con personalidad y tus acciones contra ellos
     world.js    temporadas, expansión internacional y leyes
     hw.js       productos físicos: fabricación, stock y ventas
+    security.js ciberseguridad: ataques, filtraciones, ransomware y defensas
+    platforms.js tiendas de apps, comisiones, expulsiones y precios de la nube
+    relations.js amistades, roces, parejas y mentorías
     state.js    guardado, exportación e importación
     layout.js   plano de la oficina: posiciones, colisiones y efectos de cercanía
     sprites.js  pixel art dibujado con código (con contorno y caché) y fuente de 3x5 px
-    scenery.js  suelos, paredes, ventanas con el cielo de cada estación y luz ambiente
-    office.js   vista animada de la oficina en canvas
+    scenery.js  suelos, paredes y estilos; ventanas con el cielo de cada estación y hora
+    office.js   vista animada de la oficina en canvas, con día y noche
+    pets.js     mascotas: perro, gato, loro y perro robot
     ui.js       parcheo del DOM, modales, avisos y avatares
     panels.js   contenido de cada pestaña
     audio.js    efectos chiptune con WebAudio
@@ -104,7 +114,8 @@ tests/
   bot.js        bot que juega solo
   sim.test.js   prueba de varios años de partida
   layout.test.js pruebas del plano y del editor
-  depth.test.js pruebas de correo, temporadas, regiones, leyes, rivales y hardware
+  depth.test.js pruebas de correo, temporadas, regiones, leyes, rivales, hardware,
+                seguridad, plataformas, relaciones, estilos y eventos de oficina
   pwa.test.js   el service worker guarda todos los archivos y los iconos existen
 ```
 

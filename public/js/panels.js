@@ -3,12 +3,15 @@
 import {
   ROLES, TRAITS, OFFICES, PERKS, FIXTURES, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID, CAMPAIGNS, ROUNDS,
   QUESTS, ACHIEVEMENTS, POINT_TYPES, PREMIUM_PRICES, MAX_FEATURE_LEVEL, LEVELS, HW_PRICES, UNIVERSAL_WEIGHT,
-  REGIONS, LAWS, RIVAL_STYLES,
+  REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD,
 } from './data.js';
 import { pendingMail } from './mail.js';
 import { seasonOf, seasonDemand, regionMarket, langReach, regionStaff, complianceIssues, lawActive } from './world.js';
 import { warFx, poachCost, smearCost, rivalCooldown } from './rivals.js';
 import { isHW, unitCost, hwPrice, leadTime } from './hw.js';
+import { secLevel, yearlyAttacks, BOUNTY_COST, BACKUP_COST, AUDIT_COST, AUDIT_DAYS } from './security.js';
+import { STORES, CLOUD_NAME, onMobile, storeBanned, storeFee, storeMonthly, cloudMult, adsHit } from './platforms.js';
+import { REL_KINDS, relationsOf, relSummary } from './relations.js';
 import * as G from './sim.js';
 import { perkStats } from './core.js';
 import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, MONTHS } from './util.js';
@@ -38,7 +41,7 @@ const EXP_LABEL = {
   salaries: 'Nóminas', rent: 'Alquiler', perks: 'Mantenimiento', cloud: 'Nube', servers: 'Servidores', marketing: 'Marketing',
   hiring: 'Contratación', office: 'Oficina y mejoras', policies: 'Políticas', interest: 'Intereses', loans: 'Devolución de préstamos',
   acquisitions: 'Adquisiciones', training: 'Formación', manufacturing: 'Fabricación', storage: 'Almacenaje', fines: 'Multas y juicios',
-  taxes: 'Impuestos', regions: 'Sedes internacionales', other: 'Otros',
+  taxes: 'Impuestos', regions: 'Sedes internacionales', security: 'Ciberseguridad', other: 'Otros',
 };
 
 const kpi = (label, value, sub = '', cls = '') =>
@@ -122,9 +125,27 @@ function officePanel(s) {
     <div class="banner"><span>🛠️ Coloca mesas y muebles donde quieras. La decoración cerca de las mesas sube el ánimo y los juegos hacen ruido.</span>
       ${btn('✏️ Editar la oficina', 'editToggle', {}, { kind: 'primary' })}</div>
     <h3>Mejoras de oficina</h3><div class="cards">${perkCards(s)}</div>
+    <h3>Estilo de la oficina</h3>
+    <p class="muted">Cambia suelo, paredes y muebles en cualquier oficina. Con un estilo puesto, el equipo gana +${STYLE_MOOD} de ánimo.</p>
+    <div class="cards">${styleCards(s)}</div>
     <p class="muted">Al mudarte te llevas las mejoras, pero el coche y las cajas se quedan en el garaje.</p>
     <h3>Políticas de empresa</h3><div class="cards">${policies}</div>
     <h3>Mudanza</h3><div class="cards">${moves || '<p class="muted">Ya estás en la mejor oficina del sistema solar.</p>'}</div>`;
+}
+
+function styleCards(s) {
+  const owned = s.office.styles || [];
+  return Object.entries(STYLES)
+    .map(([id, st]) => {
+      const on = s.office.style === id;
+      const has = owned.includes(id);
+      const action = on
+        ? btn('Quitar', 'clearStyle', {}, { kind: 'small ghost' })
+        : btn(has ? 'Poner' : `Comprar · ${fmtMoney(st.cost)}`, 'buyStyle', { id }, { kind: has ? 'small' : 'small primary', disabled: !has && s.money < st.cost });
+      return `<div class="card ${on ? 'owned' : ''}" data-key="style-${id}"><div class="card-icon">${st.icon}</div>
+        <div class="grow"><b>${st.name}</b><small>${st.desc}</small></div>${action}</div>`;
+    })
+    .join('');
 }
 
 // ---------------------------------------------------------------- equipo
@@ -180,10 +201,23 @@ function teamPanel(s, U) {
       ${kpi('Sin tarea', idle, idle ? 'Asígnales algo' : 'Todo el mundo ocupado', idle ? 'warn' : '')}
     </div>
     <div class="row gap wrap">${btn('➕ Contratar', 'hireOpen', {}, { kind: 'primary big' })}
-      <small class="muted">DevOps ${tp.ops.toFixed(1)} · Ventas ${tp.sales.toFixed(1)} · RR.HH. ${tp.people.toFixed(1)}</small></div>
+      <small class="muted">DevOps ${tp.ops.toFixed(1)} · Ventas ${tp.sales.toFixed(1)} · RR.HH. ${tp.people.toFixed(1)}${tp.sec ? ` · Seguridad ${tp.sec.toFixed(1)}` : ''}</small></div>
+    ${relLine(s)}
     <div class="chips">${chips}</div>
     <div class="emps">${list.map((e) => empRow(s, e)).join('') || '<p class="muted">Nadie en este grupo.</p>'}</div>
     ${all.length > limit ? `<div class="row end">${btn(`Mostrar más (${all.length - limit} restantes)`, 'teamMore')}</div>` : ''}`;
+}
+
+function relLine(s) {
+  const r = relSummary(s);
+  const parts = [
+    r.friend && `🤝 ${r.friend} amistad${r.friend > 1 ? 'es' : ''}`,
+    r.couple && `💕 ${r.couple} pareja${r.couple > 1 ? 's' : ''}`,
+    r.rival && `😤 ${r.rival} roce${r.rival > 1 ? 's' : ''}`,
+    r.mentor && `🎓 ${r.mentor} mentoría${r.mentor > 1 ? 's' : ''}`,
+    r.burnout && `😵 ${r.burnout} de baja por agotamiento`,
+  ].filter(Boolean);
+  return parts.length ? `<p class="muted small">${parts.join(' · ')}</p>` : '';
 }
 
 export function hireModal(s, U) {
@@ -270,6 +304,7 @@ export function employeeModal(s, id) {
     <div class="xp"><small>Experiencia hasta el siguiente punto de habilidad</small>${bar(e.xp / need, 'var(--lime)')}</div>
     <p class="muted">${env}</p>
     ${e.traits.length ? `<h4>Rasgos</h4><ul class="traits">${e.traits.map((t) => `<li>${TRAITS[t].icon} <b>${TRAITS[t].name}:</b> ${TRAITS[t].desc}</li>`).join('')}</ul>` : ''}
+    ${relList(s, e)}
     ${G.isAssignable(e) && e.off <= 0 ? `<h4>Asignación</h4>${assignSelect(s, e)}` : ''}
     ${
       e.role === 'founder'
@@ -278,6 +313,21 @@ export function employeeModal(s, id) {
       ${btn(`🎓 Formación · ${fmtMoney(G.trainCost(e))}`, 'train', { id: e.id }, { disabled: e.off > 0 || s.money < G.trainCost(e) })}
       ${btn('Despedir', 'fire', { id: e.id }, { kind: 'danger' })}</div>`
     }`;
+}
+
+// Amistades, parejas, roces y mentorías de una persona.
+function relList(s, e) {
+  const name = (id) => esc(G.findEmp(s, id)?.name || 'alguien que ya no está');
+  const items = relationsOf(s, e.id).map((r) => {
+    const k = REL_KINDS[r.kind];
+    const who = name(r.a === e.id ? r.b : r.a);
+    const fx = r.kind === 'rival' ? 'menos ánimo y rinde un 4% menos' : r.kind === 'couple' ? '+4 de ánimo' : '+1,5 de ánimo';
+    return `<li>${k.icon} <b>${k.name}</b> con ${who} <small class="muted">(${fx})</small></li>`;
+  });
+  if (e.mentor) items.push(`<li>🎓 Aprende de ${name(e.mentor)} <small class="muted">(+50% de experiencia)</small></li>`);
+  for (const j of s.employees) if (j.mentor === e.id) items.push(`<li>🎓 Mentor/a de ${esc(j.name)}</li>`);
+  if (e.off > 0 && e.offReason) items.push(`<li>🗓️ ${esc(e.offReason)}: vuelve en ${fmtDays(e.off)}</li>`);
+  return items.length ? `<h4>Relaciones</h4><ul class="traits">${items.join('')}</ul>` : '';
 }
 
 // ---------------------------------------------------------------- productos
@@ -465,6 +515,9 @@ function productAlerts(s, p) {
     out.push(`<div class="banner warn">⚔️ Guerra de precios con ${esc(c?.name || 'un rival')}: ${how}. Quedan ${fmtDays(p.war.until - s.day)}.</div>`);
   }
   if (p.antitrust > s.day) out.push(`<div class="banner warn">🏛️ Bajo vigilancia antimonopolio: crecimiento limitado ${fmtDays(p.antitrust - s.day)} más.</div>`);
+  if (storeBanned(s, p)) out.push(`<div class="banner warn">⛔ Fuera de las tiendas de apps ${fmtDays(p.storeBan - s.day)} más: casi nadie puede instalar la app.</div>`);
+  if (adsHit(s, p)) out.push('<div class="banner warn">🙈 Nueva política de rastreo: los anuncios rinden menos en el móvil.</div>');
+  if (p.down > 0) out.push(`<div class="banner warn">🔥 Caído ${fmtDays(p.down)} más: sin ingresos y perdiendo usuarios.</div>`);
   const m = seasonDemand(s, p.cat);
   if (m !== 1) {
     const se = seasonOf(s);
@@ -622,7 +675,35 @@ function infraPanel(s) {
       ${s.infra.racks ? btn('Vender 1', 'sellRacks', { n: 1 }, { kind: 'small ghost' }) : ''}</div></div>`
         : '<p class="muted">🔒 Investiga "Infraestructura cloud" para comprar racks y contratar DevOps.</p>'
     }
-    <h3>Carga por producto</h3>${rows ? `<table class="tbl"><tr><th>Producto</th><th>Usuarios</th><th>Carga</th></tr>${rows}</table>` : '<p class="muted">Sin productos en línea.</p>'}`;
+    <h3>Carga por producto</h3>${rows ? `<table class="tbl"><tr><th>Producto</th><th>Usuarios</th><th>Carga</th></tr>${rows}</table>` : '<p class="muted">Sin productos en línea.</p>'}
+    ${securitySection(s, tp)}`;
+}
+
+function securitySection(s, tp) {
+  const lvl = secLevel(s, tp);
+  const risk = yearlyAttacks(s, tp);
+  const hasSec = G.has(s, 'infosec');
+  const staff = s.employees.filter((e) => e.role === 'security').length;
+  const audit = s.day - s.sec.audit < AUDIT_DAYS;
+  const sw = (act, on, disabled) => `<button class="switch ${on ? 'on' : ''}" data-act="${act}" ${disabled ? 'disabled' : ''} aria-pressed="${on}"><i></i></button>`;
+  return `<h3>Ciberseguridad</h3>
+    <div class="kpis">
+      ${kpi('Nivel de seguridad', `${lvl}/85`, lvl < 35 ? 'Muy expuesto' : lvl < 60 ? 'Aceptable' : 'Blindado', lvl < 35 ? 'warn' : '')}
+      ${kpi('Ataques previstos', risk < 0.05 ? 'Casi ninguno' : `≈ ${risk.toFixed(1)} al año`, `${fmtNum(G.totalUsers(s))} usuarios a proteger`)}
+      ${kpi('Incidentes', s.sec.incidents)}
+      ${kpi('Especialistas', staff, hasSec ? 'Contrátalos en Equipo' : '🔒 Investiga Ciberseguridad')}
+    </div>
+    <div class="loadbar">${bar(lvl / 85, lvl < 35 ? 'var(--red)' : lvl < 60 ? 'var(--yellow)' : 'var(--green)')}</div>
+    <div class="cards">
+      <div class="card ${s.sec.backups ? 'owned' : ''}" data-key="sec-backups"><div class="card-icon">💾</div><div class="grow"><b>Copias de seguridad diarias</b>
+        <small>Tras un ransomware vuelves en 1 día en vez de 6. ${fmtMoney(BACKUP_COST)}/mes.</small></div>${sw('secBackups', s.sec.backups, false)}</div>
+      <div class="card ${s.sec.bounty ? 'owned' : ''} ${hasSec ? '' : 'locked'}" data-key="sec-bounty"><div class="card-icon">🐞</div><div class="grow"><b>Programa de bug bounty</b>
+        <small>${hasSec ? `+8 de seguridad y hackers éticos que te avisan de fallos. ${fmtMoney(BOUNTY_COST)}/mes.` : '🔒 Requiere Ciberseguridad'}</small></div>${sw('secBounty', s.sec.bounty, !hasSec)}</div>
+      <div class="card ${audit ? 'owned' : ''}" data-key="sec-audit"><div class="card-icon">🔍</div><div class="grow"><b>Auditoría externa</b>
+        <small>${audit ? `Activa hasta el ${fmtDate(s.sec.audit + AUDIT_DAYS)}: +10 de seguridad.` : 'Una empresa revisa tus sistemas: +10 de seguridad durante 3 meses.'}</small></div>
+        ${btn(`Contratar · ${fmtMoney(AUDIT_COST)}`, 'secAudit', {}, { kind: 'small', disabled: audit || s.money < AUDIT_COST })}</div>
+    </div>
+    <p class="muted">Cuantos más usuarios tienes, más te atacan. La función ${FEATURES.security.icon} ${FEATURES.security.name} de cada producto lo hace un objetivo más difícil, y Seguridad avanzada o Edge computing paran los DDoS.</p>`;
 }
 
 // ---------------------------------------------------------------- finanzas
@@ -839,7 +920,28 @@ function worldPanel(s) {
     <div class="cards">${regions}</div>
     <h3>Leyes y reguladores</h3>
     <p class="muted">Abogados en plantilla: ${legal}. Cada uno reduce la probabilidad de auditoría y mejora tus opciones en los juicios.</p>
-    <div class="cards">${laws}</div>`;
+    <div class="cards">${laws}</div>
+    ${platformsSection(s)}`;
+}
+
+function platformsSection(s) {
+  const mobile = s.products.filter((p) => p.launched && onMobile(p));
+  const fee = storeFee(s);
+  const banned = mobile.filter((p) => storeBanned(s, p));
+  const hasWeb = G.has(s, 'webpay');
+  return `<h3>Plataformas</h3>
+    <div class="cards">
+      <div class="card" data-key="plat-store"><div class="card-icon">📱</div><div class="grow"><b>Tiendas de apps</b>
+        <small>${STORES} se quedan el ${fmtPct(fee)} de lo que pagan tus usuarios desde la app${fee < s.plat.fee ? ' (programa para pequeños desarrolladores: facturas menos de 1 millón al año)' : ''}.</small>
+        <small class="muted">${mobile.length ? `${mobile.length} producto${mobile.length > 1 ? 's' : ''} con App móvil · comisiones: unos ${fmtMoney(storeMonthly(s, G.productRevenue))}/mes` : 'Ninguno de tus productos tiene App móvil todavía.'}</small>
+        ${banned.length ? `<small class="warn-text">⛔ Fuera de la tienda: ${banned.map((p) => `${esc(p.name)} hasta el ${fmtDate(p.storeBan)}`).join(', ')}</small>` : ''}
+        ${s.plat.adsHit > s.day ? `<small class="warn-text">🙈 Los anuncios del móvil rinden un 35% menos hasta el ${fmtDate(s.plat.adsHit)}.</small>` : ''}</div></div>
+      <div class="card ${s.plat.webpay ? 'owned' : ''} ${hasWeb ? '' : 'locked'}" data-key="plat-web"><div class="card-icon">🌐</div><div class="grow"><b>Pagos por la web</b>
+        <small>${hasWeb ? `La mitad de tus usuarios del móvil paga por la web y te ahorras su comisión. ${s.plat.webpayFree ? 'Tras ganar la denuncia, las tiendas no pueden castigarte.' : 'Riesgo: las tiendas pueden expulsar tu app.'}` : '🔒 Requiere Pagos directos'}</small></div>
+        <button class="switch ${s.plat.webpay ? 'on' : ''}" data-act="webpay" ${hasWeb ? '' : 'disabled'} aria-pressed="${s.plat.webpay}"><i></i></button></div>
+      <div class="card" data-key="plat-cloud"><div class="card-icon">☁️</div><div class="grow"><b>${CLOUD_NAME}</b>
+        <small>Precio de la nube ×${cloudMult(s).toFixed(2)}${s.plat.commit > s.day ? ` · compromiso anual hasta el ${fmtDate(s.plat.commit)} (-20%)` : ''}. Tus servidores propios no dependen de sus subidas.</small></div></div>
+    </div>`;
 }
 
 // ---------------------------------------------------------------- logros

@@ -5,7 +5,7 @@ import { OFFICES, PERKS, FIXTURES } from './data.js';
 export const WALL = 44;
 export const GRID = 4;
 export const NEAR_RADIUS = 48;
-const COLS = [2, 4, 7, 8, 10, 14, 20];
+const COLS = [2, 4, 7, 8, 10, 14, 20, 24, 28];
 const DESK_X0 = 14;
 const DESK_Y0 = WALL + 30;
 
@@ -15,6 +15,9 @@ export const SIZES = {
   sofa: [30, 14], foosball: [28, 17], aquarium: [24, 18], meeting: [40, 22], arcade: [14, 24], library: [22, 24],
   ballpit: [34, 16], podcast: [26, 28], gym: [36, 14], statue: [16, 26], nappods: [30, 16], chef: [34, 18],
   robot: [16, 24], whiteboard: [28, 16], ac: [22, 7], car: [58, 28], boxes: [30, 24], bike: [26, 14], pet: [16, 10],
+  cat: [14, 9], parrot: [10, 20], robodog: [16, 8],
+  // No es un mueble: el árbol de Navidad busca sitio libre con estas medidas.
+  xmastree: [16, 26],
 };
 // Objetos de pared: solo se mueven en horizontal, a esta altura.
 export const WALL_ITEMS = { whiteboard: 20, ac: 2 };

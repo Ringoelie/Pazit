@@ -22,8 +22,9 @@ export const ROLES = {
   hr: { name: 'Personas (RR.HH.)', short: 'RH', icon: '🫶', produces: 'people', base: 2900, color: '#5d275d', unlock: 'people' },
   ai: { name: 'Ingeniero/a de IA', short: 'IA', icon: '🧠', produces: 'ai', base: 6400, color: '#94b0c2', unlock: 'ml' },
   legal: { name: 'Abogado/a', short: 'LEX', icon: '⚖️', produces: 'legal', base: 5200, color: '#f4f4f4', unlock: 'compliance' },
+  security: { name: 'Ciberseguridad', short: 'SEC', icon: '🛡️', produces: 'sec', base: 4700, color: '#333c57', unlock: 'infosec' },
 };
-export const HIRABLE = ['dev', 'design', 'marketer', 'research', 'devops', 'pm', 'sales', 'hr', 'ai', 'legal'];
+export const HIRABLE = ['dev', 'design', 'marketer', 'research', 'devops', 'pm', 'sales', 'hr', 'ai', 'legal', 'security'];
 // Roles que trabajan en productos o contratos.
 export const MAKERS = ['founder', 'dev', 'design', 'ai'];
 export const POINT_TYPES = {
@@ -62,6 +63,8 @@ export const OFFICES = [
   { id: 'tower', name: 'Planta en rascacielos', desks: 40, rent: 38000, move: 150000, mood: 6, w: 576, h: 300, theme: 'tower' },
   { id: 'campus', name: 'Campus tecnológico', desks: 70, rent: 95000, move: 500000, mood: 9, w: 704, h: 336, theme: 'campus' },
   { id: 'orbital', name: 'Estación orbital', desks: 120, rent: 320000, move: 3000000, mood: 12, w: 832, h: 368, theme: 'orbital', research: 'space' },
+  { id: 'island', name: 'Isla privada', desks: 160, rent: 900000, move: 12000000, mood: 15, w: 960, h: 400, theme: 'island' },
+  { id: 'moon', name: 'Sede en la Luna', desks: 220, rent: 1500000, move: 40000000, mood: 18, w: 1088, h: 432, theme: 'moon', research: 'moonbase' },
 ];
 
 // near: ánimo extra para las mesas a menos de 48 px. noise: productividad que
@@ -73,6 +76,8 @@ export const PERKS = {
   coffee: { name: 'Cafetera', icon: '☕', cost: 900, upkeep: 60, energy: 3, max: 1, tier: 0, desc: '+3 energía diaria. Imprescindible para los cafeinómanos.' },
   cooler: { name: 'Fuente de agua', icon: '🚰', cost: 400, upkeep: 20, energy: 1, max: 2, tier: 0, desc: '+1 energía diaria.' },
   pet: { name: 'Perro de oficina', icon: '🐕', cost: 700, upkeep: 50, mood: 2, near: 1, max: 1, tier: 0, desc: '+2 ánimo, y +1 a las mesas cerca de su cama. Se pasea por la oficina y visita a la gente.' },
+  cat: { name: 'Gato de oficina', icon: '🐈', cost: 600, upkeep: 40, mood: 2, near: 1, max: 1, tier: 0, desc: '+2 ánimo, y +1 a las mesas cerca de su cesta. Duerme mucho y se sube a los teclados.' },
+  parrot: { name: 'Loro', icon: '🦜', cost: 900, upkeep: 30, mood: 1, max: 1, tier: 1, desc: '+1 ánimo. Vuela por la oficina y repite lo que oye.' },
   whiteboard: { name: 'Pizarra', icon: '📋', cost: 600, prod: 0.04, max: 1, tier: 0, desc: '+4% productividad. Va en la pared.' },
   snacks: { name: 'Máquina de snacks', icon: '🍫', cost: 1800, upkeep: 150, energy: 2, mood: 1, max: 1, tier: 1, desc: '+2 energía, +1 ánimo.' },
   sofa: { name: 'Sofá chill', icon: '🛋️', cost: 1500, energy: 2, mood: 2, max: 2, tier: 1, desc: '+2 energía, +2 ánimo.' },
@@ -88,6 +93,7 @@ export const PERKS = {
   statue: { name: 'Estatua de unicornio', icon: '🦄', cost: 25000, near: 2, max: 1, tier: 3, desc: '+2 ánimo a las mesas cercanas. Pura vanidad dorada.' },
   nappods: { name: 'Cápsulas de siesta', icon: '😴', cost: 45000, upkeep: 800, energy: 7, max: 1, tier: 4, desc: '+7 energía diaria.' },
   chef: { name: 'Chef privado', icon: '🍣', cost: 10000, upkeep: 12000, mood: 7, energy: 3, max: 1, tier: 4, desc: '+7 ánimo, +3 energía.' },
+  robodog: { name: 'Perro robot', icon: '🤖', cost: 60000, upkeep: 500, mood: 3, energy: 1, max: 1, tier: 4, research: 'robots', desc: '+3 ánimo, +1 energía. Patrulla la oficina de día y de noche.' },
   robot: { name: 'Robot barista IA', icon: '🤖', cost: 150000, upkeep: 2500, energy: 6, mood: 4, max: 1, tier: 5, research: 'robots', desc: '+6 energía, +4 ánimo. Nunca se equivoca con tu café.' },
 };
 
@@ -319,6 +325,10 @@ export const RESEARCH = [
   { id: 'agi', name: 'AGI', icon: '🌌', cost: 9000, tier: 7, req: ['quantum', 'genai'], desc: '+50% producción de todo el equipo. ¿El final... o el principio?' },
   { id: 'compliance', name: 'Cumplimiento normativo', icon: '⚖️', cost: 120, tier: 2, req: ['monetization'], desc: 'Abogados, Privacidad y RGPD y Auditoría de IA para esquivar multas.' },
   { id: 'hardware', name: 'Hardware y fabricación', icon: '🏭', cost: 450, tier: 3, req: ['mobile'], desc: 'Fabrica dispositivos: smartphones y relojes inteligentes.' },
+  { id: 'moonbase', name: 'Base lunar', icon: '🌕', cost: 12000, tier: 7, req: ['space'], desc: 'Desbloquea la Sede en la Luna.' },
+  { id: 'infosec', name: 'Ciberseguridad', icon: '🛡️', cost: 180, tier: 2, req: ['cloud'], desc: 'Contrata especialistas en seguridad y monta un programa de bug bounty. Menos hackeos.' },
+  { id: 'zerotrust', name: 'Seguridad avanzada', icon: '🔐', cost: 840, tier: 4, req: ['infosec'], desc: 'Arquitectura zero trust y cifrado de extremo a extremo: mucho menos riesgo y adiós a los DDoS.' },
+  { id: 'webpay', name: 'Pagos directos', icon: '🌐', cost: 390, tier: 3, req: ['payments', 'mobile'], desc: 'Cobra por la web sin pasar por la tienda de apps. Te ahorras comisión, pero a las tiendas no les gusta nada.' },
   { id: 'factory', name: 'Fábrica propia', icon: '🏗️', cost: 750, tier: 4, req: ['hardware'], desc: 'Fabricar cuesta un 15% menos y los pedidos llegan en 18 días en vez de 30.' },
 ];
 export const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map((r) => [r.id, r]));
@@ -426,11 +436,22 @@ export const ACHIEVEMENTS = [
   { id: 'acquire', name: 'Tiburón', icon: '🦈', desc: 'Compra a un competidor.' },
   { id: 'leader', name: 'Número uno', icon: '🥇', desc: 'Lidera una categoría con más del 50% del mercado.' },
   { id: 'orbital', name: 'Oficina con vistas', icon: '🛰️', desc: 'Múdate a la estación orbital.' },
+  { id: 'moon', name: 'Un pequeño paso', icon: '🌕', desc: 'Múdate a la sede en la Luna.' },
+  { id: 'friends', name: 'Como una familia', icon: '🤝', desc: 'Diez amistades en la plantilla a la vez.' },
   { id: 'happy', name: 'Mejor lugar para trabajar', icon: '😊', desc: 'Ánimo medio superior a 85 con 20+ empleados.' },
   { id: 'crunchSurvivor', name: 'Superviviente', icon: '🧯', desc: 'Sobrevive a un incidente de seguridad.' },
   { id: 'bootstrapped', name: 'Sin inversores', icon: '🥾', desc: 'Llega a $100k/mes sin vender acciones.' },
   { id: 'agi', name: 'Singularidad', icon: '🌌', desc: 'Investiga la AGI.' },
 ];
+
+// Estilos de decoración: se compran una vez y valen para cualquier oficina.
+export const STYLES = {
+  cyberpunk: { name: 'Cyberpunk', icon: '🌆', cost: 8000, desc: 'Neones, suelo con rejilla brillante y mucho morado.' },
+  zen: { name: 'Zen japonés', icon: '🎋', cost: 6000, desc: 'Tatami, paneles de papel y calma.' },
+  retro: { name: 'Retro 80', icon: '📼', cost: 5000, desc: 'Colores pastel y formas geométricas por todas partes.' },
+  beach: { name: 'Casa en la playa', icon: '🏖️', cost: 7000, desc: 'Madera clara y vistas al mar desde cada ventana.' },
+};
+export const STYLE_MOOD = 2;
 
 // ---------------------------------------------------------------- temporadas
 // Por mes (0 = enero). demand: multiplica usuarios o ventas por categoría;
