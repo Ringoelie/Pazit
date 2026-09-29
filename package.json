@@ -7,6 +7,6 @@
   "scripts": {
     "dev": "python3 -m http.server 8080 --directory public",
     "test": "node tests/layout.test.js && node tests/depth.test.js && node tests/pwa.test.js && node tests/sim.test.js",
-    "deploy": "npx wrangler pages deploy public --project-name pixel-unicorn"
+    "deploy": "npx wrangler deploy"
   }
 }

@@ -49,30 +49,29 @@ npm test
 
 Un bot juega varias partidas de 6 años y comprueba que la economía no se rompe: sin valores `NaN`, sin quiebras constantes y con crecimiento real.
 
-## Desplegar en Cloudflare Pages
+## Desplegar en Cloudflare
+
+El juego se publica como un Worker de Cloudflare con archivos estáticos: `wrangler.toml` sirve la carpeta `public/` tal cual, sin paso de build.
 
 ### Opción A: conectar el repositorio (recomendada)
 
 Cada `git push` se despliega solo.
 
-1. En el panel de Cloudflare, ve a **Workers & Pages** → **Create application** → pestaña **Pages** → **Import an existing Git repository**.
+1. En el panel de Cloudflare, ve a **Workers & Pages** → **Create application** → **Import a repository**.
 2. Autoriza GitHub y elige este repositorio.
 3. Configuración:
-   - **Project name**: `pixel-unicorn` (será `pixel-unicorn.pages.dev`; si está cogido, elige otro y cámbialo también en `wrangler.toml`).
-   - **Production branch**: la rama donde esté el juego.
-   - **Framework preset**: None.
+   - **Project name**: `pazit`. Tiene que coincidir con `name` en `wrangler.toml`; si eliges otro, cámbialo también allí.
    - **Build command**: vacío.
-   - **Build output directory**: `public`.
-4. **Save and Deploy**.
+   - **Deploy command**: `npx wrangler deploy` (el que viene por defecto).
+4. **Deploy**. El juego quedará en `https://pazit.<tu-subdominio>.workers.dev`.
 
 ### Opción B: subida directa con Wrangler
 
-Necesitas un API token con el permiso *Account → Cloudflare Pages → Edit* y el ID de tu cuenta.
+Necesitas un API token con permiso para editar Workers y el ID de tu cuenta.
 
 ```sh
 export CLOUDFLARE_API_TOKEN=...
 export CLOUDFLARE_ACCOUNT_ID=...
-npx wrangler pages project create pixel-unicorn --production-branch main   # solo la primera vez
 npm run deploy
 ```
 
