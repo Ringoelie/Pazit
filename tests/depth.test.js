@@ -508,3 +508,55 @@ console.log('OK');
   assert.ok(decisions <= 45, `demasiadas decisiones en el segundo año: ${decisions}`);
 }
 
+
+// 16. Equipos: jefe/a, mover gente en grupo y reasignación automática.
+{
+  const s = fresh(19);
+  s.money = 1e8;
+  s.research.monetization = 1;
+  const p = quickProduct(s, 'blog', { landing: 1, articles: 1 });
+  G.createProduct(s, 'Otro', 'blog');
+  const q = s.products[s.products.length - 1];
+  const devs = [];
+  for (let i = 0; i < 10; i++) {
+    const e = makePerson(s, 'dev', { skill: 20 + i * 7, traits: [] });
+    e.assign = 'p:' + p.id;
+    s.employees.push(e);
+    devs.push(e);
+  }
+  const mk = makePerson(s, 'marketer', { traits: [] });
+  mk.assign = 'p:' + p.id;
+  s.employees.push(mk);
+  const team = G.teams(s).find((g) => g.target === 'p:' + p.id);
+  assert.equal(team.roles.dev, 10);
+  // Jefe/a: el resto rinde más y quien dirige, la mitad.
+  const boss = devs[9];
+  const base = G.output(s, devs[0]);
+  const bossBase = G.output(s, boss);
+  assert.equal(G.setLead(s, 'p:' + q.id, boss.id).ok, false, 'tiene que ser del equipo');
+  assert.equal(G.setLead(s, 'p:' + p.id, boss.id).ok, true);
+  assert.ok(G.output(s, devs[0]) > base * 1.05, 'el equipo rinde más con jefe/a');
+  assert.ok(Math.abs(G.output(s, boss) - bossBase * 0.5) < 1e-9, 'quien dirige rinde la mitad');
+  // Mover 4 desarrolladores al otro producto: repartidos por habilidad, sin tocar al jefe.
+  const r = G.moveGroup(s, 'p:' + p.id, 'dev', '4', 'p:' + q.id);
+  assert.equal(r.ok, true);
+  const moved = devs.filter((e) => e.assign === 'p:' + q.id);
+  assert.equal(moved.length, 4);
+  assert.ok(!moved.includes(boss), 'el jefe/a no se mueve');
+  assert.ok(Math.max(...moved.map((e) => e.skill)) - Math.min(...moved.map((e) => e.skill)) > 20, 'se reparten por habilidad');
+  assert.equal(G.moveGroup(s, 'p:' + p.id, 'marketer', 'all', 'brand').ok, true, 'marketing puede ir a la marca');
+  assert.equal(G.moveGroup(s, 'p:' + q.id, 'dev', 'all', 'brand').ok, false, 'desarrollo no puede ir a la marca');
+  // Reasignación automática de quien se queda sin tarea.
+  moved[0].assign = null;
+  G.stepDay(s);
+  assert.ok(moved[0].assign, 'vuelve a tener tarea');
+  s.settings.autoAssign = false;
+  moved[1].assign = null;
+  G.stepDay(s);
+  assert.equal(moved[1].assign, null, 'con la opción apagada se queda sin tarea');
+  // Si el jefe/a cambia de equipo, el equipo se queda sin jefe/a.
+  boss.assign = 'p:' + q.id;
+  for (let i = 0; i < 7; i++) G.stepDay(s);
+  assert.equal(s.leads['p:' + p.id], undefined);
+  assert.equal(G.leadMult(s, devs[0]), 1);
+}

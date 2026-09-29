@@ -40,7 +40,7 @@ let loopError = false;
 // Partida de relleno mientras se elige nombre: no se guarda hasta empezar.
 let draft = false;
 
-const U = { tab: 'office', pid: null, mktPid: null, cat: null, hireRole: 'all', newCat: 'blog', newName: '', empModal: null, edit: false, editSel: null, prevSpeed: 1 };
+const U = { tab: 'office', pid: null, mktPid: null, cat: null, hireRole: 'all', newCat: 'blog', newName: '', empModal: null, edit: false, editSel: null, prevSpeed: 1, move: {} };
 try {
   Object.assign(U, JSON.parse(localStorage.getItem(UI_KEY) || '{}'), { pid: null, empModal: null });
 } catch {
@@ -71,6 +71,7 @@ function start(state) {
   U.pid = null;
   U.mktPid = null;
   U.empModal = null;
+  U.move = {};
   office.tier = -1;
   office.selected = null;
   dirty = true;
@@ -456,6 +457,20 @@ const ACTIONS = {
   abandonContract: (d) =>
     confirmModal('Abandonar contrato', 'Perderás 3 puntos de reputación y todo el trabajo hecho.', 'Abandonar', () => result(G.abandonContract(s, +d.id), 'bad'), true),
   assignIdle: (d) => result(G.assignIdle(s, d.target)),
+  teamsToggle: () => {
+    U.teamsOpen = U.teamsOpen === false;
+    dirty = true;
+  },
+  autoAssign: () => {
+    s.settings.autoAssign = s.settings.autoAssign === false;
+    toast(s.settings.autoAssign ? '🔁 Quien quede sin tarea volverá a trabajar solo.' : 'Reasignación automática desactivada.', 'info');
+    dirty = true;
+  },
+  moveGroup: (d) => {
+    const m = U.move[d.from] || {};
+    const to = m.to || document.querySelector(`[data-change=move][data-target="${d.from}"][data-f=to]`)?.value;
+    result(G.moveGroup(s, d.from, m.role || 'all', m.n || '5', to), 'good');
+  },
 
   newProduct: () => {
     U.newName = G.suggestProductName(s);
@@ -605,6 +620,15 @@ function onChange(e) {
   if (el.dataset.change === 'assign') {
     result(G.assign(s, +el.dataset.emp, el.value || null));
     el.blur();
+  } else if (el.dataset.change === 'lead') {
+    result(G.setLead(s, el.dataset.target, el.value ? +el.value : null), 'good');
+    el.blur();
+  } else if (el.dataset.change === 'move') {
+    // El formulario de mover gente guarda lo elegido para que el refresco no lo borre.
+    const m = (U.move[el.dataset.target] = U.move[el.dataset.target] || {});
+    m[el.dataset.f] = el.value;
+    el.blur();
+    dirty = true;
   }
 }
 

@@ -64,6 +64,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     sec: { bounty: false, backups: false, audit: -999, incidents: 0, hidden: null },
     plat: { fee: 0.3, webpay: false, webpayFree: false, adsHit: -1, cloud: 1, commit: -1, prepaid: 0 },
     rel: [],
+    leads: {},
     digest: { n: {}, last: '' },
     officeFx: [],
     competitors: [],
@@ -87,7 +88,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     notes: [],
     redDays: 0,
     gameOver: null,
-    settings: { sound: true, music: true, pauseCritical: false },
+    settings: { sound: true, music: true, pauseCritical: false, autoAssign: true },
   };
   const f = makePerson(s, 'founder', { skill: 45, traits: [] });
   f.name = founder;
@@ -159,7 +160,103 @@ export function productivity(s, e, ps = perkStats(s)) {
   if (!s.office.perks.ac) m *= effectMult(s, 'heat');
   m *= effectMult(s, 'prod');
   m *= 1 - deskFx(s, e).noise;
+  m *= leadMult(s, e);
   return m;
+}
+
+// ---------------------------------------------------------------- equipos
+// Un equipo es la gente asignada a la misma tarea (un producto, un contrato,
+// la marca...). Cada equipo puede tener un jefe o jefa: dedica la mitad de su
+// tiempo a coordinar y a cambio el resto rinde más.
+export const LEAD_SELF = 0.5;
+export const leadBonus = (lead) =>
+  Math.min(0.2, 0.04 + levelOf(lead.skill) * 0.03 + (lead.traits.includes('mentor') || lead.traits.includes('social') ? 0.03 : 0));
+
+// El jefe o jefa de una tarea, si sigue en ella y está disponible.
+export function teamLead(s, target) {
+  const id = s.leads?.[target];
+  if (id == null) return null;
+  const lead = findEmp(s, id);
+  return lead && lead.assign === target ? lead : null;
+}
+
+export function leadMult(s, e) {
+  if (!e.assign || s.leads?.[e.assign] == null) return 1;
+  const lead = teamLead(s, e.assign);
+  if (!lead || lead.off > 0) return 1;
+  return lead === e ? LEAD_SELF : 1 + leadBonus(lead);
+}
+
+export function targetLabel(s, t) {
+  if (!t) return '💤 Sin tarea';
+  if (t === 'rd') return '🔬 Investigación';
+  if (t === 'brand') return '✨ Marca de empresa';
+  if (t.startsWith('p:')) return `📦 ${findProduct(s, +t.slice(2))?.name ?? 'Producto'}`;
+  const c = s.contracts.active.find((x) => x.id === +t.slice(2));
+  return `📝 ${c ? c.title : 'Contrato'}`;
+}
+
+// Equipos actuales: la gente asignable agrupada por tarea.
+export function teams(s) {
+  const map = new Map();
+  for (const e of s.employees) {
+    if (!isAssignable(e) && e.role !== 'founder') continue;
+    const t = e.assign || null;
+    if (!map.has(t)) map.set(t, { target: t, label: targetLabel(s, t), members: [], roles: {} });
+    const g = map.get(t);
+    g.members.push(e);
+    g.roles[e.role] = (g.roles[e.role] || 0) + 1;
+  }
+  for (const g of map.values()) g.lead = g.target ? teamLead(s, g.target) : null;
+  // Orden fijo (productos, contratos, marca, investigación y "sin tarea") para
+  // que las tarjetas no cambien de sitio al mover gente.
+  const order = [...s.products.map((p) => 'p:' + p.id), ...s.contracts.active.map((c) => 'c:' + c.id), 'brand', 'rd', null];
+  const rank = (t) => (order.indexOf(t) < 0 ? order.length : order.indexOf(t));
+  return [...map.values()].sort((a, b) => rank(a.target) - rank(b.target));
+}
+
+export function setLead(s, target, empId) {
+  if (!target) return fail('La gente sin tarea no tiene jefe.');
+  s.leads = s.leads || {};
+  if (empId == null) {
+    delete s.leads[target];
+    return ok('El equipo se queda sin jefe/a.');
+  }
+  const e = findEmp(s, empId);
+  if (!e || e.assign !== target) return fail('Tiene que formar parte del equipo.');
+  s.leads[target] = e.id;
+  return ok(`${e.name} dirige ${targetLabel(s, target)}: +${Math.round(leadBonus(e) * 100)}% al resto del equipo.`);
+}
+
+// Mueve a varias personas a la vez. Se reparten por habilidad para que los
+// dos equipos queden equilibrados; el jefe/a y quien funda la empresa no se mueven.
+export function moveGroup(s, from, role, n, to) {
+  const src = from === 'idle' ? null : from;
+  if (!to || to === src) return fail('Elige otro destino.');
+  const lead = src ? s.leads?.[src] : null;
+  const pool = s.employees
+    .filter((e) => (e.assign || null) === src && e.id !== lead && e.role !== 'founder' && e.off <= 0)
+    .filter((e) => (role === 'all' || e.role === role) && assignTargets(s, e).some((x) => x.v === to))
+    .sort((a, b) => b.skill - a.skill);
+  if (!pool.length) return fail('Nadie de ese grupo puede trabajar en ese destino.');
+  const k = Math.min(pool.length, n === 'all' ? pool.length : Math.max(1, +n || 1));
+  for (let i = 0; i < k; i++) pool[Math.floor((i * pool.length) / k)].assign = to;
+  return ok(`${k} ${k === 1 ? 'persona pasa' : 'personas pasan'} a ${targetLabel(s, to)}.`);
+}
+
+// Quien se queda sin tarea vuelve a trabajar solo (si la opción está activada).
+function autoReassign(s) {
+  if (!s.settings.autoAssign) return;
+  for (const e of s.employees) if (!e.assign && isAssignable(e) && e.off <= 0) autoAssign(s, e);
+}
+
+// Jefes que ya no están en su equipo o tareas que ya no existen.
+function cleanLeads(s) {
+  if (!s.leads) return;
+  for (const [t, id] of Object.entries(s.leads)) {
+    const e = findEmp(s, id);
+    if (!e || e.assign !== t) delete s.leads[t];
+  }
 }
 
 // Efectos del sitio donde se sienta alguien: decoración cercana y ruido.
@@ -998,6 +1095,7 @@ export function stepDay(s) {
   const ps = perkStats(s);
   const tp = teamPowers(s);
 
+  autoReassign(s);
   workAndPeople(s, ps, tp);
   birthdays(s);
   marketing(s, ps);
@@ -1021,6 +1119,7 @@ export function stepDay(s) {
   if (s.day % 7 === 0) {
     record(s, tp);
     relationsWeek(s);
+    cleanLeads(s);
     flushDigest(s);
   }
   s.stats.peakUsers = Math.max(s.stats.peakUsers, totalUsers(s));

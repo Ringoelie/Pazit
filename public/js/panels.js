@@ -203,9 +203,60 @@ function teamPanel(s, U) {
     <div class="row gap wrap">${btn('➕ Contratar', 'hireOpen', {}, { kind: 'primary big' })}
       <small class="muted">DevOps ${tp.ops.toFixed(1)} · Ventas ${tp.sales.toFixed(1)} · RR.HH. ${tp.people.toFixed(1)}${tp.sec ? ` · Seguridad ${tp.sec.toFixed(1)}` : ''}</small></div>
     ${relLine(s)}
+    ${teamsBox(s, U)}
     <div class="chips">${chips}</div>
     <div class="emps">${list.map((e) => empRow(s, e)).join('') || '<p class="muted">Nadie en este grupo.</p>'}</div>
     ${all.length > limit ? `<div class="row end">${btn(`Mostrar más (${all.length - limit} restantes)`, 'teamMore')}</div>` : ''}`;
+}
+
+// Equipos: la gente de cada producto o contrato, con su jefe/a y un
+// formulario para mover a varias personas de golpe.
+const MOVE_N = [['1', '1'], ['5', '5'], ['10', '10'], ['25', '25'], ['all', 'todas']];
+
+function teamsBox(s, U) {
+  const list = G.teams(s);
+  const auto = s.settings.autoAssign !== false;
+  const open = U.teamsOpen !== false;
+  const dest = [
+    ...s.products.map((p) => ['p:' + p.id, `📦 ${p.name}`]),
+    ...s.contracts.active.map((c) => ['c:' + c.id, `📝 ${c.title}`]),
+    ['brand', '✨ Marca de empresa'],
+  ];
+  const cards = list.map((g) => teamCard(s, U, g, dest)).join('');
+  return `<details class="teams-box" data-key="teams" ${open ? 'open' : ''}>
+    <summary data-act="teamsToggle"><b>👥 Equipos por tarea (${list.filter((g) => g.target).length})</b></summary>
+    <p class="muted small">Cada producto o contrato es un equipo. Con un jefe o jefa, el resto rinde más (su propia producción baja a la mitad). Mueve a varias personas de golpe en vez de una a una.</p>
+    <label class="card policy ${auto ? 'owned' : ''}" data-key="auto-assign"><div class="card-icon">🔁</div>
+      <div class="grow"><b>Reasignar automáticamente</b><small>Quien se queda sin tarea (al acabar un contrato, al llegar) pasa al producto con más trabajo pendiente.</small></div>
+      <button class="switch ${auto ? 'on' : ''}" data-act="autoAssign" aria-pressed="${auto}"><i></i></button></label>
+    <div class="cards">${cards || '<p class="muted">Todavía no hay equipos.</p>'}</div></details>`;
+}
+
+function teamCard(s, U, g, dest) {
+  const key = g.target || 'idle';
+  const mv = U.move?.[key] || {};
+  const comp = Object.entries(g.roles).map(([r, n]) => `${ROLES[r].icon} ${n}`).join(' · ');
+  const roles = Object.keys(g.roles).filter((r) => r !== 'founder');
+  const opt = (v, label, cur) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${esc(label)}</option>`;
+  let lead = '';
+  if (g.target) {
+    const cands = [...g.members].sort((a, b) => b.skill - a.skill).slice(0, 15);
+    if (g.lead && !cands.includes(g.lead)) cands.push(g.lead);
+    const cur = g.lead?.id ?? '';
+    lead = `<div class="team-row"><label>🎖️ Jefe/a <select data-change="lead" data-target="${g.target}" aria-label="Jefe o jefa de ${esc(g.label)}">
+        ${opt('', '— Nadie —', cur)}${cands.map((e) => opt(e.id, `${e.name.split(' ')[0]} · ${ROLES[e.role].short} ${levelName(e.skill)}`, cur)).join('')}</select></label>
+      <small class="muted">${g.lead ? `+${Math.round(G.leadBonus(g.lead) * 100)}% al resto del equipo` : g.members.length >= 4 ? 'Nombra a alguien: el resto rendirá más' : ''}</small></div>`;
+  }
+  const to = dest.filter(([v]) => v !== g.target);
+  const move = roles.length && to.length
+    ? `<div class="team-row">Mover <select data-change="move" data-target="${key}" data-f="n" aria-label="Cuántas personas">${MOVE_N.map(([v, l]) => opt(v, l, mv.n ?? '5')).join('')}</select>
+      <select data-change="move" data-target="${key}" data-f="role" aria-label="Qué perfil">${opt('all', 'de cualquier perfil', mv.role ?? 'all')}${roles.map((r) => opt(r, `${ROLES[r].icon} ${ROLES[r].short}`, mv.role)).join('')}</select>
+      a <select data-change="move" data-target="${key}" data-f="to" aria-label="Destino">${to.map(([v, l]) => opt(v, l, mv.to ?? to[0][0])).join('')}</select>
+      ${btn('Mover', 'moveGroup', { from: key }, { kind: 'small primary' })}</div>`
+    : '';
+  return `<div class="card team" data-key="team-${key}"><div class="grow">
+    <b>${esc(g.label)}</b> <small class="muted">${g.members.length} ${g.members.length === 1 ? 'persona' : 'personas'} · ${comp}</small>
+    ${lead}${move}</div></div>`;
 }
 
 function relLine(s) {
@@ -306,6 +357,7 @@ export function employeeModal(s, id) {
     ${e.traits.length ? `<h4>Rasgos</h4><ul class="traits">${e.traits.map((t) => `<li>${TRAITS[t].icon} <b>${TRAITS[t].name}:</b> ${TRAITS[t].desc}</li>`).join('')}</ul>` : ''}
     ${relList(s, e)}
     ${G.isAssignable(e) && e.off <= 0 ? `<h4>Asignación</h4>${assignSelect(s, e)}` : ''}
+    ${e.assign && G.teamLead(s, e.assign) === e ? `<p>🎖️ Dirige ${esc(G.targetLabel(s, e.assign))}: el resto del equipo rinde un ${Math.round(G.leadBonus(e) * 100)}% más; su propia producción baja a la mitad.</p>` : ''}
     ${
       e.role === 'founder'
         ? '<p class="muted">Eres el alma de la empresa. Puedes trabajar en productos, contratos o investigación.</p>'
