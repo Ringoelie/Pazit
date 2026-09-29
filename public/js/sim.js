@@ -3,12 +3,12 @@
 import {
   ROLES, HIRABLE, MAKERS, OFFICES, PERKS, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID,
   CAMPAIGNS, ROUNDS, CLIENTS, JOBS, QUESTS, ACHIEVEMENTS, MAX_FEATURE_LEVEL, LEVEL_COST, LEVEL_APPEAL,
-  PREMIUM_PRICES, STARTUP_SUFFIX, PRODUCT_NAMES, REGIONS, UNIVERSAL_WEIGHT, STYLES, STYLE_MOOD,
+  PREMIUM_PRICES, STARTUP_SUFFIX, PRODUCT_NAMES, REGIONS, UNIVERSAL_WEIGHT, STYLES, STYLE_MOOD, PACES,
 } from './data.js';
-import { rnd, rint, rfloat, pick, chance, gauss, clamp, dateOf, fmtMoney, fmtNum, MONTHS } from './util.js';
+import { rnd, rint, rfloat, pick, chance, gauss, clamp, dateOf, fmtMoney, fmtNum, fmtPct, MONTHS } from './util.js';
 import {
   uid, has, officeOf, findEmp, findProduct, notify, news, money, effectMult, addEffect, levelOf,
-  expectedSalary, makeLooks, makePerson, perkStats, isBirthday,
+  expectedSalary, makeLooks, makePerson, perkStats, isBirthday, digest, flushDigest,
 } from './core.js';
 import { EVENTS, deliverEvent } from './events.js';
 import { defaultLayout, addItem, canPlace, getRef, snapPos, deskEffects, itemDef } from './layout.js';
@@ -19,6 +19,9 @@ import { isHW, hwStep } from './hw.js';
 import { securityDay, BOUNTY_COST, BACKUP_COST } from './security.js';
 import { storeCut, adsHit, platformDemand, platformsMonth, cloudMult } from './platforms.js';
 import { relationsWeek, relFx } from './relations.js';
+import { keynoteDay } from './keynote.js';
+import { b2bDay, b2bDaily } from './b2b.js';
+import { awardsDay } from './awards.js';
 
 export { has, officeOf, findEmp, findProduct, perkStats, expectedSalary, levelOf };
 
@@ -64,6 +67,10 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     sec: { bounty: false, backups: false, audit: -999, incidents: 0, hidden: null },
     plat: { fee: 0.3, webpay: false, webpayFree: false, adsHit: -1, cloud: 1, commit: -1, prepaid: 0 },
     rel: [],
+    leads: {},
+    b2b: { leads: [], deals: [], next: 30, won: 0, lost: 0 },
+    awards: { won: [], base: null, noms: null },
+    digest: { n: {}, last: '' },
     officeFx: [],
     competitors: [],
     mail: [],
@@ -86,7 +93,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     notes: [],
     redDays: 0,
     gameOver: null,
-    settings: { sound: true, music: true },
+    settings: { sound: true, music: true, pauseCritical: false, autoAssign: true },
   };
   const f = makePerson(s, 'founder', { skill: 45, traits: [] });
   f.name = founder;
@@ -158,7 +165,103 @@ export function productivity(s, e, ps = perkStats(s)) {
   if (!s.office.perks.ac) m *= effectMult(s, 'heat');
   m *= effectMult(s, 'prod');
   m *= 1 - deskFx(s, e).noise;
+  m *= leadMult(s, e);
   return m;
+}
+
+// ---------------------------------------------------------------- equipos
+// Un equipo es la gente asignada a la misma tarea (un producto, un contrato,
+// la marca...). Cada equipo puede tener un jefe o jefa: dedica la mitad de su
+// tiempo a coordinar y a cambio el resto rinde más.
+export const LEAD_SELF = 0.5;
+export const leadBonus = (lead) =>
+  Math.min(0.2, 0.04 + levelOf(lead.skill) * 0.03 + (lead.traits.includes('mentor') || lead.traits.includes('social') ? 0.03 : 0));
+
+// El jefe o jefa de una tarea, si sigue en ella y está disponible.
+export function teamLead(s, target) {
+  const id = s.leads?.[target];
+  if (id == null) return null;
+  const lead = findEmp(s, id);
+  return lead && lead.assign === target ? lead : null;
+}
+
+export function leadMult(s, e) {
+  if (!e.assign || s.leads?.[e.assign] == null) return 1;
+  const lead = teamLead(s, e.assign);
+  if (!lead || lead.off > 0) return 1;
+  return lead === e ? LEAD_SELF : 1 + leadBonus(lead);
+}
+
+export function targetLabel(s, t) {
+  if (!t) return '💤 Sin tarea';
+  if (t === 'rd') return '🔬 Investigación';
+  if (t === 'brand') return '✨ Marca de empresa';
+  if (t.startsWith('p:')) return `📦 ${findProduct(s, +t.slice(2))?.name ?? 'Producto'}`;
+  const c = s.contracts.active.find((x) => x.id === +t.slice(2));
+  return `📝 ${c ? c.title : 'Contrato'}`;
+}
+
+// Equipos actuales: la gente asignable agrupada por tarea.
+export function teams(s) {
+  const map = new Map();
+  for (const e of s.employees) {
+    if (!isAssignable(e) && e.role !== 'founder') continue;
+    const t = e.assign || null;
+    if (!map.has(t)) map.set(t, { target: t, label: targetLabel(s, t), members: [], roles: {} });
+    const g = map.get(t);
+    g.members.push(e);
+    g.roles[e.role] = (g.roles[e.role] || 0) + 1;
+  }
+  for (const g of map.values()) g.lead = g.target ? teamLead(s, g.target) : null;
+  // Orden fijo (productos, contratos, marca, investigación y "sin tarea") para
+  // que las tarjetas no cambien de sitio al mover gente.
+  const order = [...s.products.map((p) => 'p:' + p.id), ...s.contracts.active.map((c) => 'c:' + c.id), 'brand', 'rd', null];
+  const rank = (t) => (order.indexOf(t) < 0 ? order.length : order.indexOf(t));
+  return [...map.values()].sort((a, b) => rank(a.target) - rank(b.target));
+}
+
+export function setLead(s, target, empId) {
+  if (!target) return fail('La gente sin tarea no tiene jefe.');
+  s.leads = s.leads || {};
+  if (empId == null) {
+    delete s.leads[target];
+    return ok('El equipo se queda sin jefe/a.');
+  }
+  const e = findEmp(s, empId);
+  if (!e || e.assign !== target) return fail('Tiene que formar parte del equipo.');
+  s.leads[target] = e.id;
+  return ok(`${e.name} dirige ${targetLabel(s, target)}: +${Math.round(leadBonus(e) * 100)}% al resto del equipo.`);
+}
+
+// Mueve a varias personas a la vez. Se reparten por habilidad para que los
+// dos equipos queden equilibrados; el jefe/a y quien funda la empresa no se mueven.
+export function moveGroup(s, from, role, n, to) {
+  const src = from === 'idle' ? null : from;
+  if (!to || to === src) return fail('Elige otro destino.');
+  const lead = src ? s.leads?.[src] : null;
+  const pool = s.employees
+    .filter((e) => (e.assign || null) === src && e.id !== lead && e.role !== 'founder' && e.off <= 0)
+    .filter((e) => (role === 'all' || e.role === role) && assignTargets(s, e).some((x) => x.v === to))
+    .sort((a, b) => b.skill - a.skill);
+  if (!pool.length) return fail('Nadie de ese grupo puede trabajar en ese destino.');
+  const k = Math.min(pool.length, n === 'all' ? pool.length : Math.max(1, +n || 1));
+  for (let i = 0; i < k; i++) pool[Math.floor((i * pool.length) / k)].assign = to;
+  return ok(`${k} ${k === 1 ? 'persona pasa' : 'personas pasan'} a ${targetLabel(s, to)}.`);
+}
+
+// Quien se queda sin tarea vuelve a trabajar solo (si la opción está activada).
+function autoReassign(s) {
+  if (!s.settings.autoAssign) return;
+  for (const e of s.employees) if (!e.assign && isAssignable(e) && e.off <= 0) autoAssign(s, e);
+}
+
+// Jefes que ya no están en su equipo o tareas que ya no existen.
+function cleanLeads(s) {
+  if (!s.leads) return;
+  for (const [t, id] of Object.entries(s.leads)) {
+    const e = findEmp(s, id);
+    if (!e || e.assign !== t) delete s.leads[t];
+  }
 }
 
 // Efectos del sitio donde se sienta alguien: decoración cercana y ruido.
@@ -188,6 +291,33 @@ export const costTotal = (c) => (c.code || 0) + (c.design || 0) + (c.ai || 0);
 
 export function queuedLevel(p, f) {
   return (p.features[f] || 0) + p.queue.filter((t) => t.f === f).length;
+}
+
+// ---------------------------------------------------------------- deuda técnica
+// Cada función que se lanza deja algo de deuda (más si se va deprisa, con
+// gente junior o en crunch). La deuda frena el desarrollo y multiplica los
+// bugs hasta que alguien refactoriza.
+export const debtLevel = (p) => (p.debt || 0) / (50 + p.invested * 0.5);
+export const debtSpeed = (p) => 1 / (1 + 0.6 * Math.min(2, debtLevel(p)));
+export const debtBugs = (p) => 1 + Math.min(2, debtLevel(p));
+export const paceOf = (p) => PACES[p.pace] || PACES.normal;
+
+export function setPace(s, pid, pace) {
+  const p = findProduct(s, pid);
+  if (!p || !PACES[pace]) return fail();
+  p.pace = pace;
+  return ok(`${PACES[pace].icon} ${p.name}: ritmo ${PACES[pace].name.toLowerCase()}.`);
+}
+
+export function queueRefactor(s, pid) {
+  const p = findProduct(s, pid);
+  if (!p) return fail();
+  if (p.queue.some((t) => t.f === 'refactor')) return fail('Ya hay una refactorización en la cola.');
+  if (debtLevel(p) < 0.05) return fail('Apenas hay deuda técnica que pagar.');
+  if (p.queue.length >= MAX_QUEUE) return fail(`La cola admite ${MAX_QUEUE} tareas.`);
+  const debt = p.debt;
+  p.queue.push({ f: 'refactor', lvl: 1, need: { code: Math.round(debt * 0.8 + 10) }, done: { code: 0, design: 0, ai: 0 }, debt });
+  return ok(`🧹 Refactorización de ${p.name} en la cola.`);
 }
 
 export function quality(p) {
@@ -611,7 +741,7 @@ export function createProduct(s, name, cat) {
   name = (name || '').trim().slice(0, 24) || startupName(s);
   const p = {
     id: uid(s), name, cat, launched: false, launchDay: null, created: s.day,
-    features: {}, queue: [], bugs: 0, invested: 0,
+    features: {}, queue: [], bugs: 0, invested: 0, debt: 0, pace: 'normal',
     users: 0, peak: 0, hype: 0, awareness: 0, ads: false, price: 0, down: 0, overload: 0,
     launchHunt: false, sat: 0.6, share: 0, rev: null,
   };
@@ -997,10 +1127,13 @@ export function stepDay(s) {
   const ps = perkStats(s);
   const tp = teamPowers(s);
 
+  autoReassign(s);
   workAndPeople(s, ps, tp);
   birthdays(s);
   marketing(s, ps);
+  keynoteDay(s);
   products(s, tp);
+  b2bDay(s);
   infra(s, tp);
   securityDay(s, tp);
   costs(s, tp);
@@ -1013,6 +1146,7 @@ export function stepDay(s) {
     platformsMonth(s);
   }
   mailStep(s);
+  awardsDay(s, tp);
   worldDay(s, newMonth);
   maybeEvent(s);
   quests(s);
@@ -1020,6 +1154,8 @@ export function stepDay(s) {
   if (s.day % 7 === 0) {
     record(s, tp);
     relationsWeek(s);
+    cleanLeads(s);
+    flushDigest(s);
   }
   s.stats.peakUsers = Math.max(s.stats.peakUsers, totalUsers(s));
 
@@ -1108,7 +1244,7 @@ function workAndPeople(s, ps, tp) {
     if (e.energy < 12) {
       e.off = 5;
       e.offReason = 'Vacaciones';
-      if (s.employees.length <= 12) notify(s, `🌴 ${e.name} se toma 5 días de vacaciones para recargar pilas.`);
+      digest(s, 'vacation', `🌴 ${e.name} se toma 5 días de vacaciones para recargar pilas.`);
     }
 
     // Ánimo
@@ -1142,7 +1278,7 @@ function workAndPeople(s, ps, tp) {
       const before = levelOf(e.skill);
       e.skill += 1;
       if (levelOf(e.skill) > before) {
-        notify(s, `🎉 ${e.name} asciende a ${['Junior', 'Mid', 'Senior', 'Lead'][levelOf(e.skill)]}.`, 'good');
+        digest(s, 'promo', `🎉 ${e.name} asciende a ${['Junior', 'Mid', 'Senior', 'Lead'][levelOf(e.skill)]}.`);
       }
     }
   }
@@ -1205,7 +1341,7 @@ function pour(tasks, pool) {
 const taskDone = (task) => TYPES.every((t) => task.done[t] >= (task.need[t] || 0) - 1e-6);
 
 function productWork(s, p, b) {
-  const pmBoost = 1 + Math.min(0.35, b.pm * 0.12);
+  const pmBoost = (1 + Math.min(0.35, b.pm * 0.12)) * paceOf(p).speed * debtSpeed(p);
   const pool = { code: b.code * pmBoost, design: b.design * pmBoost, ai: b.ai * pmBoost, flex: b.flex * pmBoost };
   pour(p.queue, pool);
   // Lo que sobra se dedica a arreglar bugs.
@@ -1216,16 +1352,26 @@ function productWork(s, p, b) {
   while (p.queue.length && taskDone(p.queue[0])) {
     const task = p.queue.shift();
     const total = costTotal(task.need);
+    if (task.f === 'refactor') {
+      const before = debtLevel(p);
+      p.debt = Math.max(0, (p.debt || 0) - task.debt);
+      notify(s, `🧹 ${p.name}: código refactorizado. Deuda técnica del ${fmtPct(before)} al ${fmtPct(debtLevel(p))}.`, 'good');
+      continue;
+    }
     p.features[task.f] = Math.max(p.features[task.f] || 0, task.lvl);
     p.invested += total;
-    p.bugs += total * 0.14 * (1.25 - avgSkill / 100) * (1 - 0.5 * perfect);
+    p.bugs += total * 0.14 * (1.25 - avgSkill / 100) * (1 - 0.5 * perfect) * debtBugs(p) * paceOf(p).bugs;
+    p.debt = (p.debt || 0) + total * paceOf(p).debt * (1.2 - avgSkill / 100) * (1 - 0.4 * perfect) * (s.policies.crunch ? 1.5 : 1);
     s.stats.shipped += 1;
     const F = FEATURES[task.f];
     if (task.f === 'ads' && task.lvl === 1) p.ads = true;
     if (task.f === 'subs' && task.lvl === 1 && !p.price) p.price = 5;
     if (p.launched) p.hype += 4 + task.lvl * 2 + (F.hype && task.lvl === 1 ? F.hype : 0);
     onShip(s, p, task.f, task.lvl);
-    notify(s, `📦 ${p.name}: ${F.icon} ${F.name} ${task.lvl > 1 ? 'nivel ' + task.lvl : 'lista'}.`, 'good');
+    // Antes del lanzamiento cada función cuenta; después van al resumen semanal.
+    const shipped = `📦 ${p.name}: ${F.icon} ${F.name} ${task.lvl > 1 ? 'nivel ' + task.lvl : 'lista'}.`;
+    if (p.launched) digest(s, 'feature', shipped);
+    else notify(s, shipped, 'good');
     if (!p.launched && coreDone(p) && !p.readyNotified) {
       p.readyNotified = true;
       notify(s, `✅ ${p.name} ya se puede lanzar. Ve a Productos y pulsa Lanzar.`, 'good');
@@ -1305,6 +1451,7 @@ function products(s, tp) {
     money(s, rev.api, 'api');
     dayRev += rev.total;
   }
+  dayRev += b2bDaily(s);
   s.rev30.push(dayRev);
   if (s.rev30.length > 30) s.rev30.shift();
 }
@@ -1436,7 +1583,7 @@ function maybeEvent(s) {
     const w = def.weight(s);
     if (w > 0) pool.push({ id, w });
   }
-  s.nextEventDay = s.day + rint(s, 18, 34);
+  s.nextEventDay = s.day + rint(s, 30, 50);
   if (!pool.length) return;
   const total = pool.reduce((a, x) => a + x.w, 0);
   let r = rnd(s) * total;
@@ -1456,10 +1603,10 @@ function maybeEvent(s) {
 // Cumpleaños: cada persona celebra el suyo una vez al año y el equipo lo nota.
 function birthdays(s) {
   const today = s.employees.filter((e) => e.off <= 0 && isBirthday(s, e));
-  for (const e of today) e.mood = Math.min(100, e.mood + 8);
-  if (!today.length || s.employees.length > 40) return;
-  const names = today.map((e) => e.name).join(' y ');
-  notify(s, `🎂 Hoy ${today.length > 1 ? 'cumplen' : 'cumple'} años ${names}. ¡Hay tarta!`, 'good');
+  for (const e of today) {
+    e.mood = Math.min(100, e.mood + 8);
+    digest(s, 'bday', `🎂 ${e.name} ha cumplido años. ¡Hubo tarta!`);
+  }
 }
 
 // ---- objetivos y logros
@@ -1518,6 +1665,8 @@ const ACH_CHECK = {
   crunchSurvivor: (s) => s.sec.incidents > 0 || s.stats.breaches > 0,
   bootstrapped: (s) => !s.stats.soldShares && mrr(s) >= 1e5,
   agi: (s) => has(s, 'agi'),
+  showman: (s) => (s.stats.epicKeynotes || 0) > 0,
+  award: (s) => (s.awards?.won.length || 0) > 0,
 };
 
 function achievements(s) {

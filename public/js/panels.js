@@ -3,7 +3,7 @@
 import {
   ROLES, TRAITS, OFFICES, PERKS, FIXTURES, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID, CAMPAIGNS, ROUNDS,
   QUESTS, ACHIEVEMENTS, POINT_TYPES, PREMIUM_PRICES, MAX_FEATURE_LEVEL, LEVELS, HW_PRICES, UNIVERSAL_WEIGHT,
-  REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD,
+  REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD, PACES, KEYNOTES, B2B_SIZES, AWARDS,
 } from './data.js';
 import { pendingMail, defaultChoice } from './mail.js';
 import { seasonOf, seasonDemand, regionMarket, langReach, regionStaff, complianceIssues, lawActive } from './world.js';
@@ -12,9 +12,12 @@ import { isHW, unitCost, hwPrice, leadTime } from './hw.js';
 import { secLevel, yearlyAttacks, BOUNTY_COST, BACKUP_COST, AUDIT_COST, AUDIT_DAYS } from './security.js';
 import { STORES, CLOUD_NAME, onMobile, storeFee, storeMonthly, cloudMult, adsHit } from './platforms.js';
 import { REL_KINDS, relationsOf, relSummary } from './relations.js';
+import { keynoteOdds, tierOf, KEYNOTE_TIERS } from './keynote.js';
+import { winChance, missingReqs, reqHint, b2bDaily } from './b2b.js';
+import { nominations, winChance as awardChance } from './awards.js';
 import * as G from './sim.js';
 import { perkStats, birthdayOf, isBirthday } from './core.js';
-import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, MONTHS } from './util.js';
+import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, dateOf, MONTHS } from './util.js';
 import { bar, btn, avatar } from './ui.js';
 
 export const TABS = [
@@ -35,13 +38,13 @@ export const TABS = [
 
 const INC_LABEL = {
   contracts: 'Contratos', ads: 'Publicidad', subs: 'Suscripciones', tx: 'Comisiones', api: 'API', hardware: 'Venta de dispositivos',
-  store: 'Tienda de apps', funding: 'Inversión', loans: 'Préstamos', other: 'Otros',
+  store: 'Tienda de apps', b2b: 'Clientes empresa', funding: 'Inversión', loans: 'Préstamos', other: 'Otros',
 };
 const EXP_LABEL = {
   salaries: 'Nóminas', rent: 'Alquiler', perks: 'Mantenimiento', cloud: 'Nube', servers: 'Servidores', marketing: 'Marketing',
   hiring: 'Contratación', office: 'Oficina y mejoras', policies: 'Políticas', interest: 'Intereses', loans: 'Devolución de préstamos',
   acquisitions: 'Adquisiciones', training: 'Formación', manufacturing: 'Fabricación', storage: 'Almacenaje', fines: 'Multas y juicios',
-  taxes: 'Impuestos', regions: 'Sedes internacionales', security: 'Ciberseguridad', other: 'Otros',
+  taxes: 'Impuestos', regions: 'Sedes internacionales', security: 'Ciberseguridad', b2b: 'Penalizaciones a clientes', other: 'Otros',
 };
 
 const kpi = (label, value, sub = '', cls = '') =>
@@ -203,9 +206,60 @@ function teamPanel(s, U) {
     <div class="row gap wrap">${btn('➕ Contratar', 'hireOpen', {}, { kind: 'primary big' })}
       <small class="muted">DevOps ${tp.ops.toFixed(1)} · Ventas ${tp.sales.toFixed(1)} · RR.HH. ${tp.people.toFixed(1)}${tp.sec ? ` · Seguridad ${tp.sec.toFixed(1)}` : ''}</small></div>
     ${relLine(s)}
+    ${teamsBox(s, U)}
     <div class="chips">${chips}</div>
     <div class="emps">${list.map((e) => empRow(s, e)).join('') || '<p class="muted">Nadie en este grupo.</p>'}</div>
     ${all.length > limit ? `<div class="row end">${btn(`Mostrar más (${all.length - limit} restantes)`, 'teamMore')}</div>` : ''}`;
+}
+
+// Equipos: la gente de cada producto o contrato, con su jefe/a y un
+// formulario para mover a varias personas de golpe.
+const MOVE_N = [['1', '1'], ['5', '5'], ['10', '10'], ['25', '25'], ['all', 'todas']];
+
+function teamsBox(s, U) {
+  const list = G.teams(s);
+  const auto = s.settings.autoAssign !== false;
+  const open = U.teamsOpen !== false;
+  const dest = [
+    ...s.products.map((p) => ['p:' + p.id, `📦 ${p.name}`]),
+    ...s.contracts.active.map((c) => ['c:' + c.id, `📝 ${c.title}`]),
+    ['brand', '✨ Marca de empresa'],
+  ];
+  const cards = list.map((g) => teamCard(s, U, g, dest)).join('');
+  return `<details class="teams-box" data-key="teams" ${open ? 'open' : ''}>
+    <summary data-act="teamsToggle"><b>👥 Equipos por tarea (${list.filter((g) => g.target).length})</b></summary>
+    <p class="muted small">Cada producto o contrato es un equipo. Con un jefe o jefa, el resto rinde más (su propia producción baja a la mitad). Mueve a varias personas de golpe en vez de una a una.</p>
+    <label class="card policy ${auto ? 'owned' : ''}" data-key="auto-assign"><div class="card-icon">🔁</div>
+      <div class="grow"><b>Reasignar automáticamente</b><small>Quien se queda sin tarea (al acabar un contrato, al llegar) pasa al producto con más trabajo pendiente.</small></div>
+      <button class="switch ${auto ? 'on' : ''}" data-act="autoAssign" aria-pressed="${auto}"><i></i></button></label>
+    <div class="cards">${cards || '<p class="muted">Todavía no hay equipos.</p>'}</div></details>`;
+}
+
+function teamCard(s, U, g, dest) {
+  const key = g.target || 'idle';
+  const mv = U.move?.[key] || {};
+  const comp = Object.entries(g.roles).map(([r, n]) => `${ROLES[r].icon} ${n}`).join(' · ');
+  const roles = Object.keys(g.roles).filter((r) => r !== 'founder');
+  const opt = (v, label, cur) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${esc(label)}</option>`;
+  let lead = '';
+  if (g.target) {
+    const cands = [...g.members].sort((a, b) => b.skill - a.skill).slice(0, 15);
+    if (g.lead && !cands.includes(g.lead)) cands.push(g.lead);
+    const cur = g.lead?.id ?? '';
+    lead = `<div class="team-row"><label>🎖️ Jefe/a <select data-change="lead" data-target="${g.target}" aria-label="Jefe o jefa de ${esc(g.label)}">
+        ${opt('', '— Nadie —', cur)}${cands.map((e) => opt(e.id, `${e.name.split(' ')[0]} · ${ROLES[e.role].short} ${levelName(e.skill)}`, cur)).join('')}</select></label>
+      <small class="muted">${g.lead ? `+${Math.round(G.leadBonus(g.lead) * 100)}% al resto del equipo` : g.members.length >= 4 ? 'Nombra a alguien: el resto rendirá más' : ''}</small></div>`;
+  }
+  const to = dest.filter(([v]) => v !== g.target);
+  const move = roles.length && to.length
+    ? `<div class="team-row">Mover <select data-change="move" data-target="${key}" data-f="n" aria-label="Cuántas personas">${MOVE_N.map(([v, l]) => opt(v, l, mv.n ?? '5')).join('')}</select>
+      <select data-change="move" data-target="${key}" data-f="role" aria-label="Qué perfil">${opt('all', 'de cualquier perfil', mv.role ?? 'all')}${roles.map((r) => opt(r, `${ROLES[r].icon} ${ROLES[r].short}`, mv.role)).join('')}</select>
+      a <select data-change="move" data-target="${key}" data-f="to" aria-label="Destino">${to.map(([v, l]) => opt(v, l, mv.to ?? to[0][0])).join('')}</select>
+      ${btn('Mover', 'moveGroup', { from: key }, { kind: 'small primary' })}</div>`
+    : '';
+  return `<div class="card team" data-key="team-${key}"><div class="grow">
+    <b>${esc(g.label)}</b> <small class="muted">${g.members.length} ${g.members.length === 1 ? 'persona' : 'personas'} · ${comp}</small>
+    ${lead}${move}</div></div>`;
 }
 
 function relLine(s) {
@@ -306,6 +360,7 @@ export function employeeModal(s, id) {
     ${e.traits.length ? `<h4>Rasgos</h4><ul class="traits">${e.traits.map((t) => `<li>${TRAITS[t].icon} <b>${TRAITS[t].name}:</b> ${TRAITS[t].desc}</li>`).join('')}</ul>` : ''}
     ${relList(s, e)}
     ${G.isAssignable(e) && e.off <= 0 ? `<h4>Asignación</h4>${assignSelect(s, e)}` : ''}
+    ${e.assign && G.teamLead(s, e.assign) === e ? `<p>🎖️ Dirige ${esc(G.targetLabel(s, e.assign))}: el resto del equipo rinde un ${Math.round(G.leadBonus(e) * 100)}% más; su propia producción baja a la mitad.</p>` : ''}
     ${
       e.role === 'founder'
         ? '<p class="muted">Eres el alma de la empresa. Puedes trabajar en productos, contratos o investigación.</p>'
@@ -479,12 +534,13 @@ function productDetail(s, p) {
   const alerts = productAlerts(s, p);
   return `<div class="row gap wrap">${btn('← Productos', 'backProducts', {}, { kind: 'ghost' })}
       <h3 class="grow nomargin">${cat.icon} ${esc(p.name)} ${statusTag(p)}</h3>${btn('✏️', 'renameProduct', { pid: p.id }, { kind: 'ghost', title: 'Renombrar' })}</div>
-    ${launchBtn}${alerts}
+    ${launchBtn}${keynoteSection(s, p)}${alerts}
     <div class="kpis">
       ${hw ? hwKpis(s, p) : kpi('Usuarios', fmtNum(p.users), p.launched ? `pico ${fmtNum(p.peak)}` : 'sin lanzar')}
       ${kpi('Ingresos', fmtMoney(rev.total * 30) + '/mes')}
       ${kpi('Satisfacción', fmtPct(sat), '', sat < 0.45 ? 'warn' : '')}
       ${kpi('Calidad', fmtPct(q), `${Math.round(p.bugs)} bugs`, q < 0.7 ? 'warn' : '')}
+      ${hw ? '' : kpi('Deuda técnica', fmtPct(G.debtLevel(p)), G.debtLevel(p) > 0.05 ? `desarrollo ${Math.round((1 - G.debtSpeed(p)) * 100)}% más lento` : 'código limpio', G.debtLevel(p) > 0.6 ? 'warn' : '')}
       ${kpi('Cuota', fmtPct(sh, 1), `atractivo ${Math.round(G.productAppeal(s, p))}`)}
       ${kpi('Conocimiento', fmtPct(p.awareness), `hype ${Math.round(p.hype)}`)}
       ${kpi('Mercado', fmtNum(G.potential(s, p)), regionMarket(s, p) > 1.001 ? `×${regionMarket(s, p).toFixed(2)} por sedes` : 'solo tu región')}
@@ -494,12 +550,56 @@ function productDetail(s, p) {
       <span class="pt ai">🧠 ${team.ai.toFixed(1)}/día</span>${team.flex ? `<span class="pt flex">👑 ${team.flex.toFixed(1)}/día</span>` : ''}
       <small class="muted">${team.marketers} marketing · ${team.pms} PM</small>${btn('Asignar a quien esté libre', 'assignIdle', { target: 'p:' + p.id }, { kind: 'small' })}</div>
     ${missing.length ? `<div class="banner warn">⚠️ Nadie produce ${missing.map((k) => POINT_TYPES[k].name).join(' ni ')} en este producto. Contrata o asigna a alguien.</div>` : ''}
+    ${paceSection(s, p)}
     <h3>Cola de desarrollo <small class="muted">${p.queue.length}/8</small></h3>
     <div class="queue">${queue || '<p class="muted">Cola vacía. Añade funciones abajo; mientras tanto, el equipo arregla bugs.</p>'}</div>
     <h3>Funciones</h3><div class="feats">${feats}</div>
     ${hw ? hwSection(s, p) : `<h3>Monetización</h3><div class="monet">${monet.join('') || '<p class="muted">Investiga "Modelos de negocio" y desarrolla Publicidad o Plan Premium para ganar dinero.</p>'}
       ${p.launched ? `<small class="muted">Publicidad ${fmtMoney(rev.ads * 30)} · Premium ${fmtMoney(rev.subs * 30)} · Comisiones ${fmtMoney(rev.tx * 30)} · API ${fmtMoney(rev.api * 30)} (al mes)</small>` : ''}</div>`}
     <div class="row end">${btn('Retirar producto', 'retireProduct', { pid: p.id }, { kind: 'danger small' })}</div>`;
+}
+
+// Presentación de lanzamiento: programar, seguir la campaña y el pronóstico.
+function keynoteSection(s, p) {
+  if (p.launched) return '';
+  const k = p.keynote;
+  if (k) {
+    const K = KEYNOTES[k.size];
+    const odds = keynoteOdds(s, p);
+    const T = KEYNOTE_TIERS[tierOf(odds.score)];
+    const ready = G.coreDone(p);
+    return `<div class="banner ${ready ? 'ok' : 'warn'}"><div class="grow">
+      <b>${K.icon} Presentación ${K.name.toLowerCase()} · ${fmtDate(k.day)} (${k.day - s.day > 0 ? 'en ' + fmtDays(k.day - s.day) : 'hoy'})</b>
+      <small>${ready ? '✅ Funciones básicas listas' : '❌ Faltan funciones básicas: si no llegan, la demo fallará en directo'} · hype ${fmtNum(Math.round(p.hype))} (+${K.hype}/día)</small>
+      <small>Pronóstico: ${T.icon} ${T.name} · producto completo ${fmtPct(odds.comp)} · calidad ${fmtPct(odds.quality)} · presenta ${odds.host.e ? esc(odds.host.e.name.split(' ')[0]) : 'nadie'}</small></div>
+      ${btn('Cancelar', 'cancelKeynote', { pid: p.id }, { kind: 'small ghost', title: 'No se devuelve el dinero y cuesta 1 de reputación' })}</div>`;
+  }
+  const cards = Object.entries(KEYNOTES)
+    .map(([id, K]) => `<div class="card" data-key="kn-${id}"><div class="card-icon">${K.icon}</div><div class="grow"><b>${K.name}</b><small>${esc(K.desc)}</small>
+      <small class="muted">${fmtMoney(K.cost)} · en ${K.days} días · +${K.hype} hype al día · alcance ×${K.reach}</small></div>
+      ${btn('Programar', 'keynote', { pid: p.id, size: id }, { kind: 'small primary', disabled: s.money < K.cost })}</div>`)
+    .join('');
+  return `<details class="keynote-box" data-key="keynote"><summary><b>🎤 Presentación de lanzamiento</b> <small class="muted">en vez de lanzar sin más</small></summary>
+    <p class="muted small">La campaña previa sube el hype cada día y, si la presentación sale bien, el primer día llega mucha más gente. Sale mejor cuanto más completo y pulido está el producto y cuanto mejor presenta quien sube al escenario. Si ese día faltan las funciones básicas, la demo fallará en directo.</p>
+    <div class="cards">${cards}</div></details>`;
+}
+
+// Ritmo de desarrollo y deuda técnica.
+function paceSection(s, p) {
+  if (isHW(p)) return '';
+  const lvl = G.debtLevel(p);
+  const queued = p.queue.some((t) => t.f === 'refactor');
+  const chips = Object.entries(PACES)
+    .map(([id, P]) => `<button class="chip ${G.paceOf(p) === P ? 'on' : ''}" data-act="setPace" data-pid="${p.id}" data-pace="${id}" title="${esc(P.desc)}">${P.icon} ${P.name}</button>`)
+    .join('');
+  const effect = lvl > 0.05
+    ? `el desarrollo va un ${Math.round((1 - G.debtSpeed(p)) * 100)}% más lento y salen ×${G.debtBugs(p).toFixed(1)} bugs`
+    : 'el código está limpio';
+  return `<h3>Ritmo de desarrollo</h3>
+    <div class="chips">${chips}</div>
+    <p class="muted small">${esc(G.paceOf(p).desc)}</p>
+    <div class="row between wrap gap"><span>🧱 Deuda técnica <b class="${lvl > 0.6 ? 'warn-text' : ''}">${fmtPct(lvl)}</b>: ${effect}.</span>
+      ${btn(queued ? '🧹 En la cola' : '🧹 Refactorizar', 'refactor', { pid: p.id }, { kind: 'small', disabled: queued || lvl < 0.05 || p.queue.length >= 8, title: 'Añade a la cola una tarea de código que paga la deuda acumulada' })}</div>`;
 }
 
 // Avisos de un producto: leyes, guerra de precios, antimonopolio, temporada.
@@ -585,7 +685,45 @@ function contractsPanel(s) {
   return `<p class="muted">Los contratos son trabajos para clientes: dinero rápido y reputación mientras tus productos crecen. Asigna gente en la pestaña Equipo o con "Asignar libres".</p>
     <div class="kpis">${kpi('Entregados', s.stats.contractsDone)}${kpi('Fallidos', C.failed || 0)}${kpi('Reputación', Math.round(s.reputation), 'más reputación, mejores contratos')}</div>
     <h3>En curso <small class="muted">${C.active.length}/3</small></h3><div class="cards">${active || '<p class="muted">Ningún contrato en marcha.</p>'}</div>
-    <h3>Ofertas</h3><div class="cards">${offers || '<p class="muted">No hay ofertas ahora mismo. Llegarán más en unos días.</p>'}</div>`;
+    <h3>Ofertas</h3><div class="cards">${offers || '<p class="muted">No hay ofertas ahora mismo. Llegarán más en unos días.</p>'}</div>
+    ${b2bSection(s)}`;
+}
+
+// Clientes empresa: oportunidades, negociaciones y contratos anuales.
+function b2bSection(s) {
+  if (!G.has(s, 'sales101')) {
+    return `<h3>🏢 Clientes empresa</h3><p class="muted">🔒 Investiga ${RESEARCH_BY_ID.sales101.name} para conseguir clientes empresa: pagan una cuota anual por usar tus productos.</p>`;
+  }
+  const B = s.b2b || { leads: [], deals: [], won: 0, lost: 0 };
+  const leads = B.leads
+    .map((l) => {
+      const p = G.findProduct(s, l.pid);
+      if (!p) return '';
+      const Z = B2B_SIZES[l.size];
+      const miss = missingReqs(s, l);
+      const reqs = l.reqs.map((f) => `${FEATURES[f].icon} ${FEATURES[f].name} ${reqHint(s, p, f)}`).join(' · ');
+      const action = l.state === 'talks'
+        ? `<small class="muted">Negociando: responden en ${fmtDays(Math.max(0, l.resolve - s.day))}</small>`
+        : `${btn(`Enviar propuesta · ${fmtPct(winChance(s, l))}`, 'b2bPitch', { id: l.id }, { kind: 'small primary', disabled: miss.length > 0, title: miss.length ? 'Primero desarrolla las funciones que piden' : '' })}${btn('Descartar', 'b2bDrop', { id: l.id }, { kind: 'small ghost' })}`;
+      return `<div class="card" data-key="lead-${l.id}"><div class="card-icon">${Z.icon}</div><div class="grow">
+        <b>${esc(l.client)}</b><small>${Z.name} · ${esc(p.name)} · <b>${fmtMoney(l.value)}/año</b> · máx. ${l.sla} días caído al año</small>
+        <small>Piden: ${reqs}</small>${l.state === 'open' ? `<small class="muted">La oportunidad caduca en ${fmtDays(l.expires - s.day)}</small>` : ''}</div>
+        <div class="col-btns">${action}</div></div>`;
+    })
+    .join('');
+  const deals = B.deals
+    .map((d) => {
+      const Z = B2B_SIZES[d.size];
+      return `<div class="card owned" data-key="deal-${d.id}"><div class="card-icon">${Z.icon}</div><div class="grow">
+        <b>${esc(d.client)}</b><small>${esc(G.findProduct(s, d.pid)?.name ?? d.product)} · ${fmtMoney(d.value)}/año · renueva en ${fmtDays(Math.max(0, d.end - s.day))}</small>
+        <small class="${d.breaches ? 'warn-text' : 'muted'}">Días caído: ${d.down}/${d.sla}${d.breaches ? ' · ⚠️ ya hubo una penalización: a la próxima se van' : ''}</small></div></div>`;
+    })
+    .join('');
+  return `<h3>🏢 Clientes empresa</h3>
+    <p class="muted small">Algunas empresas se interesan por tus productos (sobre todo SaaS y asistentes de IA). Piden funciones concretas y un máximo de días caído al año: si te pasas, hay penalización y, a la segunda, se van. Los comerciales traen más clientes y cierran más ventas.</p>
+    <div class="kpis">${kpi('Clientes', B.deals.length)}${kpi('Ingresos B2B', fmtMoney(b2bDaily(s) * 365) + '/año')}${kpi('Ventas', `${B.won} cerradas`, `${B.lost} perdidas`)}</div>
+    <div class="cards">${leads || '<p class="muted">Ninguna oportunidad ahora mismo. Llegan más a menudo con más comerciales y mejores productos.</p>'}</div>
+    ${deals ? `<h4>Contratos anuales</h4><div class="cards">${deals}</div>` : ''}`;
 }
 
 // ---------------------------------------------------------------- investigación
@@ -946,6 +1084,27 @@ function platformsSection(s) {
 
 // ---------------------------------------------------------------- logros
 
+// Premios Pixel: palmarés, nominaciones del año y cómo vas para la próxima gala.
+function awardsSection(s) {
+  const A = s.awards || { won: [], noms: null, base: null };
+  const year = dateOf(s.day).y;
+  const N = A.noms?.year === year ? A.noms : null;
+  const won = [...A.won].reverse().map((w) => `<li>${AWARDS[w.id].icon} <b>${AWARDS[w.id].name}</b> ${w.year} <small class="muted">(${esc(w.why)})</small></li>`).join('');
+  let now = '';
+  if (N && !N.done) {
+    now = N.list.length
+      ? `<p>Nominaciones ${year}: ${N.list.map((n) => `${AWARDS[n.id].icon} ${AWARDS[n.id].name} (${fmtPct(awardChance(s, n, N.gala))})`).join(' · ')}. Gala el 20 de noviembre.</p>`
+      : `<p class="muted">Este año no hay nominaciones.</p>`;
+  } else if (A.base) {
+    const cands = nominations(s, G.teamPowers(s));
+    now = `<p class="muted">Las nominaciones salen el 1 de noviembre. Ahora mismo optarías a: ${cands.length ? cands.map((n) => `${AWARDS[n.id].icon} ${AWARDS[n.id].name}`).join(', ') : 'nada todavía'}.</p>`;
+  }
+  const how = Object.values(AWARDS).map((a) => `${a.icon} <b>${a.name}</b>: ${a.desc}`).join('<br>');
+  return `<h3>🏆 Premios Pixel <small class="muted">${A.won.length} ${A.won.length === 1 ? 'premio' : 'premios'}</small></h3>
+    ${now}${won ? `<ul class="quests">${won}</ul>` : ''}
+    <details data-key="awards-how"><summary class="muted small">¿Cómo se gana?</summary><p class="small">${how}</p></details>`;
+}
+
 function goalsPanel(s) {
   const quests = QUESTS.map((q) => {
     const done = s.quests[q.id] != null;
@@ -958,6 +1117,7 @@ function goalsPanel(s) {
   const got = Object.keys(s.achievements).length;
   return `<h3>Objetivos</h3><ul class="quests">${quests}</ul>
     <h3>Logros <small class="muted">${got}/${ACHIEVEMENTS.length}</small></h3><div class="achs">${ach}</div>
+    ${awardsSection(s)}
     <h3>Estadísticas</h3><div class="kpis">
       ${kpi('Días', s.day)}${kpi('Ingresos totales', fmtMoney(s.stats.revenue))}${kpi('Récord de usuarios', fmtNum(s.stats.peakUsers))}
       ${kpi('Funciones lanzadas', s.stats.shipped)}${kpi('Contratos', s.stats.contractsDone)}${kpi('Compras', s.stats.acquired)}</div>`;

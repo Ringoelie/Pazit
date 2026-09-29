@@ -10,9 +10,11 @@ import {
   WALL, FLAT, NEAR_RADIUS, isWall, deskRect, itemRect, serverRoom, loungeX, canPlace, snapPos, getRef, deskEffects, findSpot,
 } from './layout.js';
 
-// Reloj de la oficina: un día visual dura 150 s a velocidad normal. Cada tramo
-// acaba en [fracción del ciclo, hora]; 0 son las 6:00 de la mañana.
-const CYCLE = 150;
+// Reloj de la oficina: un día visual dura 90 s a velocidad normal (unas tres
+// semanas de juego). Más corto no daría tiempo a que la gente de las mesas del
+// fondo de las oficinas grandes salga antes de que amanezca. Cada tramo acaba
+// en [fracción del ciclo, hora]; 0 son las 6:00 de la mañana.
+const CYCLE = 90;
 const DAY_PARTS = [[0, 6], [0.04, 8], [0.08, 9], [0.74, 18], [0.78, 19], [0.86, 22], [1, 30]];
 function hourOf(tod) {
   for (let i = 1; i < DAY_PARTS.length; i++) {
@@ -39,6 +41,7 @@ const MAKERS_VIEW = ['founder', 'dev', 'design', 'ai', 'marketer', 'pm'];
 const strHash = (str) => [...String(str)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 const PARTY_TEXT = {
   launch: 'LANZAMIENTO!', funding: 'RONDA CERRADA!', ipo: 'SALIMOS A BOLSA!', move: 'OFICINA NUEVA!', acquire: 'COMPRADA!', achievement: 'LOGRO!',
+  keynote: 'KEYNOTE!', award: 'PREMIO!', newyear: 'FELIZ AÑO!',
 };
 const GLYPH = {
   code: ['</>', PAL.sky], design: ['~', PAL.orange], ai: ['01', PAL.silver], flex: ['*', PAL.yellow],
@@ -122,6 +125,9 @@ export class OfficeView {
     this.relDay = -1;
     this.treeSpot = null;
     this.bdays = new Set();
+    this.season = null;
+    this.pumpkins = [];
+    this.cabinet = null;
     this.treeDay = -1;
     this.celebKey = null;
     this.bindInput();
@@ -506,6 +512,35 @@ export class OfficeView {
     this.bdays = new Set(s.employees.filter((e) => isBirthday(s, e)).map((e) => e.id));
     this.treeSpot = null;
     if (dateOf(s.day).m === 11 || officeFx(s, 'xmasParty')) this.treeSpot = findSpot(layout, s.office.tier, 'xmastree');
+    // Temporada: Halloween, verano o Año Nuevo.
+    const d = dateOf(s.day);
+    this.season = (d.m === 9 && d.d >= 24) || (d.m === 10 && d.d === 1) ? 'halloween'
+      : d.m === 6 || d.m === 7 ? 'summer'
+      : (d.m === 11 && d.d === 31) || (d.m === 0 && d.d === 1) ? 'newyear' : null;
+    this.pumpkins = [];
+    // Vitrina de trofeos: aparece con el primer premio o con tres logros.
+    const cups = s.awards?.won.length || 0;
+    const medals = Math.floor(Object.keys(s.achievements).length / 3);
+    this.cabinet = null;
+    if (cups || medals) {
+      const spot = this.freeSpot(layout, s.office.tier, 'trophies');
+      if (spot) this.cabinet = { ...spot, cups, medals };
+    }
+    if (this.season === 'halloween') {
+      for (let i = 0; i < 3; i++) {
+        const spot = this.freeSpot(layout, s.office.tier, 'pumpkin');
+        if (spot) this.pumpkins.push(spot);
+      }
+    }
+  }
+
+  // Hueco libre para algo temporal sin pisar el árbol ni la vitrina.
+  freeSpot(layout, tier, id) {
+    const extra = [];
+    if (this.treeSpot) extra.push({ id: 'xmastree', uid: -1, ...this.treeSpot });
+    if (this.cabinet) extra.push({ id: 'trophies', uid: -2, x: this.cabinet.x, y: this.cabinet.y });
+    for (const p of this.pumpkins || []) extra.push({ id: 'pumpkin', uid: -3, x: p.x, y: p.y });
+    return findSpot(extra.length ? { ...layout, items: [...layout.items, ...extra] } : layout, tier, id);
   }
 
   treeFor(s) {
@@ -546,6 +581,7 @@ export class OfficeView {
       this.partyUntil = 0;
       this.editSel = null;
       this.relDay = -1;
+      this.keynoteKey = null;
       this.canvas.parentElement?.style.setProperty('--office-ar', `${this.L.W} / ${this.L.H}`);
       this.userZoom = false;
       this.resize();
@@ -642,7 +678,8 @@ export class OfficeView {
         const dx = p.x - st.x;
         const dy = p.y - st.y;
         const dist = Math.hypot(dx, dy);
-        const v = 30 * mult * dt;
+        // En las oficinas grandes se va (y se viene) con más prisa.
+        const v = 40 * Math.max(1, this.L.W / 640) * mult * dt;
         if (dist <= v) {
           st.x = p.x;
           st.y = p.y;
@@ -717,12 +754,35 @@ export class OfficeView {
       this.celebKey = celeb.until;
       this.visit('celebrity');
     }
+    // Año Nuevo: fiesta el 1 de enero.
+    const today = dateOf(s.day);
+    if (today.m === 0 && today.d === 1 && this.nyKey !== today.y && !this.edit) {
+      this.nyKey = today.y;
+      this.party('newyear');
+      this.banner = { text: `FELIZ ${today.y}!`, until: this.t + 5 };
+    }
+    // Gala de premios: fiesta en la oficina con el trofeo nuevo.
+    const aw = officeFx(s, 'award');
+    if (aw && this.awardKey !== aw.until) {
+      this.awardKey = aw.until;
+      this.relDay = -1;
+      this.party('award');
+    }
+    // Presentación: escenario durante el día y, si sale bien, fiesta.
+    const kn = officeFx(s, 'keynote');
+    if (kn && this.keynoteKey !== kn.until + kn.name) {
+      this.keynoteKey = kn.until + kn.name;
+      this.stageSpot = this.freeSpot(layout, s.office.tier, 'stage');
+      if (kn.tier === 'fail') this.banner = { text: 'DEMO FALLIDA...', until: this.t + 4 };
+      else if (kn.tier !== 'meh') this.party('keynote');
+    }
     const L = this.L;
     const g = this.wctx;
     const t = this.t;
     const dragRef = this.drag?.moved ? this.drag.ref : null;
     g.drawImage(this.bg, 0, 0);
     paintWindows(g, L, s, t, this.windows, this.hour);
+    this.drawSeasonSky(g, t);
     this.drawWallDecor(g, s, t);
     this.drawRacks(g, s, t);
     if (this.partyUntil > t || officeFx(s, 'xmasParty') || officeFx(s, 'hackathon')) S.drawGarland(g, L.W, 3, t);
@@ -766,6 +826,14 @@ export class OfficeView {
     for (const v of this.visitors) drawables.push({ y: v.y + 18, draw: () => this.drawVisitor(g, v, t) });
     const tree = this.treeFor(s, layout);
     if (tree) drawables.push({ y: tree.y + 26, draw: () => S.drawXmasTree(g, tree.x, tree.y, t) });
+    if (!this.edit) for (const p of this.pumpkins || []) drawables.push({ y: p.y + 7, draw: () => S.drawPumpkin(g, p.x + 1, p.y + 1, t, this.dark > 0.15) });
+    const cab = !this.edit && this.cabinet;
+    if (cab) drawables.push({ y: cab.y + 26, draw: () => S.drawTrophyCase(g, cab.x, cab.y, cab.cups, cab.medals, t) });
+    const stage = kn && !this.edit && this.stageSpot;
+    if (stage) {
+      const host = s.employees.find((e) => e.role === 'founder');
+      drawables.push({ y: stage.y + 29, draw: () => S.drawStage(g, stage.x, stage.y, t, kn.name, kn.tier === 'fail', host?.looks) });
+    }
     this.monitors = [];
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) {
@@ -882,6 +950,37 @@ export class OfficeView {
     S.px(g, x + 26, 35, (t % 1) < 0.5 ? PAL.red : '#6b2233');
   }
 
+  // Cielo de temporada: fuegos artificiales en Año Nuevo, murciélagos y
+  // telarañas en Halloween.
+  drawSeasonSky(g, t) {
+    if (this.edit) return;
+    const colors = [PAL.yellow, '#ff6b8b', PAL.cyan, PAL.lime, PAL.orange];
+    if (this.season === 'newyear' && this.dark > 0.2) {
+      this.windows.forEach((w, i) => {
+        const k = (t * 0.7 + i * 0.37) % 1;
+        const cx = Math.round(w.x + w.w * (0.3 + ((i * 7) % 5) * 0.1));
+        const cy = Math.round(w.y + w.h * 0.4);
+        g.save();
+        g.beginPath();
+        g.rect(w.x, w.y, w.w, w.h);
+        g.clip();
+        S.drawFirework(g, cx, cy, k, colors[(i + Math.floor(t * 0.7 + i * 0.37)) % colors.length]);
+        g.restore();
+      });
+    }
+    if (this.season === 'halloween') {
+      S.drawCobweb(g, 0, 0, false);
+      S.drawCobweb(g, this.L.W - 12, 0, true);
+      if (this.dark > 0.2) {
+        for (let i = 0; i < 3; i++) {
+          const x = ((t * 18 + i * 97) % (this.L.W + 40)) - 20;
+          const y = 8 + i * 6 + Math.round(Math.sin(t * 3 + i) * 4);
+          S.drawBat(g, Math.round(x), y, Math.floor(t * 8 + i) % 2);
+        }
+      }
+    }
+  }
+
   // Halos de luz de las lámparas y viñeta final.
   // De noche el interior se oscurece salvo que haya luces encendidas (queda
   // gente dentro o es por la tarde). Encima, halos de lámparas y pantallas.
@@ -945,7 +1044,8 @@ export class OfficeView {
     S.drawChair(g, cx + 8, seated ? cy + 4 : cy + 8, T.chair);
     const roleColor = e ? ROLES[e.role].color : PAL.slate;
     const s = this.s;
-    const cheer = seated && (this.partyUntil > t || !!officeFx(s, 'xmasParty')) && !this.edit;
+    const kn = officeFx(s, 'keynote');
+    const cheer = seated && (this.partyUntil > t || !!officeFx(s, 'xmasParty') || (kn && kn.tier !== 'fail' && kn.tier !== 'meh')) && !this.edit;
     const isBday = seated && this.bdays.has(e.id);
     // Quien se queda de noche (o va sin energía) tiene ojeras.
     const night = this.hour % 24 >= 20 || this.hour % 24 < 7;
@@ -954,7 +1054,8 @@ export class OfficeView {
       const bob = cheer || isBday ? (Math.sin(t * 10 + phase * 3) > 0 ? 2 : 0) : busy && Math.sin(t * 6 + phase) > 0.7 ? 1 : 0;
       S.drawSeated(g, cx + 9, cy - 1 + bob, e.looks, roleColor, t + phase, e.mood, e.role, tired);
       if (officeFx(s, 'xmasParty') && !this.edit) S.drawHat(g, cx + 10, cy - 1 + bob, 'santa');
-      else if (isBday) S.drawHat(g, cx + 10, cy - 1 + bob, 'party');
+      else if (isBday || (this.season === 'newyear' && !this.edit)) S.drawHat(g, cx + 10, cy - 1 + bob, 'party');
+      else if (this.season === 'halloween' && !this.edit && e.id % 5 < 3) S.drawHat(g, cx + 10, cy - 1 + bob, ['witch', 'horns', 'catears'][e.id % 3]);
       this.hits.push({ id: e.id, x: cx + 8, y: cy - 2, w: 14, h: 20 });
     }
     S.drawDesk(g, cx + 2, cy + 14, T.desk[0], T.desk[1]);
@@ -962,6 +1063,8 @@ export class OfficeView {
     S.drawMonitor(g, cx + 1, cy + 6, S.shade(roleColor, 0.25), !!seated && !this.blackout, t + phase, i, busy && !this.blackout);
     if (isBday) S.drawCake(g, cx + 21, cy + 9, t);
     else if (seated && officeFx(s, 'hackathon') && i % 2 === 0) S.drawPizzaBox(g, cx + 19, cy + 12);
+    else if (this.season === 'summer' && !s.office.perks.ac && i % 3 === 0) S.drawFan(g, cx + 20, cy + 7, t);
+    else if (this.season === 'summer' && seated && i % 3 === 1) S.drawIceCream(g, cx + 22, cy + 8, t);
     else S.drawDeskProp(g, cx + 22, cy + 11, i % 7, t + phase, busy);
     if (seated && this.blackout) S.drawCandle(g, cx + 6, cy + 9, t + phase);
     if (seated) this.monitors.push({ x: cx + 5, y: cy + 9, candle: this.blackout });

@@ -931,6 +931,78 @@ export function drawSpeech(ctx, x, y, text) {
 
 // ---------------------------------------------------------------- eventos de oficina
 
+// Vitrina de trofeos: copas de los premios y medallas de los logros.
+export function drawTrophyCase(ctx, x, y, cups, medals, t) {
+  R(ctx, x, y, 18, 26, '#5a3a22');
+  R(ctx, x + 1, y + 1, 16, 1, '#8a5a36');
+  R(ctx, x + 2, y + 2, 14, 21, '#1d2b40');
+  R(ctx, x + 2, y + 2, 14, 21, 'rgba(160,210,255,.12)');
+  for (const sy of [9, 16, 23]) R(ctx, x + 2, y + sy, 14, 1, '#8a5a36');
+  // Copas: dos estantes de tres.
+  for (let i = 0; i < Math.min(6, cups); i++) {
+    const cx = x + 3 + (i % 3) * 4;
+    const cy = y + 4 + Math.floor(i / 3) * 7;
+    R(ctx, cx, cy, 3, 2, PAL.yellow);
+    R(ctx, cx + 1, cy + 2, 1, 2, '#d9a441');
+    R(ctx, cx, cy + 4, 3, 1, '#d9a441');
+    px(ctx, cx, cy, '#fff4c2');
+  }
+  // Medallas en el estante de abajo.
+  for (let i = 0; i < Math.min(4, medals); i++) {
+    const mx = x + 3 + i * 3;
+    R(ctx, mx, y + 17, 2, 3, i % 2 ? PAL.red : PAL.sky);
+    R(ctx, mx, y + 20, 2, 2, i % 3 === 2 ? '#cd7f32' : PAL.silver);
+  }
+  // Reflejo del cristal que pasa de vez en cuando.
+  const k = (t * 0.6) % 4;
+  if (k < 1) R(ctx, x + 3 + Math.floor(k * 12), y + 3, 1, 19, 'rgba(255,255,255,.18)');
+  R(ctx, x, y + 24, 18, 2, '#3e2716');
+}
+
+// Escenario de una presentación: tarima, pantalla con el producto (o la
+// pantalla azul si la demo falla), quien presenta en el centro y un foco.
+export function drawStage(ctx, x, y, t, name, failed, looks) {
+  // Foco desde el techo sobre quien presenta.
+  ctx.fillStyle = failed ? 'rgba(120,160,255,.10)' : 'rgba(255,236,190,.16)';
+  ctx.beginPath();
+  ctx.moveTo(x + 33, y - 26);
+  ctx.lineTo(x + 38, y - 26);
+  ctx.lineTo(x + 44, y + 24);
+  ctx.lineTo(x + 27, y + 24);
+  ctx.closePath();
+  ctx.fill();
+  // Pantalla a la izquierda, con patas.
+  R(ctx, x + 5, y + 10, 1, 13, PAL.ink);
+  R(ctx, x + 24, y + 10, 1, 13, PAL.ink);
+  R(ctx, x + 1, y - 2, 28, 18, PAL.ink);
+  R(ctx, x + 2, y - 1, 26, 16, failed ? '#3b5dc9' : '#101428');
+  if (failed) {
+    drawText(ctx, ':(', x + 4, y + 1, PAL.white);
+    drawText(ctx, 'ERROR', x + 4, y + 8, PAL.white);
+  } else {
+    const glow = Math.sin(t * 2) > 0 ? '#1d2b53' : '#18223f';
+    R(ctx, x + 2, y - 1, 26, 5, glow);
+    R(ctx, x + 4, y, 5, 5, PAL.yellow);
+    R(ctx, x + 5, y + 1, 3, 3, PAL.orange);
+    const label = String(name).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    drawText(ctx, label, x + 3, y + 8, PAL.white);
+  }
+  // Tarima.
+  R(ctx, x, y + 22, 44, 2, '#8a5a36');
+  R(ctx, x, y + 24, 44, 5, '#5a3a22');
+  R(ctx, x + 2, y + 25, 40, 1, '#6b4a2c');
+  // Quien presenta, a la derecha de la pantalla: jersey negro, claro.
+  if (looks) {
+    const frame = failed ? 'idle' : Math.floor(t * 2) % 2;
+    drawStanding(ctx, x + 30, y + 3, looks, PAL.ink, frame, t, failed ? 20 : 95, 'founder');
+  }
+  // Flashes de la prensa.
+  if (!failed && t % 0.9 < 0.07) {
+    ctx.fillStyle = 'rgba(255,255,255,.75)';
+    ctx.fillRect(x + ((t * 37) % 40), y + 26, 3, 3);
+  }
+}
+
 export function drawXmasTree(ctx, x, y, t) {
   blit(ctx, sprite('xmastree', 16, 26, (g) => {
     const g1 = '#1f6f4a';
@@ -975,6 +1047,31 @@ export function drawCake(ctx, x, y, t) {
 
 // Gorro de Papá Noel o de cumpleaños sobre una cabeza de 10 px.
 export function drawHat(ctx, x, y, kind) {
+  // Disfraces de Halloween.
+  if (kind === 'witch') {
+    R(ctx, x, y + 1, 10, 1, PAL.ink);
+    R(ctx, x + 2, y - 1, 6, 2, PAL.ink);
+    R(ctx, x + 3, y - 3, 4, 2, PAL.ink);
+    R(ctx, x + 5, y - 5, 2, 2, PAL.ink);
+    R(ctx, x + 2, y, 6, 1, PAL.plum);
+    return;
+  }
+  if (kind === 'horns') {
+    R(ctx, x + 1, y, 2, 2, PAL.red);
+    px(ctx, x + 1, y - 1, PAL.red);
+    R(ctx, x + 7, y, 2, 2, PAL.red);
+    px(ctx, x + 8, y - 1, PAL.red);
+    return;
+  }
+  if (kind === 'catears') {
+    R(ctx, x + 1, y, 3, 2, PAL.ink);
+    px(ctx, x + 1, y - 1, PAL.ink);
+    px(ctx, x + 2, y, '#ff6b8b');
+    R(ctx, x + 6, y, 3, 2, PAL.ink);
+    px(ctx, x + 8, y - 1, PAL.ink);
+    px(ctx, x + 7, y, '#ff6b8b');
+    return;
+  }
   if (kind === 'santa') {
     R(ctx, x + 1, y + 1, 8, 2, WHITE);
     R(ctx, x + 2, y - 2, 6, 3, PAL.red);
@@ -986,6 +1083,81 @@ export function drawHat(ctx, x, y, kind) {
   R(ctx, x + 3, y - 1, 4, 2, PAL.cyan);
   px(ctx, x + 4, y - 2, PAL.yellow);
   px(ctx, x + 5, y - 4, PAL.yellow);
+}
+
+// ---------------------------------------------------------------- temporadas
+
+export function drawPumpkin(ctx, x, y, t, lit) {
+  R(ctx, x + 1, y + 1, 6, 5, '#e07a24');
+  R(ctx, x, y + 2, 8, 3, '#e07a24');
+  R(ctx, x + 1, y + 1, 1, 5, '#b85a14');
+  R(ctx, x + 4, y + 1, 1, 5, '#b85a14');
+  R(ctx, x + 3, y - 1, 2, 2, '#3f6b2a');
+  const eye = lit ? ((t * 3) % 2 < 1.6 ? PAL.yellow : PAL.orange) : '#5a2a08';
+  px(ctx, x + 2, y + 2, eye);
+  px(ctx, x + 5, y + 2, eye);
+  R(ctx, x + 2, y + 4, 4, 1, eye);
+  R(ctx, x, y + 6, 8, 1, 'rgba(14,10,30,.3)');
+}
+
+export function drawCobweb(ctx, x, y, flip) {
+  const c = 'rgba(230,236,245,.55)';
+  const X = (v) => (flip ? x + 11 - v : x + v);
+  for (let i = 0; i < 12; i++) px(ctx, X(i), y, c);
+  for (let i = 0; i < 12; i++) px(ctx, X(0), y + i, c);
+  for (let i = 0; i < 10; i++) px(ctx, X(i), y + i, c);
+  for (const r of [4, 8]) for (let i = 0; i <= r; i++) px(ctx, X(i), y + r - i, c);
+}
+
+export function drawBat(ctx, x, y, frame) {
+  R(ctx, x + 3, y + 1, 2, 2, PAL.ink);
+  if (frame) {
+    R(ctx, x, y, 3, 1, PAL.ink);
+    R(ctx, x + 5, y, 3, 1, PAL.ink);
+  } else {
+    R(ctx, x, y + 2, 3, 1, PAL.ink);
+    R(ctx, x + 5, y + 2, 3, 1, PAL.ink);
+  }
+  px(ctx, x + 3, y + 1, PAL.red);
+}
+
+// Ventilador de mesa con las aspas girando.
+export function drawFan(ctx, x, y, t) {
+  R(ctx, x + 2, y + 6, 1, 3, PAL.slate);
+  R(ctx, x, y + 9, 5, 1, PAL.slate);
+  R(ctx, x, y, 5, 5, '#c9d3dc');
+  const f = Math.floor(t * 12) % 2;
+  if (f) {
+    R(ctx, x + 1, y + 2, 3, 1, PAL.sky);
+    px(ctx, x + 2, y + 1, PAL.sky);
+    px(ctx, x + 2, y + 3, PAL.sky);
+  } else {
+    px(ctx, x + 1, y + 1, PAL.sky);
+    px(ctx, x + 3, y + 3, PAL.sky);
+    px(ctx, x + 3, y + 1, PAL.sky);
+    px(ctx, x + 1, y + 3, PAL.sky);
+  }
+  px(ctx, x + 2, y + 2, PAL.ink);
+}
+
+export function drawIceCream(ctx, x, y, t) {
+  R(ctx, x + 1, y + 3, 2, 3, '#d9a441');
+  px(ctx, x + 1, y + 6, '#d9a441');
+  R(ctx, x, y, 4, 3, '#ff9fb8');
+  R(ctx, x + 1, y - 1, 2, 1, '#ff9fb8');
+  px(ctx, x + 2, y, WHITE);
+  if ((t * 0.7) % 3 < 1) px(ctx, x + 3, y + 3, '#ff9fb8');
+}
+
+// Fuegos artificiales: un anillo de chispas que se abre y se apaga.
+export function drawFirework(ctx, cx, cy, k, c) {
+  const r = Math.round(2 + k * 7);
+  ctx.fillStyle = c;
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    ctx.fillRect(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 1, 1);
+  }
+  if (k < 0.3) ctx.fillRect(cx, cy, 1, 1);
 }
 
 export function drawCandle(ctx, x, y, t) {

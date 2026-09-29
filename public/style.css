@@ -419,3 +419,11 @@ summary { cursor: pointer; color: var(--silver); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- equipos ---------- */
+.teams-box { margin: 10px 0; }
+.teams-box > summary { cursor: pointer; padding: 6px 0; list-style-position: inside; }
+.teams-box .cards { margin-top: 8px; }
+.card.team .grow { display: grid; gap: 6px; }
+.team-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.team-row select { max-width: 100%; }
