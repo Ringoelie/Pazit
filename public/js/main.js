@@ -10,6 +10,8 @@ import { poachFrom, smear } from './rivals.js';
 import { orderUnits, setHwPrice } from './hw.js';
 import { toggleBackups, toggleBounty, buyAudit } from './security.js';
 import { toggleWebpay } from './platforms.js';
+import { scheduleKeynote, cancelKeynote } from './keynote.js';
+import { pitchLead, dropLead } from './b2b.js';
 import { OfficeView } from './office.js';
 import { sfx, setSound } from './audio.js';
 import { setMusic, setMusicMood, unlockMusic } from './music.js';
@@ -457,6 +459,12 @@ const ACTIONS = {
   abandonContract: (d) =>
     confirmModal('Abandonar contrato', 'Perderás 3 puntos de reputación y todo el trabajo hecho.', 'Abandonar', () => result(G.abandonContract(s, +d.id), 'bad'), true),
   assignIdle: (d) => result(G.assignIdle(s, d.target)),
+  setPace: (d) => result(G.setPace(s, +d.pid, d.pace)),
+  keynote: (d) => result(scheduleKeynote(s, +d.pid, d.size), 'coin'),
+  cancelKeynote: (d) => result(cancelKeynote(s, +d.pid)),
+  b2bPitch: (d) => result(pitchLead(s, +d.id), 'good'),
+  b2bDrop: (d) => result(dropLead(s, +d.id)),
+  refactor: (d) => result(G.queueRefactor(s, +d.pid), 'good'),
   teamsToggle: () => {
     U.teamsOpen = U.teamsOpen === false;
     dirty = true;

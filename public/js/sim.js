@@ -3,9 +3,9 @@
 import {
   ROLES, HIRABLE, MAKERS, OFFICES, PERKS, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID,
   CAMPAIGNS, ROUNDS, CLIENTS, JOBS, QUESTS, ACHIEVEMENTS, MAX_FEATURE_LEVEL, LEVEL_COST, LEVEL_APPEAL,
-  PREMIUM_PRICES, STARTUP_SUFFIX, PRODUCT_NAMES, REGIONS, UNIVERSAL_WEIGHT, STYLES, STYLE_MOOD,
+  PREMIUM_PRICES, STARTUP_SUFFIX, PRODUCT_NAMES, REGIONS, UNIVERSAL_WEIGHT, STYLES, STYLE_MOOD, PACES,
 } from './data.js';
-import { rnd, rint, rfloat, pick, chance, gauss, clamp, dateOf, fmtMoney, fmtNum, MONTHS } from './util.js';
+import { rnd, rint, rfloat, pick, chance, gauss, clamp, dateOf, fmtMoney, fmtNum, fmtPct, MONTHS } from './util.js';
 import {
   uid, has, officeOf, findEmp, findProduct, notify, news, money, effectMult, addEffect, levelOf,
   expectedSalary, makeLooks, makePerson, perkStats, isBirthday, digest, flushDigest,
@@ -19,6 +19,8 @@ import { isHW, hwStep } from './hw.js';
 import { securityDay, BOUNTY_COST, BACKUP_COST } from './security.js';
 import { storeCut, adsHit, platformDemand, platformsMonth, cloudMult } from './platforms.js';
 import { relationsWeek, relFx } from './relations.js';
+import { keynoteDay } from './keynote.js';
+import { b2bDay, b2bDaily } from './b2b.js';
 
 export { has, officeOf, findEmp, findProduct, perkStats, expectedSalary, levelOf };
 
@@ -65,6 +67,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     plat: { fee: 0.3, webpay: false, webpayFree: false, adsHit: -1, cloud: 1, commit: -1, prepaid: 0 },
     rel: [],
     leads: {},
+    b2b: { leads: [], deals: [], next: 30, won: 0, lost: 0 },
     digest: { n: {}, last: '' },
     officeFx: [],
     competitors: [],
@@ -286,6 +289,33 @@ export const costTotal = (c) => (c.code || 0) + (c.design || 0) + (c.ai || 0);
 
 export function queuedLevel(p, f) {
   return (p.features[f] || 0) + p.queue.filter((t) => t.f === f).length;
+}
+
+// ---------------------------------------------------------------- deuda técnica
+// Cada función que se lanza deja algo de deuda (más si se va deprisa, con
+// gente junior o en crunch). La deuda frena el desarrollo y multiplica los
+// bugs hasta que alguien refactoriza.
+export const debtLevel = (p) => (p.debt || 0) / (50 + p.invested * 0.5);
+export const debtSpeed = (p) => 1 / (1 + 0.6 * Math.min(2, debtLevel(p)));
+export const debtBugs = (p) => 1 + Math.min(2, debtLevel(p));
+export const paceOf = (p) => PACES[p.pace] || PACES.normal;
+
+export function setPace(s, pid, pace) {
+  const p = findProduct(s, pid);
+  if (!p || !PACES[pace]) return fail();
+  p.pace = pace;
+  return ok(`${PACES[pace].icon} ${p.name}: ritmo ${PACES[pace].name.toLowerCase()}.`);
+}
+
+export function queueRefactor(s, pid) {
+  const p = findProduct(s, pid);
+  if (!p) return fail();
+  if (p.queue.some((t) => t.f === 'refactor')) return fail('Ya hay una refactorización en la cola.');
+  if (debtLevel(p) < 0.05) return fail('Apenas hay deuda técnica que pagar.');
+  if (p.queue.length >= MAX_QUEUE) return fail(`La cola admite ${MAX_QUEUE} tareas.`);
+  const debt = p.debt;
+  p.queue.push({ f: 'refactor', lvl: 1, need: { code: Math.round(debt * 0.8 + 10) }, done: { code: 0, design: 0, ai: 0 }, debt });
+  return ok(`🧹 Refactorización de ${p.name} en la cola.`);
 }
 
 export function quality(p) {
@@ -709,7 +739,7 @@ export function createProduct(s, name, cat) {
   name = (name || '').trim().slice(0, 24) || startupName(s);
   const p = {
     id: uid(s), name, cat, launched: false, launchDay: null, created: s.day,
-    features: {}, queue: [], bugs: 0, invested: 0,
+    features: {}, queue: [], bugs: 0, invested: 0, debt: 0, pace: 'normal',
     users: 0, peak: 0, hype: 0, awareness: 0, ads: false, price: 0, down: 0, overload: 0,
     launchHunt: false, sat: 0.6, share: 0, rev: null,
   };
@@ -1099,7 +1129,9 @@ export function stepDay(s) {
   workAndPeople(s, ps, tp);
   birthdays(s);
   marketing(s, ps);
+  keynoteDay(s);
   products(s, tp);
+  b2bDay(s);
   infra(s, tp);
   securityDay(s, tp);
   costs(s, tp);
@@ -1306,7 +1338,7 @@ function pour(tasks, pool) {
 const taskDone = (task) => TYPES.every((t) => task.done[t] >= (task.need[t] || 0) - 1e-6);
 
 function productWork(s, p, b) {
-  const pmBoost = 1 + Math.min(0.35, b.pm * 0.12);
+  const pmBoost = (1 + Math.min(0.35, b.pm * 0.12)) * paceOf(p).speed * debtSpeed(p);
   const pool = { code: b.code * pmBoost, design: b.design * pmBoost, ai: b.ai * pmBoost, flex: b.flex * pmBoost };
   pour(p.queue, pool);
   // Lo que sobra se dedica a arreglar bugs.
@@ -1317,9 +1349,16 @@ function productWork(s, p, b) {
   while (p.queue.length && taskDone(p.queue[0])) {
     const task = p.queue.shift();
     const total = costTotal(task.need);
+    if (task.f === 'refactor') {
+      const before = debtLevel(p);
+      p.debt = Math.max(0, (p.debt || 0) - task.debt);
+      notify(s, `🧹 ${p.name}: código refactorizado. Deuda técnica del ${fmtPct(before)} al ${fmtPct(debtLevel(p))}.`, 'good');
+      continue;
+    }
     p.features[task.f] = Math.max(p.features[task.f] || 0, task.lvl);
     p.invested += total;
-    p.bugs += total * 0.14 * (1.25 - avgSkill / 100) * (1 - 0.5 * perfect);
+    p.bugs += total * 0.14 * (1.25 - avgSkill / 100) * (1 - 0.5 * perfect) * debtBugs(p) * paceOf(p).bugs;
+    p.debt = (p.debt || 0) + total * paceOf(p).debt * (1.2 - avgSkill / 100) * (1 - 0.4 * perfect) * (s.policies.crunch ? 1.5 : 1);
     s.stats.shipped += 1;
     const F = FEATURES[task.f];
     if (task.f === 'ads' && task.lvl === 1) p.ads = true;
@@ -1409,6 +1448,7 @@ function products(s, tp) {
     money(s, rev.api, 'api');
     dayRev += rev.total;
   }
+  dayRev += b2bDaily(s);
   s.rev30.push(dayRev);
   if (s.rev30.length > 30) s.rev30.shift();
 }
@@ -1622,6 +1662,7 @@ const ACH_CHECK = {
   crunchSurvivor: (s) => s.sec.incidents > 0 || s.stats.breaches > 0,
   bootstrapped: (s) => !s.stats.soldShares && mrr(s) >= 1e5,
   agi: (s) => has(s, 'agi'),
+  showman: (s) => (s.stats.epicKeynotes || 0) > 0,
 };
 
 function achievements(s) {

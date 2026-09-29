@@ -3,7 +3,7 @@
 import {
   ROLES, TRAITS, OFFICES, PERKS, FIXTURES, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID, CAMPAIGNS, ROUNDS,
   QUESTS, ACHIEVEMENTS, POINT_TYPES, PREMIUM_PRICES, MAX_FEATURE_LEVEL, LEVELS, HW_PRICES, UNIVERSAL_WEIGHT,
-  REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD,
+  REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD, PACES, KEYNOTES, B2B_SIZES,
 } from './data.js';
 import { pendingMail, defaultChoice } from './mail.js';
 import { seasonOf, seasonDemand, regionMarket, langReach, regionStaff, complianceIssues, lawActive } from './world.js';
@@ -12,6 +12,8 @@ import { isHW, unitCost, hwPrice, leadTime } from './hw.js';
 import { secLevel, yearlyAttacks, BOUNTY_COST, BACKUP_COST, AUDIT_COST, AUDIT_DAYS } from './security.js';
 import { STORES, CLOUD_NAME, onMobile, storeFee, storeMonthly, cloudMult, adsHit } from './platforms.js';
 import { REL_KINDS, relationsOf, relSummary } from './relations.js';
+import { keynoteOdds, tierOf, KEYNOTE_TIERS } from './keynote.js';
+import { winChance, missingReqs, reqHint, b2bDaily } from './b2b.js';
 import * as G from './sim.js';
 import { perkStats, birthdayOf, isBirthday } from './core.js';
 import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, MONTHS } from './util.js';
@@ -35,13 +37,13 @@ export const TABS = [
 
 const INC_LABEL = {
   contracts: 'Contratos', ads: 'Publicidad', subs: 'Suscripciones', tx: 'Comisiones', api: 'API', hardware: 'Venta de dispositivos',
-  store: 'Tienda de apps', funding: 'Inversión', loans: 'Préstamos', other: 'Otros',
+  store: 'Tienda de apps', b2b: 'Clientes empresa', funding: 'Inversión', loans: 'Préstamos', other: 'Otros',
 };
 const EXP_LABEL = {
   salaries: 'Nóminas', rent: 'Alquiler', perks: 'Mantenimiento', cloud: 'Nube', servers: 'Servidores', marketing: 'Marketing',
   hiring: 'Contratación', office: 'Oficina y mejoras', policies: 'Políticas', interest: 'Intereses', loans: 'Devolución de préstamos',
   acquisitions: 'Adquisiciones', training: 'Formación', manufacturing: 'Fabricación', storage: 'Almacenaje', fines: 'Multas y juicios',
-  taxes: 'Impuestos', regions: 'Sedes internacionales', security: 'Ciberseguridad', other: 'Otros',
+  taxes: 'Impuestos', regions: 'Sedes internacionales', security: 'Ciberseguridad', b2b: 'Penalizaciones a clientes', other: 'Otros',
 };
 
 const kpi = (label, value, sub = '', cls = '') =>
@@ -531,12 +533,13 @@ function productDetail(s, p) {
   const alerts = productAlerts(s, p);
   return `<div class="row gap wrap">${btn('← Productos', 'backProducts', {}, { kind: 'ghost' })}
       <h3 class="grow nomargin">${cat.icon} ${esc(p.name)} ${statusTag(p)}</h3>${btn('✏️', 'renameProduct', { pid: p.id }, { kind: 'ghost', title: 'Renombrar' })}</div>
-    ${launchBtn}${alerts}
+    ${launchBtn}${keynoteSection(s, p)}${alerts}
     <div class="kpis">
       ${hw ? hwKpis(s, p) : kpi('Usuarios', fmtNum(p.users), p.launched ? `pico ${fmtNum(p.peak)}` : 'sin lanzar')}
       ${kpi('Ingresos', fmtMoney(rev.total * 30) + '/mes')}
       ${kpi('Satisfacción', fmtPct(sat), '', sat < 0.45 ? 'warn' : '')}
       ${kpi('Calidad', fmtPct(q), `${Math.round(p.bugs)} bugs`, q < 0.7 ? 'warn' : '')}
+      ${hw ? '' : kpi('Deuda técnica', fmtPct(G.debtLevel(p)), G.debtLevel(p) > 0.05 ? `desarrollo ${Math.round((1 - G.debtSpeed(p)) * 100)}% más lento` : 'código limpio', G.debtLevel(p) > 0.6 ? 'warn' : '')}
       ${kpi('Cuota', fmtPct(sh, 1), `atractivo ${Math.round(G.productAppeal(s, p))}`)}
       ${kpi('Conocimiento', fmtPct(p.awareness), `hype ${Math.round(p.hype)}`)}
       ${kpi('Mercado', fmtNum(G.potential(s, p)), regionMarket(s, p) > 1.001 ? `×${regionMarket(s, p).toFixed(2)} por sedes` : 'solo tu región')}
@@ -546,12 +549,56 @@ function productDetail(s, p) {
       <span class="pt ai">🧠 ${team.ai.toFixed(1)}/día</span>${team.flex ? `<span class="pt flex">👑 ${team.flex.toFixed(1)}/día</span>` : ''}
       <small class="muted">${team.marketers} marketing · ${team.pms} PM</small>${btn('Asignar a quien esté libre', 'assignIdle', { target: 'p:' + p.id }, { kind: 'small' })}</div>
     ${missing.length ? `<div class="banner warn">⚠️ Nadie produce ${missing.map((k) => POINT_TYPES[k].name).join(' ni ')} en este producto. Contrata o asigna a alguien.</div>` : ''}
+    ${paceSection(s, p)}
     <h3>Cola de desarrollo <small class="muted">${p.queue.length}/8</small></h3>
     <div class="queue">${queue || '<p class="muted">Cola vacía. Añade funciones abajo; mientras tanto, el equipo arregla bugs.</p>'}</div>
     <h3>Funciones</h3><div class="feats">${feats}</div>
     ${hw ? hwSection(s, p) : `<h3>Monetización</h3><div class="monet">${monet.join('') || '<p class="muted">Investiga "Modelos de negocio" y desarrolla Publicidad o Plan Premium para ganar dinero.</p>'}
       ${p.launched ? `<small class="muted">Publicidad ${fmtMoney(rev.ads * 30)} · Premium ${fmtMoney(rev.subs * 30)} · Comisiones ${fmtMoney(rev.tx * 30)} · API ${fmtMoney(rev.api * 30)} (al mes)</small>` : ''}</div>`}
     <div class="row end">${btn('Retirar producto', 'retireProduct', { pid: p.id }, { kind: 'danger small' })}</div>`;
+}
+
+// Presentación de lanzamiento: programar, seguir la campaña y el pronóstico.
+function keynoteSection(s, p) {
+  if (p.launched) return '';
+  const k = p.keynote;
+  if (k) {
+    const K = KEYNOTES[k.size];
+    const odds = keynoteOdds(s, p);
+    const T = KEYNOTE_TIERS[tierOf(odds.score)];
+    const ready = G.coreDone(p);
+    return `<div class="banner ${ready ? 'ok' : 'warn'}"><div class="grow">
+      <b>${K.icon} Presentación ${K.name.toLowerCase()} · ${fmtDate(k.day)} (${k.day - s.day > 0 ? 'en ' + fmtDays(k.day - s.day) : 'hoy'})</b>
+      <small>${ready ? '✅ Funciones básicas listas' : '❌ Faltan funciones básicas: si no llegan, la demo fallará en directo'} · hype ${fmtNum(Math.round(p.hype))} (+${K.hype}/día)</small>
+      <small>Pronóstico: ${T.icon} ${T.name} · producto completo ${fmtPct(odds.comp)} · calidad ${fmtPct(odds.quality)} · presenta ${odds.host.e ? esc(odds.host.e.name.split(' ')[0]) : 'nadie'}</small></div>
+      ${btn('Cancelar', 'cancelKeynote', { pid: p.id }, { kind: 'small ghost', title: 'No se devuelve el dinero y cuesta 1 de reputación' })}</div>`;
+  }
+  const cards = Object.entries(KEYNOTES)
+    .map(([id, K]) => `<div class="card" data-key="kn-${id}"><div class="card-icon">${K.icon}</div><div class="grow"><b>${K.name}</b><small>${esc(K.desc)}</small>
+      <small class="muted">${fmtMoney(K.cost)} · en ${K.days} días · +${K.hype} hype al día · alcance ×${K.reach}</small></div>
+      ${btn('Programar', 'keynote', { pid: p.id, size: id }, { kind: 'small primary', disabled: s.money < K.cost })}</div>`)
+    .join('');
+  return `<details class="keynote-box" data-key="keynote"><summary><b>🎤 Presentación de lanzamiento</b> <small class="muted">en vez de lanzar sin más</small></summary>
+    <p class="muted small">La campaña previa sube el hype cada día y, si la presentación sale bien, el primer día llega mucha más gente. Sale mejor cuanto más completo y pulido está el producto y cuanto mejor presenta quien sube al escenario. Si ese día faltan las funciones básicas, la demo fallará en directo.</p>
+    <div class="cards">${cards}</div></details>`;
+}
+
+// Ritmo de desarrollo y deuda técnica.
+function paceSection(s, p) {
+  if (isHW(p)) return '';
+  const lvl = G.debtLevel(p);
+  const queued = p.queue.some((t) => t.f === 'refactor');
+  const chips = Object.entries(PACES)
+    .map(([id, P]) => `<button class="chip ${G.paceOf(p) === P ? 'on' : ''}" data-act="setPace" data-pid="${p.id}" data-pace="${id}" title="${esc(P.desc)}">${P.icon} ${P.name}</button>`)
+    .join('');
+  const effect = lvl > 0.05
+    ? `el desarrollo va un ${Math.round((1 - G.debtSpeed(p)) * 100)}% más lento y salen ×${G.debtBugs(p).toFixed(1)} bugs`
+    : 'el código está limpio';
+  return `<h3>Ritmo de desarrollo</h3>
+    <div class="chips">${chips}</div>
+    <p class="muted small">${esc(G.paceOf(p).desc)}</p>
+    <div class="row between wrap gap"><span>🧱 Deuda técnica <b class="${lvl > 0.6 ? 'warn-text' : ''}">${fmtPct(lvl)}</b>: ${effect}.</span>
+      ${btn(queued ? '🧹 En la cola' : '🧹 Refactorizar', 'refactor', { pid: p.id }, { kind: 'small', disabled: queued || lvl < 0.05 || p.queue.length >= 8, title: 'Añade a la cola una tarea de código que paga la deuda acumulada' })}</div>`;
 }
 
 // Avisos de un producto: leyes, guerra de precios, antimonopolio, temporada.
@@ -637,7 +684,45 @@ function contractsPanel(s) {
   return `<p class="muted">Los contratos son trabajos para clientes: dinero rápido y reputación mientras tus productos crecen. Asigna gente en la pestaña Equipo o con "Asignar libres".</p>
     <div class="kpis">${kpi('Entregados', s.stats.contractsDone)}${kpi('Fallidos', C.failed || 0)}${kpi('Reputación', Math.round(s.reputation), 'más reputación, mejores contratos')}</div>
     <h3>En curso <small class="muted">${C.active.length}/3</small></h3><div class="cards">${active || '<p class="muted">Ningún contrato en marcha.</p>'}</div>
-    <h3>Ofertas</h3><div class="cards">${offers || '<p class="muted">No hay ofertas ahora mismo. Llegarán más en unos días.</p>'}</div>`;
+    <h3>Ofertas</h3><div class="cards">${offers || '<p class="muted">No hay ofertas ahora mismo. Llegarán más en unos días.</p>'}</div>
+    ${b2bSection(s)}`;
+}
+
+// Clientes empresa: oportunidades, negociaciones y contratos anuales.
+function b2bSection(s) {
+  if (!G.has(s, 'sales101')) {
+    return `<h3>🏢 Clientes empresa</h3><p class="muted">🔒 Investiga ${RESEARCH_BY_ID.sales101.name} para conseguir clientes empresa: pagan una cuota anual por usar tus productos.</p>`;
+  }
+  const B = s.b2b || { leads: [], deals: [], won: 0, lost: 0 };
+  const leads = B.leads
+    .map((l) => {
+      const p = G.findProduct(s, l.pid);
+      if (!p) return '';
+      const Z = B2B_SIZES[l.size];
+      const miss = missingReqs(s, l);
+      const reqs = l.reqs.map((f) => `${FEATURES[f].icon} ${FEATURES[f].name} ${reqHint(s, p, f)}`).join(' · ');
+      const action = l.state === 'talks'
+        ? `<small class="muted">Negociando: responden en ${fmtDays(Math.max(0, l.resolve - s.day))}</small>`
+        : `${btn(`Enviar propuesta · ${fmtPct(winChance(s, l))}`, 'b2bPitch', { id: l.id }, { kind: 'small primary', disabled: miss.length > 0, title: miss.length ? 'Primero desarrolla las funciones que piden' : '' })}${btn('Descartar', 'b2bDrop', { id: l.id }, { kind: 'small ghost' })}`;
+      return `<div class="card" data-key="lead-${l.id}"><div class="card-icon">${Z.icon}</div><div class="grow">
+        <b>${esc(l.client)}</b><small>${Z.name} · ${esc(p.name)} · <b>${fmtMoney(l.value)}/año</b> · máx. ${l.sla} días caído al año</small>
+        <small>Piden: ${reqs}</small>${l.state === 'open' ? `<small class="muted">La oportunidad caduca en ${fmtDays(l.expires - s.day)}</small>` : ''}</div>
+        <div class="col-btns">${action}</div></div>`;
+    })
+    .join('');
+  const deals = B.deals
+    .map((d) => {
+      const Z = B2B_SIZES[d.size];
+      return `<div class="card owned" data-key="deal-${d.id}"><div class="card-icon">${Z.icon}</div><div class="grow">
+        <b>${esc(d.client)}</b><small>${esc(G.findProduct(s, d.pid)?.name ?? d.product)} · ${fmtMoney(d.value)}/año · renueva en ${fmtDays(Math.max(0, d.end - s.day))}</small>
+        <small class="${d.breaches ? 'warn-text' : 'muted'}">Días caído: ${d.down}/${d.sla}${d.breaches ? ' · ⚠️ ya hubo una penalización: a la próxima se van' : ''}</small></div></div>`;
+    })
+    .join('');
+  return `<h3>🏢 Clientes empresa</h3>
+    <p class="muted small">Algunas empresas se interesan por tus productos (sobre todo SaaS y asistentes de IA). Piden funciones concretas y un máximo de días caído al año: si te pasas, hay penalización y, a la segunda, se van. Los comerciales traen más clientes y cierran más ventas.</p>
+    <div class="kpis">${kpi('Clientes', B.deals.length)}${kpi('Ingresos B2B', fmtMoney(b2bDaily(s) * 365) + '/año')}${kpi('Ventas', `${B.won} cerradas`, `${B.lost} perdidas`)}</div>
+    <div class="cards">${leads || '<p class="muted">Ninguna oportunidad ahora mismo. Llegan más a menudo con más comerciales y mejores productos.</p>'}</div>
+    ${deals ? `<h4>Contratos anuales</h4><div class="cards">${deals}</div>` : ''}`;
 }
 
 // ---------------------------------------------------------------- investigación

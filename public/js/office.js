@@ -41,6 +41,7 @@ const MAKERS_VIEW = ['founder', 'dev', 'design', 'ai', 'marketer', 'pm'];
 const strHash = (str) => [...String(str)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 const PARTY_TEXT = {
   launch: 'LANZAMIENTO!', funding: 'RONDA CERRADA!', ipo: 'SALIMOS A BOLSA!', move: 'OFICINA NUEVA!', acquire: 'COMPRADA!', achievement: 'LOGRO!',
+  keynote: 'KEYNOTE!', award: 'PREMIO!',
 };
 const GLYPH = {
   code: ['</>', PAL.sky], design: ['~', PAL.orange], ai: ['01', PAL.silver], flex: ['*', PAL.yellow],
@@ -548,6 +549,7 @@ export class OfficeView {
       this.partyUntil = 0;
       this.editSel = null;
       this.relDay = -1;
+      this.keynoteKey = null;
       this.canvas.parentElement?.style.setProperty('--office-ar', `${this.L.W} / ${this.L.H}`);
       this.userZoom = false;
       this.resize();
@@ -720,6 +722,14 @@ export class OfficeView {
       this.celebKey = celeb.until;
       this.visit('celebrity');
     }
+    // Presentación: escenario durante el día y, si sale bien, fiesta.
+    const kn = officeFx(s, 'keynote');
+    if (kn && this.keynoteKey !== kn.until + kn.name) {
+      this.keynoteKey = kn.until + kn.name;
+      this.stageSpot = findSpot(layout, s.office.tier, 'stage');
+      if (kn.tier === 'fail') this.banner = { text: 'DEMO FALLIDA...', until: this.t + 4 };
+      else if (kn.tier !== 'meh') this.party('keynote');
+    }
     const L = this.L;
     const g = this.wctx;
     const t = this.t;
@@ -769,6 +779,11 @@ export class OfficeView {
     for (const v of this.visitors) drawables.push({ y: v.y + 18, draw: () => this.drawVisitor(g, v, t) });
     const tree = this.treeFor(s, layout);
     if (tree) drawables.push({ y: tree.y + 26, draw: () => S.drawXmasTree(g, tree.x, tree.y, t) });
+    const stage = kn && !this.edit && this.stageSpot;
+    if (stage) {
+      const host = s.employees.find((e) => e.role === 'founder');
+      drawables.push({ y: stage.y + 29, draw: () => S.drawStage(g, stage.x, stage.y, t, kn.name, kn.tier === 'fail', host?.looks) });
+    }
     this.monitors = [];
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) {
@@ -948,7 +963,8 @@ export class OfficeView {
     S.drawChair(g, cx + 8, seated ? cy + 4 : cy + 8, T.chair);
     const roleColor = e ? ROLES[e.role].color : PAL.slate;
     const s = this.s;
-    const cheer = seated && (this.partyUntil > t || !!officeFx(s, 'xmasParty')) && !this.edit;
+    const kn = officeFx(s, 'keynote');
+    const cheer = seated && (this.partyUntil > t || !!officeFx(s, 'xmasParty') || (kn && kn.tier !== 'fail' && kn.tier !== 'meh')) && !this.edit;
     const isBday = seated && this.bdays.has(e.id);
     // Quien se queda de noche (o va sin energía) tiene ojeras.
     const night = this.hour % 24 >= 20 || this.hour % 24 < 7;

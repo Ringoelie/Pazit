@@ -2,7 +2,9 @@
 // leyes, rivales y productos físicos.
 // Uso: node tests/depth.test.js
 import assert from 'node:assert/strict';
-import { OFFICES } from '../public/js/data.js';
+import { OFFICES, KEYNOTES } from '../public/js/data.js';
+import { scheduleKeynote } from '../public/js/keynote.js';
+import { pitchLead, winChance, b2bDaily } from '../public/js/b2b.js';
 import * as G from '../public/js/sim.js';
 import { sendMail, answerMail, pendingMail, mailStep, mailDeadline } from '../public/js/mail.js';
 import { seasonDemand, seasonTx, openRegion, regionMarket, complianceIssues, lawActive } from '../public/js/world.js';
@@ -559,4 +561,100 @@ console.log('OK');
   for (let i = 0; i < 7; i++) G.stepDay(s);
   assert.equal(s.leads['p:' + p.id], undefined);
   assert.equal(G.leadMult(s, devs[0]), 1);
+}
+
+// 17. Deuda técnica: el ritmo rápido la acumula, frena y se paga refactorizando.
+{
+  const mk = (pace) => {
+    const s = fresh(20);
+    s.money = 1e8;
+    const p = quickProduct(s, 'blog', { landing: 1, articles: 1 });
+    p.pace = pace;
+    for (let i = 0; i < 4; i++) s.employees.push(Object.assign(makePerson(s, 'dev', { skill: 40, traits: [] }), { assign: 'p:' + p.id }));
+    for (const f of ['comments', 'search', 'notif', 'darkmode']) G.queueFeature(s, p.id, f);
+    for (let d = 0; d < 400 && p.queue.length; d++) G.stepDay(s);
+    return { s, p };
+  };
+  const fast = mk('fast');
+  const careful = mk('careful');
+  assert.ok(G.debtLevel(fast.p) > G.debtLevel(careful.p) * 3, 'ir deprisa deja mucha más deuda');
+  assert.ok(G.debtSpeed(fast.p) < G.debtSpeed(careful.p), 'la deuda frena el desarrollo');
+  const { s, p } = fast;
+  const before = p.debt;
+  assert.equal(G.queueRefactor(s, p.id).ok, true);
+  assert.equal(G.queueRefactor(s, p.id).ok, false, 'una refactorización a la vez');
+  for (let d = 0; d < 200 && p.queue.length; d++) G.stepDay(s);
+  assert.ok(p.debt < before * 0.3, 'refactorizar paga la deuda');
+  assert.ok(!p.features.refactor, 'refactorizar no es una función del producto');
+}
+
+// 18. Presentación de lanzamiento: campaña, lanzamiento en directo y demo fallida.
+{
+  const s = fresh(21);
+  s.money = 1e7;
+  G.createProduct(s, 'Keynote', 'blog');
+  const p = s.products[0];
+  Object.assign(p.features, { landing: 1, articles: 1, comments: 3, search: 2 });
+  p.queue = [];
+  p.invested = 1500;
+  const money0 = s.money;
+  assert.equal(scheduleKeynote(s, p.id, 'hall').ok, true);
+  assert.equal(money0 - s.money, KEYNOTES.hall.cost);
+  assert.equal(scheduleKeynote(s, p.id, 'office').ok, false, 'una sola presentación a la vez');
+  const hype0 = p.hype;
+  G.stepDay(s);
+  assert.ok(p.hype > hype0, 'la campaña previa sube el hype');
+  for (let d = 0; d < KEYNOTES.hall.days; d++) G.stepDay(s);
+  assert.ok(p.launched, 'el producto se lanza en la presentación');
+  assert.equal(p.keynote, null);
+  assert.ok(officeFx(s, 'keynote'), 'hay escenario en la oficina');
+  // Una demo sin las funciones básicas falla en directo.
+  G.createProduct(s, 'Humo', 'blog');
+  const q = s.products[1];
+  q.queue = [];
+  scheduleKeynote(s, q.id, 'office');
+  const rep = s.reputation;
+  for (let d = 0; d <= KEYNOTES.office.days; d++) G.stepDay(s);
+  assert.equal(q.launched, false, 'sin funciones básicas no se lanza');
+  assert.ok(s.reputation < rep, 'y cuesta reputación');
+  assert.equal(officeFx(s, 'keynote').tier, 'fail');
+}
+
+// 19. Clientes empresa: oportunidad, requisitos, venta, cuota, penalización y renovación.
+{
+  const s = fresh(22);
+  s.money = 1e8;
+  s.reputation = 90;
+  for (const r of ['monetization', 'sales101', 'api', 'compliance']) s.research[r] = 0;
+  const p = quickProduct(s, 'saas', { auth: 1, dashboard: 1 });
+  p.users = 5e5;
+  for (let i = 0; i < 6; i++) s.employees.push(makePerson(s, 'sales', { skill: 80, traits: [] }));
+  s.b2b.next = s.day;
+  G.stepDay(s);
+  const lead = s.b2b.leads[0];
+  assert.ok(lead, 'aparece un cliente interesado');
+  assert.ok(lead.reqs.length >= 1);
+  assert.equal(pitchLead(s, lead.id).ok, false, 'sin lo que piden no hay propuesta');
+  for (const f of lead.reqs) p.features[f] = 1;
+  assert.equal(pitchLead(s, lead.id).ok, true);
+  assert.ok(winChance(s, lead) >= 0.7);
+  let deal = null;
+  for (let d = 0; d < 20 && !deal; d++) {
+    G.stepDay(s);
+    deal = s.b2b.deals[0];
+    if (!deal && !s.b2b.leads.length) break;
+  }
+  if (deal) {
+    const m0 = s.money;
+    const inc0 = s.ledger?.inc?.b2b || 0;
+    G.stepDay(s);
+    assert.ok(b2bDaily(s) > 0, 'el cliente paga cada día');
+    // Pasarse de los días caído pactados: penalización; a la segunda, se va.
+    p.down = deal.sla + 2;
+    for (let d = 0; d < deal.sla + 2; d++) G.stepDay(s);
+    assert.equal(deal.breaches, 1);
+    p.down = deal.sla + 2;
+    for (let d = 0; d < deal.sla + 2; d++) G.stepDay(s);
+    assert.ok(!s.b2b.deals.includes(deal), 'a la segunda, el cliente se va');
+  } else assert.ok(s.b2b.lost === 1, 'o se pierde la venta');
 }

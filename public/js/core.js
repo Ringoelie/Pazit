@@ -24,6 +24,10 @@ const DIGEST = {
   couple: ['💕', 'pareja nueva', 'parejas nuevas'],
   mentor: ['🎓', 'mentoría nueva', 'mentorías nuevas'],
   mentorDone: ['🎓', 'junior ya vuela solo/a', 'juniors ya vuelan solos'],
+  b2bLead: ['🏢', 'empresa interesada', 'empresas interesadas'],
+  b2bWon: ['🤝', 'venta cerrada', 'ventas cerradas'],
+  b2bLost: ['🏢', 'venta perdida', 'ventas perdidas'],
+  b2bRenew: ['🔁', 'cliente renueva', 'clientes renuevan'],
 };
 export function digest(s, kind, text) {
   const d = s.digest || (s.digest = { n: {}, last: '' });

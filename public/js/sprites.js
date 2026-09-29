@@ -931,6 +931,50 @@ export function drawSpeech(ctx, x, y, text) {
 
 // ---------------------------------------------------------------- eventos de oficina
 
+// Escenario de una presentación: tarima, pantalla con el producto (o la
+// pantalla azul si la demo falla), quien presenta en el centro y un foco.
+export function drawStage(ctx, x, y, t, name, failed, looks) {
+  // Foco desde el techo.
+  ctx.fillStyle = failed ? 'rgba(120,160,255,.10)' : 'rgba(255,236,190,.16)';
+  ctx.beginPath();
+  ctx.moveTo(x + 20, y - 26);
+  ctx.lineTo(x + 26, y - 26);
+  ctx.lineTo(x + 36, y + 24);
+  ctx.lineTo(x + 10, y + 24);
+  ctx.closePath();
+  ctx.fill();
+  // Pantalla con patas.
+  R(ctx, x + 7, y + 10, 1, 13, PAL.ink);
+  R(ctx, x + 36, y + 10, 1, 13, PAL.ink);
+  R(ctx, x + 3, y - 2, 38, 18, PAL.ink);
+  R(ctx, x + 4, y - 1, 36, 16, failed ? '#3b5dc9' : '#101428');
+  if (failed) {
+    drawText(ctx, ':(', x + 6, y + 1, PAL.white);
+    drawText(ctx, 'ERROR', x + 6, y + 8, PAL.white);
+  } else {
+    const glow = Math.sin(t * 2) > 0 ? '#1d2b53' : '#18223f';
+    R(ctx, x + 4, y - 1, 36, 5, glow);
+    R(ctx, x + 6, y, 5, 5, PAL.yellow);
+    R(ctx, x + 7, y + 1, 3, 3, PAL.orange);
+    const label = String(name).toUpperCase().replace(/[^A-Z0-9 ]/g, '').slice(0, 8);
+    drawText(ctx, label, x + 6, y + 8, PAL.white);
+  }
+  // Tarima.
+  R(ctx, x, y + 22, 44, 2, '#8a5a36');
+  R(ctx, x, y + 24, 44, 5, '#5a3a22');
+  R(ctx, x + 2, y + 25, 40, 1, '#6b4a2c');
+  // Quien presenta: jersey negro, claro.
+  if (looks) {
+    const frame = failed ? 'idle' : Math.floor(t * 2) % 2;
+    drawStanding(ctx, x + 17, y + 3, looks, PAL.ink, frame, t, failed ? 20 : 95, 'founder');
+  }
+  // Flashes de la prensa.
+  if (!failed && t % 0.9 < 0.07) {
+    ctx.fillStyle = 'rgba(255,255,255,.75)';
+    ctx.fillRect(x + ((t * 37) % 40), y + 26, 3, 3);
+  }
+}
+
 export function drawXmasTree(ctx, x, y, t) {
   blit(ctx, sprite('xmastree', 16, 26, (g) => {
     const g1 = '#1f6f4a';
