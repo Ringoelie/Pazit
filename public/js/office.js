@@ -123,7 +123,7 @@ export class OfficeView {
     this.treeSpot = null;
     this.bdays = new Set();
     this.treeDay = -1;
-    this.celebDay = -1;
+    this.celebKey = null;
     this.bindInput();
   }
 
@@ -205,6 +205,7 @@ export class OfficeView {
 
   setEdit(on) {
     this.edit = on;
+    this.relDay = -1;
     this.drag = null;
     this.editSel = null;
     this.hover = null;
@@ -293,6 +294,8 @@ export class OfficeView {
         c.style.cursor = this.editHitTest(w.x, w.y) ? 'move' : 'grab';
         return;
       }
+      // Con el dedo no hay "pasar por encima" (tras un pellizco quedaría un dedo moviéndose).
+      if (e.pointerType === 'touch') return;
       const w = this.toWorld(e.clientX, e.clientY);
       const hit = this.hitTest(w.x, w.y);
       if (hit !== this.hover) {
@@ -537,6 +540,12 @@ export class OfficeView {
       this.people.clear();
       this.pets.clear();
       this.visitors = [];
+      this.floaters = [];
+      this.balloons = [];
+      this.banner = null;
+      this.partyUntil = 0;
+      this.editSel = null;
+      this.relDay = -1;
       this.canvas.parentElement?.style.setProperty('--office-ar', `${this.L.W} / ${this.L.H}`);
       this.userZoom = false;
       this.resize();
@@ -601,8 +610,13 @@ export class OfficeView {
         st = { mode: 'desk', x: home.x, y: home.y, tx: 0, ty: 0, timer: 0, phase: Math.random() * 10 };
         this.people.set(e.id, st);
       }
-      if (e.off > 0 || this.edit) {
+      if (e.off > 0) {
         st.mode = 'desk';
+        continue;
+      }
+      // En el editor todo se queda quieto en su mesa (salvo quien ya se fue a casa).
+      if (this.edit) {
+        if (st.mode !== 'home') st.mode = 'desk';
         continue;
       }
       // Fuera de horario se va a casa (y vuelve por la mañana), cada cual a su hora.
@@ -698,8 +712,9 @@ export class OfficeView {
     this.updateVisitors(dt);
     this.crisis = s.money < 0;
     if (s.day !== this.relDay) this.indexDay(s, layout);
-    if (officeFx(s, 'celebrity') && this.celebDay !== s.day) {
-      this.celebDay = s.day;
+    const celeb = officeFx(s, 'celebrity');
+    if (celeb && this.celebKey !== celeb.until) {
+      this.celebKey = celeb.until;
       this.visit('celebrity');
     }
     const L = this.L;
@@ -873,7 +888,7 @@ export class OfficeView {
   drawLights(g, layout, t) {
     const L = this.L;
     const h = this.hour % 24;
-    const inside = [...this.people.values()].some((st) => st.mode !== 'home');
+    const inside = this.s.employees.some((e) => e.off <= 0 && this.people.has(e.id) && this.people.get(e.id).mode !== 'home');
     const lightsOn = !this.blackout && (inside || (h >= 18 && h < 22));
     const dark = lightsOn ? Math.min(this.dark, 0.14) : this.dark;
     if (dark > 0.01) {
@@ -961,7 +976,7 @@ export class OfficeView {
     } else if (e && e.off > 0) {
       S.drawBubble(g, cx + 12, cy + 2, 'palm');
     }
-    if (e && this.selected === e.id && !this.edit) this.outline(g, cx + 9, cy - 1, 12, 18);
+    if (seated && this.selected === e.id && !this.edit) this.outline(g, cx + 9, cy - 1, 12, 18);
   }
 
   statusIcon(e, t) {
@@ -1008,7 +1023,7 @@ export class OfficeView {
     const id = this.hover ?? this.selected;
     if (id == null) return;
     const e = s.employees.find((x) => x.id === id);
-    if (!e) return;
+    if (!e || this.people.get(e.id)?.mode === 'home') return;
     const pos = this.personPos(e);
     if (!pos) return;
     const name = e.name.split(' ')[0];

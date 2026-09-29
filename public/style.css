@@ -357,7 +357,11 @@ summary { cursor: pointer; color: var(--silver); }
 .toast.good { border-left-color: var(--green); }
 .toast.bad { border-left-color: var(--red); }
 .toast.achievement { border-left-color: var(--yellow); background: #3b2f1b; }
-.toast.mail { border-left-color: var(--cyan); pointer-events: auto; cursor: pointer; }
+.toast.mail { border-left-color: var(--cyan); }
+.toast-go {
+  float: right; margin: -2px 0 0 8px; padding: 2px 10px; min-height: 26px; pointer-events: auto; cursor: pointer;
+  background: var(--cyan); color: var(--ink); border: 2px solid var(--line); font: inherit;
+}
 .toast.out { opacity: 0; transform: translateX(20px); transition: all 0.3s steps(3); }
 @keyframes slide { from { transform: translateX(30px); opacity: 0; } }
 #tip {

@@ -67,6 +67,9 @@ function start(state) {
   draft = false;
   closeAllModals(true);
   if (U.edit) setEdit(false);
+  U.pid = null;
+  U.mktPid = null;
+  U.empModal = null;
   office.tier = -1;
   office.selected = null;
   dirty = true;
@@ -352,7 +355,11 @@ function panelToTop() {
 }
 
 function setSpeed(n) {
-  s.speed = n;
+  // En el editor el juego sigue en pausa: la velocidad elegida se aplica al salir.
+  if (U.edit) {
+    U.prevSpeed = n;
+    toast(n ? 'El tiempo sigue parado mientras editas. Pulsa ✔ Listo para seguir.' : 'Al salir del editor, el juego seguirá en pausa.', 'info');
+  } else s.speed = n;
   dirty = true;
 }
 
@@ -516,7 +523,11 @@ const ACTIONS = {
   moveOffice: (d) => {
     const r = G.moveOffice(s, +d.tier);
     result(r, 'good');
-    if (r.ok) office.party('move');
+    if (!r.ok) return;
+    // El plano es nuevo: se suelta la selección y la fiesta ya usa el tamaño nuevo.
+    selectEdit(null);
+    office.ensureView(s);
+    office.party('move');
   },
   policy: (d) => result(G.togglePolicy(s, d.id)),
   cloud: () => result(G.setCloud(s, !s.infra.cloud)),

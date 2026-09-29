@@ -128,9 +128,9 @@ function officePanel(s) {
     <h3>Estilo de la oficina</h3>
     <p class="muted">Cambia suelo, paredes y muebles en cualquier oficina. Con un estilo puesto, el equipo gana +${STYLE_MOOD} de ánimo.</p>
     <div class="cards">${styleCards(s)}</div>
-    <p class="muted">Al mudarte te llevas las mejoras, pero el coche y las cajas se quedan en el garaje.</p>
     <h3>Políticas de empresa</h3><div class="cards">${policies}</div>
-    <h3>Mudanza</h3><div class="cards">${moves || '<p class="muted">Ya estás en la mejor oficina del sistema solar.</p>'}</div>`;
+    <h3>Mudanza</h3>${moves ? '<p class="muted">Al mudarte te llevas las mejoras, pero el coche y las cajas se quedan en el garaje.</p>' : ''}
+    <div class="cards">${moves || '<p class="muted">Ya estás en la mejor oficina del sistema solar.</p>'}</div>`;
 }
 
 function styleCards(s) {
@@ -197,7 +197,7 @@ function teamPanel(s, U) {
   return `<div class="kpis">
       ${kpi('Plantilla', s.employees.length, `${G.onsite(s)}/${o.desks} escritorios`)}
       ${kpi('Nóminas', fmtMoney(G.payroll(s)) + '/mes')}
-      ${kpi('Ánimo medio', Math.round(s.employees.reduce((a, e) => a + e.mood, 0) / s.employees.length), '', '')}
+      ${kpi('Ánimo medio', Math.round(s.employees.reduce((a, e) => a + e.mood, 0) / Math.max(1, s.employees.length)), '', '')}
       ${kpi('Sin tarea', idle, idle ? 'Asígnales algo' : 'Todo el mundo ocupado', idle ? 'warn' : '')}
     </div>
     <div class="row gap wrap">${btn('➕ Contratar', 'hireOpen', {}, { kind: 'primary big' })}

@@ -82,7 +82,7 @@ export function updatePets(view, s, layout, dt, speed) {
       Object.assign(p, { mode: 'sleep', x: home.x, y: home.y, timer: 3 });
       continue;
     }
-    if (speed === 0) continue;
+    // Como la gente, las mascotas siguen a su ritmo con el juego en pausa.
     const mult = [0, 1, 1.4, 1.8][speed] || 1;
     if (p.mode === 'walk') {
       const dx = p.tx - p.x;
@@ -123,6 +123,9 @@ export function updatePets(view, s, layout, dt, speed) {
   for (const uid of view.pets.keys()) if (!alive.has(uid)) view.pets.delete(uid);
 }
 
+// El bocadillo del loro no se sale por la derecha.
+const speechX = (view, x, text) => Math.max(1, Math.min(x, view.L.W - S.textWidth(text) - 5));
+
 // La mascota ha salido de casa: se dibuja por su cuenta, ordenada por altura.
 export function petDrawables(view, g, t) {
   const out = [];
@@ -152,7 +155,7 @@ function drawPet(view, g, uid, p, t) {
       break;
     case 'parrot':
       S.drawParrot(g, x, y, walking ? (Math.floor(t * 10) % 2 ? 'fly1' : 'fly0') : 'sit', p.left);
-      if (p.sayT > 0) S.drawSpeech(g, x + 6, y - 10, p.say);
+      if (p.sayT > 0) S.drawSpeech(g, speechX(view, x + 6, p.say), y - 10, p.say);
       break;
     case 'robodog':
       S.drawRoboDog(g, x, y, walking ? frame : 'w0', p.left, t);
@@ -175,7 +178,7 @@ export function drawPetHome(view, g, it, t) {
     case 'parrot':
       S.drawPerch(g, it.x, it.y);
       if (home) S.drawParrot(g, it.x + 1, it.y - 5, 'sit', false);
-      if (home && p?.sayT > 0) S.drawSpeech(g, it.x + 7, it.y - 15, p.say);
+      if (home && p?.sayT > 0) S.drawSpeech(g, speechX(view, it.x + 7, p.say), it.y - 15, p.say);
       break;
     case 'robodog':
       S.drawRoboDock(g, it.x, it.y, t);
