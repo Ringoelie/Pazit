@@ -2,19 +2,23 @@
 // leyes, rivales y productos físicos.
 // Uso: node tests/depth.test.js
 import assert from 'node:assert/strict';
-import { OFFICES } from '../public/js/data.js';
+import { OFFICES, KEYNOTES } from '../public/js/data.js';
+import { costTotal } from '../public/js/sim.js';
+import { scheduleKeynote } from '../public/js/keynote.js';
+import { pitchLead, winChance, b2bDaily } from '../public/js/b2b.js';
 import * as G from '../public/js/sim.js';
-import { sendMail, answerMail, pendingMail, mailStep } from '../public/js/mail.js';
+import { sendMail, answerMail, pendingMail, mailStep, mailDeadline } from '../public/js/mail.js';
 import { seasonDemand, seasonTx, openRegion, regionMarket, complianceIssues, lawActive } from '../public/js/world.js';
 import { ensureRivals, warFx, poachFrom, smear, rivalMonth } from '../public/js/rivals.js';
 import { orderUnits, unitCost, leadTime, hwPrice } from '../public/js/hw.js';
 import { makePerson } from '../public/js/core.js';
-import { fmtNum, fmtMoney } from '../public/js/util.js';
+import { fmtNum, fmtMoney, dateOf } from '../public/js/util.js';
 import { secLevel, attackSurface, yearlyAttacks } from '../public/js/security.js';
 import { storeCut, platformDemand, MOBILE_SHARE, platformsMonth } from '../public/js/platforms.js';
 import { relFx, relOf, relationsWeek } from '../public/js/relations.js';
 import { EVENTS, deliverEvent } from '../public/js/events.js';
-import { officeFx, birthdayOf, isBirthday, hasEffect, effectMult, addEffect } from '../public/js/core.js';
+import { officeFx, birthdayOf, isBirthday, hasEffect, effectMult, addEffect, digest, flushDigest } from '../public/js/core.js';
+import { botDay } from './bot.js';
 
 const fresh = (seed = 1) => {
   const s = G.newGame({ seed });
@@ -140,7 +144,7 @@ function quickProduct(s, cat, features) {
   const other = s.competitors.find((c) => c.cat === 'search');
   assert.equal(smear(s, other.id).ok, false, 'sin producto en ese mercado no hay campaña');
   for (let i = 0; i < 24; i++) rivalMonth(s);
-  assert.ok(s.mail.some((m) => ['priceWar', 'rivalLawsuit', 'rivalPoach', 'rivalAd'].includes(m.type)) || s.news.some((n) => /actualización/.test(n.text)), 'los rivales actúan');
+  assert.ok(s.mail.some((m) => ['priceWar', 'rivalLawsuit', 'rivalPoach', 'rivalAd'].includes(m.type)) || s.news.some((n) => /actualización|comparándose/.test(n.text)), 'los rivales actúan');
 }
 
 // 6. Hardware: pedido, llegada, ventas, stock y margen.
@@ -355,8 +359,8 @@ function quickProduct(s, cat, features) {
   const offer = deliverEvent(s, 'buyout', { amount: 1e9 });
   assert.ok(offer.choices, 'la oferta de compra pide una decisión');
   const day = s.day;
-  step(s, 12);
-  assert.equal(s.day, day + 12, 'el tiempo sigue corriendo con eventos pendientes');
+  step(s, 31);
+  assert.equal(s.day, day + 31, 'el tiempo sigue corriendo con eventos pendientes');
   assert.ok(!s.gameOver, 'si no contestas, la empresa no se vende');
   assert.equal(offer.done, 0);
   // Una partida guardada con un evento a medias lo recibe por correo.
@@ -462,4 +466,268 @@ console.log('OK');
   s.employees.push(j1, j2);
   for (let w = 0; w < 40; w++) relationsWeek(s);
   assert.ok(!j1.mentor && !j2.mentor, 'un junior no hace de mentor');
+}
+
+// 15. Ritmo: plazos largos, pausa opcional, resumen semanal y rivales con calma.
+{
+  const s = fresh(18);
+  s.money = 1e8;
+  assert.equal(mailDeadline(3), 14, 'nunca menos de dos semanas');
+  assert.equal(mailDeadline(14), 30, 'nunca más de un mes');
+  const e = makePerson(s, 'dev', { skill: 60 });
+  s.employees.push(e);
+  const m = sendMail(s, 'raise', { eid: e.id });
+  assert.equal(m.expires - s.day, 25);
+  // Una decisión grave pausa el juego solo si la opción está activada.
+  const offer = deliverEvent(s, 'buyout', { amount: 1e9 });
+  assert.equal(offer.critical, true);
+  assert.equal(s.pauseFor, undefined, 'con la opción apagada no se pausa');
+  s.settings.pauseCritical = true;
+  const again = deliverEvent(s, 'buyout', { amount: 1e9 });
+  assert.equal(s.pauseFor, again.id);
+  assert.equal(sendMail(s, 'raise', { eid: e.id }).critical, false, 'un aumento no es grave');
+  // Los avisos menores salen juntos una vez por semana.
+  s.notes.length = 0;
+  digest(s, 'promo', '🎉 A asciende a Mid.');
+  flushDigest(s);
+  assert.equal(s.notes.pop().text, '🎉 A asciende a Mid.', 'uno solo se cuenta tal cual');
+  digest(s, 'promo', 'x');
+  digest(s, 'promo', 'y');
+  digest(s, 'feature', 'z');
+  flushDigest(s);
+  assert.match(s.notes.pop().text, /Esta semana: 🎉 2 ascensos · 📦 1 función terminada/);
+  flushDigest(s);
+  assert.equal(s.notes.length, 0, 'sin novedades no hay resumen');
+  // Un año de juego con el bot: unas 30–60 decisiones, no 75.
+  const b = G.newGame({ seed: 7919 });
+  let decisions = 0;
+  for (let d = 0; d < 365 * 2; d++) {
+    botDay(b);
+    const before = new Set(b.mail.map((x) => x.id));
+    G.stepDay(b);
+    b.notes.length = 0;
+    if (d >= 365) decisions += b.mail.filter((x) => !before.has(x.id) && x.choices).length;
+  }
+  assert.ok(decisions <= 45, `demasiadas decisiones en el segundo año: ${decisions}`);
+}
+
+
+// 16. Equipos: jefe/a, mover gente en grupo y reasignación automática.
+{
+  const s = fresh(19);
+  s.money = 1e8;
+  s.research.monetization = 1;
+  const p = quickProduct(s, 'blog', { landing: 1, articles: 1 });
+  G.createProduct(s, 'Otro', 'blog');
+  const q = s.products[s.products.length - 1];
+  const devs = [];
+  for (let i = 0; i < 10; i++) {
+    const e = makePerson(s, 'dev', { skill: 20 + i * 7, traits: [] });
+    e.assign = 'p:' + p.id;
+    s.employees.push(e);
+    devs.push(e);
+  }
+  const mk = makePerson(s, 'marketer', { traits: [] });
+  mk.assign = 'p:' + p.id;
+  s.employees.push(mk);
+  const team = G.teams(s).find((g) => g.target === 'p:' + p.id);
+  assert.equal(team.roles.dev, 10);
+  // Jefe/a: el resto rinde más y quien dirige, la mitad.
+  const boss = devs[9];
+  const base = G.output(s, devs[0]);
+  const bossBase = G.output(s, boss);
+  assert.equal(G.setLead(s, 'p:' + q.id, boss.id).ok, false, 'tiene que ser del equipo');
+  assert.equal(G.setLead(s, 'p:' + p.id, boss.id).ok, true);
+  assert.ok(G.output(s, devs[0]) > base * 1.05, 'el equipo rinde más con jefe/a');
+  assert.ok(Math.abs(G.output(s, boss) - bossBase * 0.5) < 1e-9, 'quien dirige rinde la mitad');
+  // Mover 4 desarrolladores al otro producto: repartidos por habilidad, sin tocar al jefe.
+  const r = G.moveGroup(s, 'p:' + p.id, 'dev', '4', 'p:' + q.id);
+  assert.equal(r.ok, true);
+  const moved = devs.filter((e) => e.assign === 'p:' + q.id);
+  assert.equal(moved.length, 4);
+  assert.ok(!moved.includes(boss), 'el jefe/a no se mueve');
+  assert.ok(Math.max(...moved.map((e) => e.skill)) - Math.min(...moved.map((e) => e.skill)) > 20, 'se reparten por habilidad');
+  assert.equal(G.moveGroup(s, 'p:' + p.id, 'marketer', 'all', 'brand').ok, true, 'marketing puede ir a la marca');
+  assert.equal(G.moveGroup(s, 'p:' + q.id, 'dev', 'all', 'brand').ok, false, 'desarrollo no puede ir a la marca');
+  // Reasignación automática de quien se queda sin tarea.
+  moved[0].assign = null;
+  G.stepDay(s);
+  assert.ok(moved[0].assign, 'vuelve a tener tarea');
+  s.settings.autoAssign = false;
+  moved[1].assign = null;
+  G.stepDay(s);
+  assert.equal(moved[1].assign, null, 'con la opción apagada se queda sin tarea');
+  // Si el jefe/a cambia de equipo, el equipo se queda sin jefe/a.
+  boss.assign = 'p:' + q.id;
+  for (let i = 0; i < 7; i++) G.stepDay(s);
+  assert.equal(s.leads['p:' + p.id], undefined);
+  assert.equal(G.leadMult(s, devs[0]), 1);
+}
+
+// 17. Deuda técnica: el ritmo rápido la acumula, frena y se paga refactorizando.
+{
+  const mk = (pace) => {
+    const s = fresh(20);
+    s.money = 1e8;
+    const p = quickProduct(s, 'blog', { landing: 1, articles: 1 });
+    p.pace = pace;
+    for (let i = 0; i < 4; i++) s.employees.push(Object.assign(makePerson(s, 'dev', { skill: 40, traits: [] }), { assign: 'p:' + p.id }));
+    for (const f of ['comments', 'search', 'notif', 'darkmode']) G.queueFeature(s, p.id, f);
+    for (let d = 0; d < 400 && p.queue.length; d++) G.stepDay(s);
+    return { s, p };
+  };
+  const fast = mk('fast');
+  const careful = mk('careful');
+  assert.ok(G.debtLevel(fast.p) > G.debtLevel(careful.p) * 3, 'ir deprisa deja mucha más deuda');
+  assert.ok(G.debtSpeed(fast.p) < G.debtSpeed(careful.p), 'la deuda frena el desarrollo');
+  const { s, p } = fast;
+  const before = p.debt;
+  assert.equal(G.queueRefactor(s, p.id).ok, true);
+  assert.equal(G.queueRefactor(s, p.id).ok, false, 'una refactorización a la vez');
+  for (let d = 0; d < 200 && p.queue.length; d++) G.stepDay(s);
+  assert.ok(p.debt < before * 0.3, 'refactorizar paga la deuda');
+  assert.ok(!p.features.refactor, 'refactorizar no es una función del producto');
+}
+
+// 18. Presentación de lanzamiento: campaña, lanzamiento en directo y demo fallida.
+{
+  const s = fresh(21);
+  s.money = 1e7;
+  G.createProduct(s, 'Keynote', 'blog');
+  const p = s.products[0];
+  Object.assign(p.features, { landing: 1, articles: 1, comments: 3, search: 2 });
+  p.queue = [];
+  p.invested = 1500;
+  const money0 = s.money;
+  assert.equal(scheduleKeynote(s, p.id, 'hall').ok, true);
+  assert.equal(money0 - s.money, KEYNOTES.hall.cost);
+  assert.equal(scheduleKeynote(s, p.id, 'office').ok, false, 'una sola presentación a la vez');
+  const hype0 = p.hype;
+  G.stepDay(s);
+  assert.ok(p.hype > hype0, 'la campaña previa sube el hype');
+  for (let d = 0; d < KEYNOTES.hall.days; d++) G.stepDay(s);
+  assert.ok(p.launched, 'el producto se lanza en la presentación');
+  assert.equal(p.keynote, null);
+  assert.ok(officeFx(s, 'keynote'), 'hay escenario en la oficina');
+  // Una demo sin las funciones básicas falla en directo.
+  G.createProduct(s, 'Humo', 'blog');
+  const q = s.products[1];
+  q.queue = [];
+  scheduleKeynote(s, q.id, 'office');
+  const rep = s.reputation;
+  for (let d = 0; d <= KEYNOTES.office.days; d++) G.stepDay(s);
+  assert.equal(q.launched, false, 'sin funciones básicas no se lanza');
+  assert.ok(s.reputation < rep, 'y cuesta reputación');
+  assert.equal(officeFx(s, 'keynote').tier, 'fail');
+}
+
+// 19. Clientes empresa: oportunidad, requisitos, venta, cuota, penalización y renovación.
+{
+  const s = fresh(22);
+  s.money = 1e8;
+  s.reputation = 90;
+  for (const r of ['monetization', 'sales101', 'api', 'compliance']) s.research[r] = 0;
+  const p = quickProduct(s, 'saas', { auth: 1, dashboard: 1 });
+  p.users = 5e5;
+  for (let i = 0; i < 6; i++) s.employees.push(makePerson(s, 'sales', { skill: 80, traits: [] }));
+  s.b2b.next = s.day;
+  G.stepDay(s);
+  const lead = s.b2b.leads[0];
+  assert.ok(lead, 'aparece un cliente interesado');
+  assert.ok(lead.reqs.length >= 1);
+  assert.equal(pitchLead(s, lead.id).ok, false, 'sin lo que piden no hay propuesta');
+  for (const f of lead.reqs) p.features[f] = 1;
+  assert.equal(pitchLead(s, lead.id).ok, true);
+  assert.ok(winChance(s, lead) >= 0.7);
+  let deal = null;
+  for (let d = 0; d < 20 && !deal; d++) {
+    G.stepDay(s);
+    deal = s.b2b.deals[0];
+    if (!deal && !s.b2b.leads.length) break;
+  }
+  if (deal) {
+    const m0 = s.money;
+    const inc0 = s.ledger?.inc?.b2b || 0;
+    G.stepDay(s);
+    assert.ok(b2bDaily(s) > 0, 'el cliente paga cada día');
+    // Pasarse de los días caído pactados: penalización; a la segunda, se va.
+    p.down = deal.sla + 2;
+    for (let d = 0; d < deal.sla + 2; d++) G.stepDay(s);
+    assert.equal(deal.breaches, 1);
+    p.down = deal.sla + 2;
+    for (let d = 0; d < deal.sla + 2; d++) G.stepDay(s);
+    assert.ok(!s.b2b.deals.includes(deal), 'a la segunda, el cliente se va');
+  } else assert.ok(s.b2b.lost === 1, 'o se pierde la venta');
+}
+
+// 20. Premios Pixel: nominaciones el 1 de noviembre, gala el 20 y vitrina.
+{
+  const s = fresh(23);
+  s.money = 1e8;
+  s.reputation = 100;
+  for (let i = 0; i < 12; i++) s.employees.push(Object.assign(makePerson(s, 'dev', { traits: [] }), { mood: 95 }));
+  G.stepDay(s);
+  s.awards.base.research = -10;
+  // Avanza hasta el 1 de noviembre.
+  while (!(dateOf(s.day).m === 10 && dateOf(s.day).d === 1)) {
+    for (const e of s.employees) e.mood = 95;
+    G.stepDay(s);
+  }
+  const N = s.awards.noms;
+  assert.ok(N && N.list.some((n) => n.id === 'work'), 'nominados a mejor lugar para trabajar');
+  assert.ok(N.list.some((n) => n.id === 'innovation'), 'y a innovación');
+  const gala = s.mail.find((m) => m.type === 'awardsGala');
+  assert.ok(gala, 'llega la invitación a la gala');
+  answerMail(s, gala.id, 0);
+  assert.equal(N.gala, 0, 'todo el equipo va a la gala');
+  while (!N.done) G.stepDay(s);
+  assert.equal(s.awards.won.length > 0, s.achievements.award != null || s.awards.won.length === 0);
+  assert.ok(s.awards.won.every((w) => w.year === N.year));
+}
+
+// 21. Correcciones: deuda solo en software, ritmo por día de trabajo,
+// separar de verdad, lanzar a mano cancela la presentación.
+{
+  const s = fresh(24);
+  s.money = 1e8;
+  for (const r of ['hardware', 'compliance']) s.research[r] = 0;
+  G.createProduct(s, 'Fono', 'phone');
+  const hw = s.products[0];
+  for (let i = 0; i < 4; i++) s.employees.push(Object.assign(makePerson(s, 'dev', { traits: [] }), { assign: 'p:' + hw.id }));
+  for (let d = 0; d < 60; d++) G.stepDay(s);
+  assert.equal(hw.debt || 0, 0, 'el hardware no acumula deuda técnica');
+  // Ritmo: cambiar a "con cuidado" justo al final no borra la deuda de ir deprisa.
+  const mk = (switchAt) => {
+    const t = fresh(25);
+    t.money = 1e8;
+    const p = quickProduct(t, 'blog', { landing: 1, articles: 1 });
+    p.pace = 'fast';
+    for (let i = 0; i < 3; i++) t.employees.push(Object.assign(makePerson(t, 'dev', { skill: 40, traits: [] }), { assign: 'p:' + p.id }));
+    G.queueFeature(t, p.id, 'search');
+    for (let d = 0; d < 200 && p.queue.length; d++) {
+      const task = p.queue[0];
+      if (switchAt && costTotal(task.done) / costTotal(task.need) > switchAt) p.pace = 'careful';
+      G.stepDay(t);
+    }
+    return p.debt;
+  };
+  const full = mk(0);
+  assert.ok(mk(0.85) > full * 0.6, 'la deuda sigue el ritmo de cada día de trabajo');
+  // Separar a dos personas las pone en tareas distintas y no se deshace solo.
+  const A = s.employees[1];
+  const B = s.employees[2];
+  G.createProduct(s, 'Otro', 'blog');
+  const m = sendMail(s, 'relRival', { a: A.id, b: B.id });
+  answerMail(s, m.id, 0);
+  assert.notEqual(A.assign, B.assign);
+  G.stepDay(s);
+  assert.notEqual(A.assign, B.assign, 'la reasignación automática no los vuelve a juntar');
+  // Lanzar a mano cancela la presentación programada.
+  G.createProduct(s, 'Prisa', 'blog');
+  const k = s.products[s.products.length - 1];
+  Object.assign(k.features, { landing: 1, articles: 1 });
+  k.queue = [];
+  assert.equal(scheduleKeynote(s, k.id, 'office').ok, true);
+  assert.equal(G.launch(s, k.id).ok, true);
+  assert.equal(k.keynote, null, 'lanzar a mano cancela la presentación');
 }

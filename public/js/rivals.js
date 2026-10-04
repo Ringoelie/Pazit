@@ -42,48 +42,62 @@ export function warFx(s, p) {
 
 export function rivalMonth(s) {
   ensureRivals(s);
+  const active = [];
   for (const c of s.competitors) {
     if (!c.alive) continue;
     c.appeal *= 1 + RIVAL_STYLES[c.style].growth;
     const p = bestProduct(s, c.cat);
     if (!p) continue;
     c.rivalry = Math.min(100, c.rivalry + 2 + (p.share || 0) * 12);
-    if (!chance(s, 0.07 + c.rivalry / 450)) continue;
-    switch (c.style) {
-      case 'agresivo':
-        if (chance(s, 0.6) && !(p.war?.until > s.day)) {
-          p.war = { rival: c.id, until: s.day + 60, response: 'hold' };
-          c.appeal *= 1.06;
-          setLast(s, c, `guerra de precios contra ${p.name}`);
-          sendMail(s, 'priceWar', { cid: c.id, pid: p.id });
-        } else {
-          setLast(s, c, `demanda a ${s.company}`);
-          sendMail(s, 'rivalLawsuit', { cid: c.id, amount: Math.max(20000, Math.round((c.users * 0.01) / 1000) * 1000) });
-        }
-        break;
-      case 'cazatalentos': {
-        const list = s.employees.filter((e) => e.role !== 'founder' && e.skill >= 55 && !e.traits.includes('loyal') && e.off <= 0);
-        if (!list.length) break;
-        const e = pick(s, list);
-        setLast(s, c, `intenta fichar a ${e.name}`);
-        sendMail(s, 'rivalPoach', { cid: c.id, eid: e.id, offer: Math.round((e.salary * 1.35) / 50) * 50 });
-        break;
+    active.push({ c, p });
+  }
+  // Como mucho una jugada de un rival al mes (y no todos los meses), para que
+  // cada una se note y el correo no se llene.
+  if (!active.length || !chance(s, 0.6)) return;
+  for (let i = active.length - 1; i > 0; i--) {
+    const j = rint(s, 0, i);
+    [active[i], active[j]] = [active[j], active[i]];
+  }
+  const hit = active.find(({ c }) => chance(s, 0.07 + c.rivalry / 450));
+  if (hit) rivalMove(s, hit.c, hit.p);
+}
+
+// Una jugada del rival según su estilo.
+function rivalMove(s, c, p) {
+  switch (c.style) {
+    case 'agresivo':
+      if (chance(s, 0.6) && !(p.war?.until > s.day)) {
+        p.war = { rival: c.id, until: s.day + 60, response: 'hold' };
+        c.appeal *= 1.06;
+        setLast(s, c, `guerra de precios contra ${p.name}`);
+        sendMail(s, 'priceWar', { cid: c.id, pid: p.id });
+      } else {
+        setLast(s, c, `demanda a ${s.company}`);
+        sendMail(s, 'rivalLawsuit', { cid: c.id, amount: Math.max(20000, Math.round((c.users * 0.01) / 1000) * 1000) });
       }
-      case 'innovador':
-        c.appeal *= 1.1;
-        setLast(s, c, 'lanza una gran actualización');
-        news(s, `💡 ${c.name} sorprende con una actualización enorme.`);
-        break;
-      case 'copion':
-        c.appeal *= 1.03;
-        p.hype = Math.max(0, p.hype - 40);
-        p.awareness *= 0.97;
-        setLast(s, c, `campaña comparándose con ${p.name}`);
-        sendMail(s, 'rivalAd', { cid: c.id, pid: p.id });
-        break;
-      default:
-        break;
+      break;
+    case 'cazatalentos': {
+      const list = s.employees.filter((e) => e.role !== 'founder' && e.skill >= 55 && !e.traits.includes('loyal') && e.off <= 0);
+      if (!list.length) break;
+      const e = pick(s, list);
+      setLast(s, c, `intenta fichar a ${e.name}`);
+      sendMail(s, 'rivalPoach', { cid: c.id, eid: e.id, offer: Math.round((e.salary * 1.35) / 50) * 50 });
+      break;
     }
+    case 'innovador':
+      c.appeal *= 1.1;
+      setLast(s, c, 'lanza una gran actualización');
+      news(s, `💡 ${c.name} sorprende con una actualización enorme.`);
+      break;
+    case 'copion':
+      c.appeal *= 1.03;
+      p.hype = Math.max(0, p.hype - 40);
+      p.awareness *= 0.97;
+      setLast(s, c, `campaña comparándose con ${p.name}`);
+      news(s, `🦜 ${c.name} lanza anuncios comparándose con ${p.name}. Puedes responder desde Mercado.`, 'bad');
+      break;
+    default:
+      break;
   }
 }
 
@@ -199,6 +213,7 @@ registerMail({
   },
 
   rivalLawsuit: {
+    critical: true,
     make: (s, { cid, amount }) => {
       const c = findComp(s, cid);
       if (!c) return null;

@@ -151,6 +151,7 @@ registerMail({
   },
 
   antitrust: {
+    critical: true,
     make: (s, { pid }) => {
       const p = findProduct(s, pid);
       if (!p) return null;

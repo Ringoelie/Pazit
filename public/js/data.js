@@ -115,6 +115,45 @@ export const POLICIES = {
 };
 
 // Funcionalidades de producto. cost: puntos por tipo en nivel 1; cada nivel cuesta x1.55.
+// Premios Pixel: gala anual del sector (nominaciones el 1 de noviembre,
+// gala el 20).
+export const AWARDS = {
+  startup: { name: 'Startup del año', icon: '🚀', desc: 'Tu valoración se ha multiplicado este año.' },
+  product: { name: 'Mejor producto', icon: '📦', desc: 'Uno de tus productos tiene a sus usuarios encantados.' },
+  work: { name: 'Mejor lugar para trabajar', icon: '💜', desc: 'Tu equipo está muy contento.' },
+  innovation: { name: 'Innovación', icon: '💡', desc: 'Has investigado mucho este año.' },
+};
+
+// Clientes empresa (B2B): cuánto encaja cada tipo de producto, tamaños de
+// cliente y funciones que suelen exigir.
+export const B2B_FIT = { saas: 1, assistant: 0.9, fintech: 0.6, search: 0.5, metaverse: 0.3, shop: 0.3, streaming: 0.25, blog: 0.2, social: 0.15, game: 0.05, dating: 0 };
+export const B2B_SIZES = {
+  small: { name: 'Pyme', icon: '🏪', value: [30000, 90000], sla: 6, reqs: 1 },
+  mid: { name: 'Empresa mediana', icon: '🏢', value: [150000, 450000], sla: 4, reqs: 1 },
+  corp: { name: 'Multinacional', icon: '🏦', value: [1000000, 3000000], sla: 2, reqs: 2 },
+};
+export const B2B_REQS = ['security', 'privacy', 'api', 'i18n', 'analytics', 'collab', 'a11y'];
+export const B2B_CLIENTS = [
+  'Grupo Ibérica', 'Logística Atlas', 'Banco Faro', 'Seguros Horizonte', 'Hoteles Brisa', 'Farmacias Salud+', 'Energía Solaris',
+  'Constructora Pilar', 'Universidad del Sur', 'Ayuntamiento de Villanueva', 'Aerolíneas Cumbre', 'Telecom Onda', 'Moda Nácar',
+  'Clínicas Vital', 'Transportes Rayo', 'Editorial Tinta', 'Automoción Delta', 'Cooperativa del Valle',
+];
+
+// Presentaciones de lanzamiento: cuanto más grandes, más caras, más días de
+// campaña previa y más alcance si salen bien.
+export const KEYNOTES = {
+  office: { name: 'En la oficina', icon: '🎤', cost: 3000, days: 14, hype: 6, reach: 1, desc: 'Sillas plegables, pizza y un proyector.' },
+  hall: { name: 'Auditorio', icon: '🏛️', cost: 25000, days: 21, hype: 16, reach: 2, desc: 'Prensa tecnológica en primera fila y retransmisión en directo.' },
+  arena: { name: 'A lo grande', icon: '🏟️', cost: 150000, days: 30, hype: 45, reach: 4, desc: 'Estadio lleno, retransmisión mundial y fuegos artificiales.' },
+};
+
+// Ritmo de desarrollo de cada producto: ir deprisa acumula deuda técnica.
+export const PACES = {
+  fast: { name: 'Rápido', icon: '🚀', speed: 1.25, debt: 0.5, bugs: 1, desc: '+25% de velocidad, pero se acumula mucha deuda técnica.' },
+  normal: { name: 'Normal', icon: '⚖️', speed: 1, debt: 0.25, bugs: 1, desc: 'Equilibrado.' },
+  careful: { name: 'Con cuidado', icon: '🧹', speed: 0.8, debt: 0.06, bugs: 0.7, desc: '-20% de velocidad, casi sin deuda y con menos bugs.' },
+};
+
 export const FEATURES = {
   landing: { name: 'Landing page', icon: '🏠', cost: { code: 12, design: 18 }, appeal: 4 },
   auth: { name: 'Registro y login', icon: '🔑', cost: { code: 30, design: 8 }, appeal: 5 },
@@ -151,6 +190,8 @@ export const FEATURES = {
   crypto: { name: 'Integración cripto', icon: '🪙', cost: { code: 110 }, appeal: 4, hype: 80, research: 'blockchain' },
   vr: { name: 'Experiencia VR', icon: '🥽', cost: { code: 280, design: 280, ai: 70 }, appeal: 28, load: 1, research: 'vr' },
   // Cumplimiento normativo: sirven en cualquier producto (universal).
+  // Tarea interna: pagar la deuda técnica. No es una función del producto.
+  refactor: { name: 'Refactorizar', icon: '🧹', cost: { code: 1 }, appeal: 0, internal: true },
   privacy: { name: 'Privacidad y RGPD', icon: '🔏', cost: { code: 50, design: 15 }, appeal: 1, universal: true, research: 'compliance' },
   aiaudit: { name: 'Auditoría de IA', icon: '🧾', cost: { code: 40, ai: 60 }, appeal: 1, universal: true, research: 'compliance' },
   // Hardware. unit: cuánto encarece cada nivel el coste de fabricación.
@@ -301,7 +342,7 @@ export const RESEARCH = [
   { id: 'agile', name: 'Metodología ágil', icon: '🧭', cost: 60, tier: 1, desc: 'Contrata Product Managers.' },
   { id: 'websockets', name: 'Tiempo real', icon: '⚡', cost: 150, tier: 2, req: ['frameworks'], desc: 'Chat y colaboración en vivo.' },
   { id: 'payments', name: 'Pagos online', icon: '💳', cost: 150, tier: 2, req: ['monetization'], desc: 'Pagos integrados y la categoría Tienda online.' },
-  { id: 'sales101', name: 'Ventas B2B', icon: '🤝', cost: 135, tier: 2, req: ['monetization'], desc: 'Contrata comerciales y crea SaaS.' },
+  { id: 'sales101', name: 'Ventas B2B', icon: '🤝', cost: 135, tier: 2, req: ['monetization'], desc: 'Contrata comerciales, crea SaaS y consigue clientes empresa.' },
   { id: 'people', name: 'People Ops', icon: '🫶', cost: 135, tier: 2, req: ['agile'], desc: 'RR.HH. y políticas de empresa.' },
   { id: 'growth', name: 'Growth hacking', icon: '🚀', cost: 210, tier: 2, req: ['monetization'], desc: '+25% efectividad del marketing.' },
   { id: 'social', name: 'Efectos de red', icon: '🕸️', cost: 240, tier: 2, req: ['websockets'], desc: 'Red social, App de citas y matching.' },
@@ -438,6 +479,8 @@ export const ACHIEVEMENTS = [
   { id: 'orbital', name: 'Oficina con vistas', icon: '🛰️', desc: 'Múdate a la estación orbital.' },
   { id: 'moon', name: 'Un pequeño paso', icon: '🌕', desc: 'Múdate a la sede en la Luna.' },
   { id: 'friends', name: 'Como una familia', icon: '🤝', desc: 'Diez amistades en la plantilla a la vez.' },
+  { id: 'showman', name: 'Una cosa más...', icon: '🎤', desc: 'Da una presentación de lanzamiento épica.' },
+  { id: 'award', name: 'Y el premio es para...', icon: '🏆', desc: 'Gana un Premio Pixel.' },
   { id: 'happy', name: 'Mejor lugar para trabajar', icon: '😊', desc: 'Ánimo medio superior a 85 con 20+ empleados.' },
   { id: 'crunchSurvivor', name: 'Superviviente', icon: '🧯', desc: 'Sobrevive a un incidente de seguridad.' },
   { id: 'bootstrapped', name: 'Sin inversores', icon: '🥾', desc: 'Llega a $100k/mes sin vender acciones.' },

@@ -18,6 +18,9 @@ export const SIZES = {
   cat: [14, 9], parrot: [10, 20], robodog: [16, 8],
   // No es un mueble: el árbol de Navidad busca sitio libre con estas medidas.
   xmastree: [16, 26],
+  stage: [44, 30],
+  trophies: [18, 26],
+  pumpkin: [10, 9],
 };
 // Objetos de pared: solo se mueven en horizontal, a esta altura.
 export const WALL_ITEMS = { whiteboard: 20, ac: 2 };

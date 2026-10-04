@@ -10,6 +10,8 @@ import { poachFrom, smear } from './rivals.js';
 import { orderUnits, setHwPrice } from './hw.js';
 import { toggleBackups, toggleBounty, buyAudit } from './security.js';
 import { toggleWebpay } from './platforms.js';
+import { scheduleKeynote, cancelKeynote } from './keynote.js';
+import { pitchLead, dropLead } from './b2b.js';
 import { OfficeView } from './office.js';
 import { sfx, setSound } from './audio.js';
 import { setMusic, setMusicMood, unlockMusic } from './music.js';
@@ -20,7 +22,8 @@ import {
 } from './ui.js';
 import { TABS, renderPanel, hireModal, employeeModal, newProductModal, editBar, perkCards } from './panels.js';
 
-const DAYS_PER_SEC = [0, 0.625, 1.6, 4];
+// Días de juego por segundo real: normal 4 s por día, rápida 1,5 s, muy rápida 0,5 s.
+const DAYS_PER_SEC = [0, 0.25, 0.67, 2];
 const UI_KEY = 'pixel-unicorn:ui';
 
 let s = null;
@@ -39,7 +42,7 @@ let loopError = false;
 // Partida de relleno mientras se elige nombre: no se guarda hasta empezar.
 let draft = false;
 
-const U = { tab: 'office', pid: null, mktPid: null, cat: null, hireRole: 'all', newCat: 'blog', newName: '', empModal: null, edit: false, editSel: null, prevSpeed: 1 };
+const U = { tab: 'office', pid: null, mktPid: null, cat: null, hireRole: 'all', newCat: 'blog', newName: '', empModal: null, edit: false, editSel: null, prevSpeed: 1, move: {} };
 try {
   Object.assign(U, JSON.parse(localStorage.getItem(UI_KEY) || '{}'), { pid: null, empModal: null });
 } catch {
@@ -70,6 +73,7 @@ function start(state) {
   U.pid = null;
   U.mktPid = null;
   U.empModal = null;
+  U.move = {};
   office.tier = -1;
   office.selected = null;
   dirty = true;
@@ -198,6 +202,14 @@ function frame(now) {
       ticked = true;
       n++;
       if (s.gameOver) break;
+      // Opción del menú: una decisión grave pausa el juego.
+      if (s.pauseFor != null) {
+        s.pauseFor = null;
+        s.speed = 0;
+        acc = 0;
+        toast('⏸️ Pausa: ha llegado una decisión importante al correo.', 'mail');
+        break;
+      }
     }
     if (n >= 4) acc = 0;
   }
@@ -355,6 +367,7 @@ function panelToTop() {
 }
 
 function setSpeed(n) {
+  s.pauseFor = null;
   // En el editor el juego sigue en pausa: la velocidad elegida se aplica al salir.
   if (U.edit) {
     U.prevSpeed = n;
@@ -447,6 +460,29 @@ const ACTIONS = {
   abandonContract: (d) =>
     confirmModal('Abandonar contrato', 'Perderás 3 puntos de reputación y todo el trabajo hecho.', 'Abandonar', () => result(G.abandonContract(s, +d.id), 'bad'), true),
   assignIdle: (d) => result(G.assignIdle(s, d.target)),
+  setPace: (d) => result(G.setPace(s, +d.pid, d.pace)),
+  keynote: (d) => result(scheduleKeynote(s, +d.pid, d.size), 'coin'),
+  cancelKeynote: (d) => result(cancelKeynote(s, +d.pid)),
+  b2bPitch: (d) => result(pitchLead(s, +d.id), 'good'),
+  b2bDrop: (d) => result(dropLead(s, +d.id)),
+  refactor: (d) => result(G.queueRefactor(s, +d.pid), 'good'),
+  teamsToggle: () => {
+    U.teamsOpen = U.teamsOpen === false;
+    // El refresco no quita "open" de un <details>: se cierra aquí.
+    const box = document.querySelector('.teams-box');
+    if (box) box.open = U.teamsOpen;
+    dirty = true;
+  },
+  autoAssign: () => {
+    s.settings.autoAssign = s.settings.autoAssign === false;
+    toast(s.settings.autoAssign ? '🔁 Quien quede sin tarea volverá a trabajar solo.' : 'Reasignación automática desactivada.', 'info');
+    dirty = true;
+  },
+  moveGroup: (d) => {
+    // Lo que se ve en los desplegables (lo guardado puede apuntar a algo que ya no existe).
+    const val = (f) => document.querySelector(`[data-change=move][data-target="${d.from}"][data-f=${f}]`)?.value;
+    result(G.moveGroup(s, d.from, val('role') || 'all', val('n') || '5', val('to')), 'good');
+  },
 
   newProduct: () => {
     U.newName = G.suggestProductName(s);
@@ -596,6 +632,15 @@ function onChange(e) {
   if (el.dataset.change === 'assign') {
     result(G.assign(s, +el.dataset.emp, el.value || null));
     el.blur();
+  } else if (el.dataset.change === 'lead') {
+    result(G.setLead(s, el.dataset.target, el.value ? +el.value : null), 'good');
+    el.blur();
+  } else if (el.dataset.change === 'move') {
+    // El formulario de mover gente guarda lo elegido para que el refresco no lo borre.
+    const m = (U.move[el.dataset.target] = U.move[el.dataset.target] || {});
+    m[el.dataset.f] = el.value;
+    el.blur();
+    dirty = true;
   }
 }
 
@@ -716,7 +761,7 @@ function helpModal(first = false) {
       <li>🔬 <b>I+D:</b> investiga "Modelos de negocio" para poder ganar dinero con publicidad o suscripciones. Luego desbloquea móviles, IA, streaming...</li>
       <li>📣 <b>Marketing, 🖥️ servidores y 📈 inversores:</b> haz crecer tu producto, mantenlo en pie y busca financiación.</li>
       <li>🏢 <b>Oficina:</b> compra mejoras para que el equipo esté feliz y con energía, y múdate cuando te falte espacio.</li>
-      <li>📬 <b>Correo:</b> empleados, clientes, rivales y reguladores te escriben. Si no contestas a tiempo, se aplica la última opción.</li>
+      <li>📬 <b>Correo:</b> empleados, clientes, rivales, reguladores e imprevistos. Tienes entre 2 semanas y un mes de juego para contestar; si no, se aplica la opción por defecto. En el menú puedes hacer que el juego se pause con las decisiones graves.</li>
       <li>🗺️ <b>Mundo:</b> abre sedes en otros continentes, vigila las leyes y aprovecha temporadas como Black Friday o Navidades.</li>
       </ol>
       <p class="muted">Controles: <b>Espacio</b> pausa · <b>1-3</b> velocidad · <b>E</b> o ✏️ editar la oficina · arrastra la oficina para moverte · rueda o pellizco para zoom · toca a alguien para ver su ficha.</p>
@@ -724,6 +769,8 @@ function helpModal(first = false) {
       <div class="row end gap">${first ? '<button class="btn" data-close>Ya sé jugar</button><button class="btn primary" data-act="tutStart">🧭 Guíame paso a paso</button>' : '<button class="btn primary" data-close>¡A por ello!</button>'}</div>`,
   });
 }
+
+const pauseLabel = () => (s.settings.pauseCritical ? '⏸️ Pausar con decisiones graves: sí' : '⏸️ Pausar con decisiones graves: no');
 
 function settingsModal() {
   const m = openModal({
@@ -734,6 +781,7 @@ function settingsModal() {
       <button class="btn" data-act="tutStart">🧭 Tutorial guiado</button>
       <button class="btn" data-m="sound">${s.settings.sound ? '🔊 Sonido: activado' : '🔇 Sonido: desactivado'}</button>
       <button class="btn" data-m="music">${s.settings.music !== false ? '🎵 Música: activada' : '🎵 Música: desactivada'}</button>
+      <button class="btn" data-m="pause" title="Ofertas de compra, ransomware, filtraciones, demandas y expulsiones de la tienda">${pauseLabel()}</button>
       <button class="btn" data-m="export">📤 Exportar partida</button>
       <button class="btn" data-m="import">📥 Importar partida</button>
       <button class="btn danger" data-m="new">🆕 Nueva partida</button>
@@ -754,6 +802,9 @@ function settingsModal() {
       s.settings.sound = !s.settings.sound;
       setSound(s.settings.sound);
       b.textContent = s.settings.sound ? '🔊 Sonido: activado' : '🔇 Sonido: desactivado';
+    } else if (k === 'pause') {
+      s.settings.pauseCritical = !s.settings.pauseCritical;
+      b.textContent = pauseLabel();
     } else if (k === 'install') {
       installPrompt?.prompt();
       installPrompt = null;

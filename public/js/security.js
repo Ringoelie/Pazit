@@ -5,7 +5,7 @@
 import { FEATURES } from './data.js';
 import { clamp, chance, rint, rfloat, fmtMoney, fmtNum } from './util.js';
 import { has, findProduct, notify, news, money, addEffect, hasEffect } from './core.js';
-import { registerMail, sendMail } from './mail.js';
+import { registerMail, sendMail, mailDeadline } from './mail.js';
 import { lawActive } from './world.js';
 import { teamPowers, totalUsers, mrr, queueFeature, featureAvailable, queuedLevel } from './sim.js';
 import { isHW } from './hw.js';
@@ -76,7 +76,8 @@ function attack(s, list, tp) {
     s.stats.breaches = (s.stats.breaches || 0) + 1;
     sendMail(s, 'secBreach', { pid: p.id, n: Math.round(p.users * rfloat(s, 0.05, 0.3)) });
   } else if (r < 5) {
-    p.down = Math.max(p.down, 3);
+    // Sigue caído hasta que decidas (como mucho, lo que dura el plazo del correo).
+    p.down = Math.max(p.down, mailDeadline(3));
     // Las copias que cuentan son las que había cuando llegó el ataque.
     sendMail(s, 'secRansom', { pid: p.id, amount: Math.round(Math.max(20000, mrr(s, tp) * 0.4) / 1000) * 1000, backups: s.sec.backups });
   } else if (r < 7) {
@@ -140,6 +141,7 @@ export function buyAudit(s) {
 
 registerMail({
   secBreach: {
+    critical: true,
     make: (s, { pid, n }) => {
       const p = findProduct(s, pid);
       if (!p) return null;
@@ -174,6 +176,7 @@ registerMail({
   },
 
   secRansom: {
+    critical: true,
     make: (s, { pid, amount, backups = s.sec.backups }) => {
       const p = findProduct(s, pid);
       if (!p) return null;
@@ -181,7 +184,7 @@ registerMail({
         from: 'Remitente desconocido',
         icon: '💀',
         subject: `Ransomware: han secuestrado ${p.name}`,
-        body: `Han cifrado los servidores de ${p.name} y piden ${fmtMoney(amount)} en cripto para devolverlos. ${backups ? 'Tienes copias de seguridad al día.' : 'No tienes copias de seguridad recientes.'}`,
+        body: `Han cifrado los servidores de ${p.name} y piden ${fmtMoney(amount)} en cripto para devolverlos. Mientras no decidas, sigue caído. ${backups ? 'Tienes copias de seguridad al día.' : 'No tienes copias de seguridad recientes.'}`,
         choices: [
           { label: `Pagar ${fmtMoney(amount)}`, hint: '3 de cada 4 veces cumplen' },
           { label: 'Llamar a la policía', hint: '4 días caído, +2 reputación' },

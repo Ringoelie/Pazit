@@ -3,9 +3,9 @@
 // restan productividad, parejas (que a veces rompen) y mentorías que hacen
 // crecer a los juniors. Las bajas por agotamiento se deciden en sim.js.
 import { clamp, chance, rint, rfloat, fmtPct } from './util.js';
-import { findEmp, notify, levelOf } from './core.js';
+import { findEmp, notify, levelOf, digest } from './core.js';
 import { registerMail, sendMail } from './mail.js';
-import { teamPowers, isAssignable } from './sim.js';
+import { teamPowers, isAssignable, assignTargets, targetLabel } from './sim.js';
 
 const MAX_REL = 400;
 export const REL_KINDS = {
@@ -62,7 +62,7 @@ function interact(s, e, f) {
   r.kind = r.v >= 45 ? 'friend' : r.v <= -40 ? 'rival' : null;
   if (r.kind === before) return;
   r.since = s.day;
-  if (r.kind === 'friend' && s.employees.length <= 25) notify(s, `🤝 ${e.name} y ${f.name} se han hecho amigos.`, 'good');
+  if (r.kind === 'friend') digest(s, 'friend', `🤝 ${e.name} y ${f.name} se han hecho amigos.`);
   if (r.kind === 'rival' && !s.mail.some((m) => m.type === 'relRival' && m.done == null)) sendMail(s, 'relRival', { a: e.id, b: f.id });
 }
 
@@ -76,7 +76,7 @@ function couples(s) {
       taken.add(r.a).add(r.b);
       const A = findEmp(s, r.a);
       const B = findEmp(s, r.b);
-      notify(s, `💕 ${A.name} y ${B.name} están saliendo.`, 'good');
+      digest(s, 'couple', `💕 ${A.name} y ${B.name} están saliendo.`);
     } else if (r.kind === 'couple') {
       const A = findEmp(s, r.a);
       const B = findEmp(s, r.b);
@@ -110,7 +110,7 @@ function mentors(s) {
       if (levelOf(j.skill) >= 1) {
         const m = findEmp(s, j.mentor);
         j.mentor = null;
-        if (m) notify(s, `🎓 ${j.name} ya vuela solo/a gracias a ${m.name}.`, 'good');
+        if (m) digest(s, 'mentorDone', `🎓 ${j.name} ya vuela solo/a gracias a ${m.name}.`);
       }
       continue;
     }
@@ -123,7 +123,7 @@ function mentors(s) {
     const m = pool[rint(s, 0, pool.length - 1)];
     j.mentor = m.id;
     count.set(m.id, (count.get(m.id) || 0) + 1);
-    if (s.employees.length <= 40) notify(s, `🎓 ${m.name} es ahora mentor/a de ${j.name}.`, 'good');
+    digest(s, 'mentor', `🎓 ${m.name} es ahora mentor/a de ${j.name}.`);
   }
 }
 
@@ -188,7 +188,10 @@ export function relSummary(s) {
 
 // Separar: la segunda persona deja su tarea y se va a la mesa libre más lejana.
 function separate(s, A, B) {
-  if (isAssignable(B)) B.assign = null;
+  if (isAssignable(B)) {
+    const alt = assignTargets(s, B).map((x) => x.v).filter((v) => v !== A.assign);
+    B.assign = alt.length ? alt[rint(s, 0, alt.length - 1)] : null;
+  }
   const desks = s.office.layout?.desks || [];
   const from = desks[A.desk];
   if (!from || B.region || B.traits.includes('remote')) return;
@@ -229,13 +232,15 @@ registerMail({
     resolve: (s, { a, b }, i) => {
       const A = findEmp(s, a);
       const B = findEmp(s, b);
-      const r = relOf(s, a, b);
-      if (!A || !B || !r) return 'Ya no trabajan juntos.';
+      if (!A || !B) return 'Esa persona ya no está en la empresa.';
+      // Si el roce ya no está registrado, se vuelve a apuntar para poder resolverlo.
+      let r = relOf(s, a, b);
+      if (!r) s.rel.push((r = { a, b, v: -45, kind: 'rival', since: s.day }));
       if (i === 0) {
         separate(s, A, B);
         r.v = -20;
         r.kind = null;
-        return `${B.name} cambia de sitio. Asígnale una tarea nueva.`;
+        return `${B.name} cambia de mesa${B.assign ? ` y pasa a ${targetLabel(s, B.assign)}` : ''}.`;
       }
       if (i === 1) {
         if (chance(s, Math.min(0.9, 0.45 + teamPowers(s).people * 0.1))) {

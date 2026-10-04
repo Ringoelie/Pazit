@@ -6,6 +6,7 @@ import { pendingMail, answerMail } from '../public/js/mail.js';
 import { openRegion, complianceIssues } from '../public/js/world.js';
 import { isHW, orderUnits, incoming, unitCost } from '../public/js/hw.js';
 import { toggleBackups, toggleBounty } from '../public/js/security.js';
+import { pitchLead, missingReqs } from '../public/js/b2b.js';
 
 export function botDay(s) {
   // Correo (y eventos, que llegan por correo): primera opción, salvo donde la
@@ -13,6 +14,15 @@ export function botDay(s) {
   // oferta de compra, la primera es rechazarla.
   const LAST = ['antitrust', 'secBreach', 'secReport', 'platBan'];
   for (const m of pendingMail(s)) answerMail(s, m.id, LAST.includes(m.type) ? m.choices.length - 1 : 0);
+  // Clientes empresa: desarrollar lo que piden y enviar la propuesta.
+  for (const l of s.b2b?.leads || []) {
+    if (l.state !== 'open') continue;
+    const miss = missingReqs(s, l);
+    if (!miss.length) pitchLead(s, l.id);
+    else for (const f of miss) if (!G.findProduct(s, l.pid)?.queue.some((t) => t.f === f)) G.queueFeature(s, l.pid, f);
+  }
+  // Deuda técnica: refactorizar cuando frena mucho el desarrollo.
+  for (const p of s.products) if (G.debtLevel(p) > 0.8) G.queueRefactor(s, p.id);
   // Seguridad: copias en cuanto hay usuarios y bug bounty cuando se puede.
   if (G.totalUsers(s) > 50000 && !s.sec.backups) toggleBackups(s);
   if (G.has(s, 'infosec') && G.totalUsers(s) > 500000 && !s.sec.bounty) toggleBounty(s);

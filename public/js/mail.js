@@ -14,6 +14,10 @@ export function registerMail(types) {
 
 const MAX_MAIL = 50;
 
+// Plazo para contestar: entre 2 semanas y un mes de juego (a velocidad normal,
+// de 1 a 2 minutos). Cada tipo de correo pide más o menos prisa con `days`.
+export const mailDeadline = (days = 14) => Math.min(30, Math.max(14, Math.round(days * 2.5)));
+
 export function sendMail(s, type, ctx = {}) {
   const def = MAIL_TYPES[type];
   const m = def?.make(s, ctx);
@@ -29,7 +33,9 @@ export function sendMail(s, type, ctx = {}) {
     body: m.body,
     choices: m.choices || null,
     def: m.choices && m.def != null ? m.def : null,
-    expires: m.choices ? s.day + (m.days || 14) : null,
+    expires: m.choices ? s.day + mailDeadline(m.days) : null,
+    // Decisiones graves: con la opción del menú, el juego se pausa al llegar.
+    critical: !!m.choices && (typeof def.critical === 'function' ? !!def.critical(s, ctx) : !!def.critical),
     read: false,
     done: null,
     outcome: '',
@@ -41,6 +47,7 @@ export function sendMail(s, type, ctx = {}) {
     s.mail = s.mail.filter((x) => x !== (drop || s.mail[s.mail.length - 1]));
   }
   notify(s, `📬 ${m.subject}`, 'mail');
+  if (mail.critical && s.settings.pauseCritical && s.speed > 0) s.pauseFor = mail.id;
   return mail;
 }
 
@@ -74,7 +81,7 @@ export function mailStep(s) {
     }
   }
   if (s.day < s.nextMailDay) return;
-  s.nextMailDay = s.day + rint(s, 9, 18);
+  s.nextMailDay = s.day + rint(s, 20, 35);
   const pool = [];
   for (const [type, def] of Object.entries(MAIL_TYPES)) {
     if (!def.ambient) continue;
@@ -149,7 +156,7 @@ registerMail({
   },
 
   remote: {
-    weight: 1.5,
+    weight: 0.8,
     ambient: (s) => {
       if (!has(s, 'remote')) return null;
       const list = s.employees.filter((e) => e.role !== 'founder' && !isRemote(e) && !e.region && !pendingFor(s, 'remote', 'eid', e.id));
