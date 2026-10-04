@@ -1,7 +1,7 @@
 // Service worker: guarda el juego en el dispositivo para jugar sin conexión.
 // Primero intenta la red (así las actualizaciones llegan al momento) y, si no
 // hay conexión, sirve la copia guardada. Las fuentes de Google van a caché.
-const VERSION = 'pixel-unicorn-v13';
+const VERSION = 'pixel-unicorn-v14';
 const FILES = [
   './',
   'index.html',
@@ -31,6 +31,7 @@ const FILES = [
   'js/relations.js',
   'js/rivals.js',
   'js/scenery.js',
+  'js/search.js',
   'js/security.js',
   'js/sim.js',
   'js/sprites.js',

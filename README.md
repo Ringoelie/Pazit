@@ -7,6 +7,7 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 ## Qué incluye
 
 - **Oficina en pixel art animada**: tu equipo trabaja, se toma cafés, juega al arcade y se va de vacaciones. Cada perfil tiene su estilo (cascos para quien programa, boina para diseño, bata en I+D, traje para abogados...). Nueve oficinas con su propio suelo, paredes y vistas, desde el garaje de hormigón hasta una isla privada con vistas al mar y una sede en la Luna, con luz que entra por las ventanas, sombras, zoom y arrastre.
+- **Todo a mano**: las pestañas van en seis grupos (🏠 Inicio, 📬 Correo, 🏢 Empresa, 📦 Negocio, 💰 Dinero y 🌍 Mundo) y cada grupo recuerda la última pestaña que abriste. **Inicio** reúne lo que necesita tu atención (correo por decidir, gente sin tarea, contratos con retraso, servidores saturados, previsiones de bolsa, productos listos para lanzar...) con un botón que te lleva directo, accesos rápidos y un mapa de dónde está cada cosa. El **buscador** (🔍 o tecla **/**) encuentra pestañas, secciones, muebles, tecnologías, productos, personas, políticas y rivales. Las pestañas largas tienen una fila «Ir a» para saltar de sección; el correo pone primero lo que hay que decidir y pliega lo ya resuelto, e I+D se puede filtrar.
 - **Editor de oficina** (✏️ o tecla **E**): arrastra mesas y muebles donde quieras. La decoración cerca de una mesa (plantas, palmeras, lámparas de lava, pufs, alfombras, acuario, fuente zen, chimenea, estatua) sube el ánimo de quien se sienta ahí; el arcade, el futbolín, el ping-pong, la jukebox o el gimnasio pegados a las mesas restan productividad por el ruido. En la pared caben pósteres, un letrero de neón, un mural y, si cotizas, una pantalla con tu acción en directo. La tienda va por secciones (decoración, descanso, ocio, trabajo y mascotas). En el garaje puedes incluso vender el coche de tus padres.
 - **Día y noche**: la oficina amanece y anochece, se encienden las lámparas y los monitores, y la gente se va a casa por la tarde. En crunch (o en un hackathon) se quedan de noche con ojeras.
 - **Equipo**: 11 perfiles para contratar (desarrollo, diseño, IA, DevOps, PM, marketing, ventas, I+D, RR.HH., abogados y seguridad), 12 rasgos de personalidad, niveles, ánimo, energía, sueldos, formación, renuncias y bajas por agotamiento.
@@ -116,6 +117,7 @@ public/
     pets.js     mascotas: perro, gato, loro y perro robot
     ui.js       parcheo del DOM, modales, avisos y avatares
     panels.js   contenido de cada pestaña
+    search.js   buscador de pestañas, secciones, muebles, personas...
     audio.js    efectos chiptune con WebAudio
     music.js    música chiptune generada al momento
     tutorial.js tutorial guiado con anillo y bocadillo

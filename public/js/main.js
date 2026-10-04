@@ -21,7 +21,8 @@ import { PET_NAMES } from './pets.js';
 import {
   patch, openModal, closeModal, closeAllModals, topModal, modalOpen, refreshModals, confirmModal, toast, avatar, pixIcon, btn,
 } from './ui.js';
-import { TABS, renderPanel, hireModal, employeeModal, newProductModal, editBar, perkShop } from './panels.js';
+import { TABS, GROUPS, TAB_BY_ID, groupOf, homeAlerts, renderPanel, hireModal, employeeModal, newProductModal, editBar, perkShop } from './panels.js';
+import { searchItems, searchFilter } from './search.js';
 
 // Días de juego por segundo real: normal 4 s por día, rápida 1,5 s, muy rápida 0,5 s.
 const DAYS_PER_SEC = [0, 0.25, 0.67, 2];
@@ -43,15 +44,17 @@ let loopError = false;
 // Partida de relleno mientras se elige nombre: no se guarda hasta empezar.
 let draft = false;
 
-const U = { tab: 'office', pid: null, mktPid: null, cat: null, hireRole: 'all', newCat: 'blog', newName: '', empModal: null, edit: false, editSel: null, prevSpeed: 1, move: {} };
+const U = { tab: 'home', lastTab: {}, q: '', pid: null, mktPid: null, cat: null, hireRole: 'all', newCat: 'blog', newName: '', empModal: null, edit: false, editSel: null, prevSpeed: 1, move: {} };
 try {
   Object.assign(U, JSON.parse(localStorage.getItem(UI_KEY) || '{}'), { pid: null, empModal: null });
 } catch {
   // Preferencias no disponibles.
 }
+if (!TAB_BY_ID[U.tab]) U.tab = 'home';
+if (!U.lastTab || typeof U.lastTab !== 'object') U.lastTab = {};
 const saveUI = () => {
   try {
-    localStorage.setItem(UI_KEY, JSON.stringify({ tab: U.tab }));
+    localStorage.setItem(UI_KEY, JSON.stringify({ tab: U.tab, lastTab: U.lastTab }));
   } catch {
     // Sin almacenamiento: da igual.
   }
@@ -251,16 +254,42 @@ function flushNotes() {
 
 // ---------------------------------------------------------------- render
 
+// Arriba, los grupos; debajo, las pestañas del grupo abierto.
 function buildTabs() {
-  $('#tabs').innerHTML = TABS.map(
-    (t) => `<button class="tab" data-act="tab" data-tab="${t.id}" role="tab"><span class="ti">${t.icon}</span><span class="tn">${t.name}</span><i class="badge"></i></button>`,
+  $('#tabs').innerHTML = GROUPS.map(
+    (g) => `<button class="tab group" data-act="group" data-group="${g.id}" role="tab"><span class="ti">${g.icon}</span><span class="tn">${g.name}</span><i class="badge"></i></button>`,
   ).join('');
+}
+
+function subtabsHtml(bd) {
+  const g = groupOf(U.tab);
+  if (g.tabs.length < 2) return '';
+  return g.tabs
+    .map((id) => {
+      const t = TAB_BY_ID[id];
+      return `<button class="subtab ${id === U.tab ? 'on' : ''}" data-act="tab" data-tab="${id}" role="tab" aria-selected="${id === U.tab}"><span>${t.icon}</span> ${t.name}${bd[id] ? `<i class="badge">${bd[id]}</i>` : ''}</button>`;
+    })
+    .join('');
+}
+
+// La insignia de un grupo suma las de sus pestañas ("!" si alguna avisa).
+function groupBadge(g, bd) {
+  let n = 0;
+  let flag = false;
+  for (const t of g.tabs) {
+    const v = bd[t];
+    if (typeof v === 'number') n += v;
+    else if (v) flag = true;
+  }
+  return n || (flag ? '!' : '');
 }
 
 function badges() {
   const idle = s.employees.filter((e) => G.isAssignable(e) && !e.assign && e.off <= 0).length;
   const res = RESEARCH.filter((r) => G.researchState(s, r) === 'available' && s.rp >= r.cost).length;
+  const urgent = homeAlerts(s).filter((a) => a.kind === 'bad').length;
   return {
+    home: urgent ? '!' : '',
     team: idle || '',
     contracts: s.contracts.offers.length && s.contracts.active.length < 3 ? s.contracts.offers.length : '',
     research: res || '',
@@ -289,11 +318,16 @@ function render() {
   const q = G.currentQuest(s);
   $('#quest').innerHTML = q ? `🎯 <b>Objetivo:</b> ${esc(q.text)}${q.reward ? ` <small>(+${fmtMoney(q.reward)})</small>` : ''}` : '🦄 ¡Has cumplido todos los objetivos! Sigue creciendo.';
   const bd = badges();
-  for (const t of document.querySelectorAll('.tab')) {
-    t.classList.toggle('on', t.dataset.tab === U.tab);
-    t.setAttribute('aria-selected', t.dataset.tab === U.tab);
-    t.querySelector('.badge').textContent = bd[t.dataset.tab] ?? '';
+  const cur = groupOf(U.tab).id;
+  for (const t of document.querySelectorAll('.tab.group')) {
+    const g = GROUPS.find((x) => x.id === t.dataset.group);
+    t.classList.toggle('on', g.id === cur);
+    t.setAttribute('aria-selected', g.id === cur);
+    t.querySelector('.badge').textContent = groupBadge(g, bd);
   }
+  const sub = $('#subtabs');
+  patch(sub, subtabsHtml(bd));
+  sub.hidden = !sub.firstElementChild;
   if (s.news[0] && s.news[0].day !== lastNewsDay) {
     lastNewsDay = s.news[0].day;
     tickerIdx = 0;
@@ -302,6 +336,7 @@ function render() {
   const se = seasonOf(s);
   $('#season').innerHTML = se ? `<span title="${esc(se.desc)}">${se.icon} ${esc(se.name)}</span>` : '';
   patch($('#panel'), renderPanel(s, U));
+  if (U.scrollTo) scrollToTarget();
   if (U.tab === 'mail') markAllRead(s);
   if (U.edit) patch($('#editBar'), editBar(s, U));
   refreshModals();
@@ -367,6 +402,93 @@ function panelToTop() {
   if (window.scrollY > y) window.scrollTo({ top: y });
 }
 
+// Lleva a una sección o tarjeta del panel y la resalta un momento.
+function scrollToTarget() {
+  const { sec, key } = U.scrollTo;
+  U.scrollTo = null;
+  const panel = $('#panel');
+  const el = key ? panel.querySelector(`[data-key="${CSS.escape(key)}"]`) : panel.querySelector(`h3[data-sec="${CSS.escape(sec)}"]`);
+  if (!el) return;
+  el.scrollIntoView({ block: 'start' });
+  // En móvil las pestañas se quedan pegadas arriba: que no tapen lo buscado.
+  const navs = $('.navs');
+  if (getComputedStyle(navs).position === 'sticky') {
+    const below = navs.getBoundingClientRect().bottom + 8;
+    const top = el.getBoundingClientRect().top;
+    if (top < below) window.scrollBy(0, top - below);
+  }
+  const r = el.getBoundingClientRect();
+  const ring = document.createElement('div');
+  ring.className = 'flash-ring';
+  Object.assign(ring.style, { left: `${r.left - 4}px`, top: `${r.top - 4}px`, width: `${r.width + 8}px`, height: `${Math.min(r.height, 220) + 8}px` });
+  document.body.appendChild(ring);
+  setTimeout(() => ring.remove(), 1400);
+}
+
+function openTab(tab) {
+  if (!TAB_BY_ID[tab]) return;
+  for (const r of document.querySelectorAll('.flash-ring')) r.remove();
+  U.tab = tab;
+  U.lastTab[groupOf(tab).id] = tab;
+  if (tab !== 'products') U.pid = null;
+  saveUI();
+  panelToTop();
+}
+
+// Ir a cualquier sitio: pestaña, sección, tarjeta, producto o persona.
+function goTo(d) {
+  if (d.emp) return openEmployee(+d.emp);
+  if (d.run) return ACTIONS[d.run]?.({});
+  if (d.pid) {
+    openTab('products');
+    U.pid = +d.pid;
+    return;
+  }
+  openTab(d.tab);
+  if (d.tf) U.teamFilter = d.tf;
+  if (d.rf) U.resFilter = d.rf;
+  if (d.cat) U.shopCat = d.cat;
+  if (d.mcat) U.cat = d.mcat;
+  if (d.sec || d.key) U.scrollTo = { sec: d.sec, key: d.key };
+}
+
+let searchModal = null;
+function openSearch() {
+  if (searchModal && topModal() === searchModal) return;
+  U.q = '';
+  const index = searchItems(s);
+  searchModal = openModal({
+    title: '🔍 Buscar',
+    cls: 'search-modal',
+    render: () => {
+      const hits = searchFilter(index, U.q);
+      U.hits = hits;
+      const rows = hits
+        .map((h, i) => `<button class="search-hit" data-act="searchGo" data-i="${i}"><span class="todo-icon">${h.icon}</span><span class="grow"><b>${esc(h.label)}</b><small>${esc(h.sub)}</small></span><span class="todo-go">›</span></button>`)
+        .join('');
+      const chip = (t) => `<button class="chip" data-act="searchTab" data-tab="${t}">${TAB_BY_ID[t].icon} ${TAB_BY_ID[t].name}</button>`;
+      const singles = GROUPS.filter((g) => g.tabs.length === 1);
+      const map = [`<div class="map-card"><b>⭐ Lo primero</b><div class="map-tabs">${singles.map((g) => chip(g.tabs[0])).join('')}</div></div>`]
+        .concat(GROUPS.filter((g) => g.tabs.length > 1).map((g) => `<div class="map-card"><b>${g.icon} ${g.name}</b><div class="map-tabs">${g.tabs.map(chip).join('')}</div></div>`))
+        .join('');
+      return `<input id="q" type="search" placeholder="Busca una pestaña, un mueble, una persona, una tecnología..." value="${esc(U.q)}" autocomplete="off" enterkeyhint="go">
+        <div class="search-hits">${U.q.trim() ? rows || '<p class="muted">No hay nada con ese nombre.</p>' : `<div class="map">${map}</div>`}</div>`;
+    },
+    onClose: () => {
+      searchModal = null;
+    },
+  });
+}
+
+function searchPick(i) {
+  const h = U.hits?.[i];
+  if (!h) return;
+  if (searchModal) closeModal(searchModal);
+  goTo(h.go);
+  sfx('click');
+  dirty = true;
+}
+
 function setSpeed(n) {
   s.pauseFor = null;
   // En el editor el juego sigue en pausa: la velocidad elegida se aplica al salir.
@@ -379,11 +501,38 @@ function setSpeed(n) {
 
 const ACTIONS = {
   tab: (d) => {
-    U.tab = d.tab;
-    if (d.tab !== 'products') U.pid = null;
-    saveUI();
-    panelToTop();
+    openTab(d.tab);
     sfx('click');
+  },
+  // Un grupo abre la última pestaña que usaste en él.
+  group: (d) => {
+    const g = GROUPS.find((x) => x.id === d.group);
+    if (!g) return;
+    openTab(g.tabs.includes(U.lastTab[g.id]) ? U.lastTab[g.id] : g.tabs[0]);
+    sfx('click');
+  },
+  go: (d) => {
+    goTo(d);
+    sfx('click');
+  },
+  secGo: (d) => {
+    U.scrollTo = { sec: d.sec };
+    scrollToTarget();
+  },
+  search: () => openSearch(),
+  searchGo: (d) => searchPick(+d.i),
+  searchTab: (d) => {
+    if (searchModal) closeModal(searchModal);
+    openTab(d.tab);
+  },
+  mailFilter: (d) => {
+    U.mailFilter = d.f;
+  },
+  mailMore: () => {
+    U.mailLimit = (U.mailLimit || 15) + 20;
+  },
+  resFilter: (d) => {
+    U.resFilter = d.f;
   },
   speed: (d) => {
     setSpeed(+d.n);
@@ -661,9 +810,24 @@ function onChange(e) {
 
 function onInput(e) {
   if (e.target.id === 'pname') U.newName = e.target.value;
+  else if (e.target.id === 'q') {
+    U.q = e.target.value;
+    dirty = true;
+  }
 }
 
 function onKey(e) {
+  if (e.target.id === 'q' && e.key === 'Enter') {
+    e.preventDefault();
+    searchPick(0);
+    return;
+  }
+  // Ctrl/Cmd + K o / abren el buscador.
+  if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey) && s && !s.gameOver) {
+    e.preventDefault();
+    if (!U.edit) openSearch();
+    return;
+  }
   if (e.key === 'Escape') {
     const m = topModal();
     if (m && m.closable) closeModal(m);
@@ -675,6 +839,11 @@ function onKey(e) {
   if (modalOpen()) return;
   if (e.key === 'e' || e.key === 'E') {
     setEdit(!U.edit);
+    return;
+  }
+  if (e.key === '/' && !U.edit) {
+    e.preventDefault();
+    openSearch();
     return;
   }
   if (e.key === ' ') {
@@ -769,7 +938,8 @@ function newGameModal(closable, founderName = 'Alex') {
 function helpModal(first = false) {
   openModal({
     title: first ? '¡Bienvenido/a a tu garaje!' : 'Cómo jugar',
-    body: `<ol class="help">
+    body: `<p>Arriba tienes seis grupos: <b>🏠 Inicio</b> (lo que necesita tu atención), <b>📬 Correo</b>, <b>🏢 Empresa</b>, <b>📦 Negocio</b>, <b>💰 Dinero</b> y <b>🌍 Mundo</b>. Cada grupo tiene sus pestañas debajo. Si no encuentras algo, pulsa <b>🔍</b> o la tecla <b>/</b> y escríbelo.</p>
+      <ol class="help">
       <li>📝 <b>Contratos:</b> acepta trabajos de clientes para ganar tus primeros dólares. Tú mismo puedes hacerlos.</li>
       <li>👥 <b>Equipo:</b> contrata desarrolladores (💻), diseñadores (🎨) e investigadores (🔬). Asigna a cada persona a un producto o contrato.</li>
       <li>📦 <b>Productos:</b> elige una categoría, completa sus funciones básicas y lánzalo. Después, añade funciones y súbelas de nivel para ganar a la competencia.</li>
@@ -779,7 +949,7 @@ function helpModal(first = false) {
       <li>📬 <b>Correo:</b> empleados, clientes, rivales, reguladores e imprevistos. Tienes entre 2 semanas y un mes de juego para contestar; si no, se aplica la opción por defecto. En el menú puedes hacer que el juego se pause con las decisiones graves.</li>
       <li>🗺️ <b>Mundo:</b> abre sedes en otros continentes, vigila las leyes y aprovecha temporadas como Black Friday o Navidades.</li>
       </ol>
-      <p class="muted">Controles: <b>Espacio</b> pausa · <b>1-3</b> velocidad · <b>E</b> o ✏️ editar la oficina · arrastra la oficina para moverte · rueda o pellizco para zoom · toca a alguien para ver su ficha.</p>
+      <p class="muted">Controles: <b>Espacio</b> pausa · <b>1-3</b> velocidad · <b>/</b> o 🔍 buscar · <b>E</b> o ✏️ editar la oficina · arrastra la oficina para moverte · rueda o pellizco para zoom · toca a alguien para ver su ficha.</p>
       <p class="muted">Si te quedas sin dinero durante 45 días, quiebras. ¡Vigila tus finanzas!</p>
       <div class="row end gap">${first ? '<button class="btn" data-close>Ya sé jugar</button><button class="btn primary" data-act="tutStart">🧭 Guíame paso a paso</button>' : '<button class="btn primary" data-close>¡A por ello!</button>'}</div>`,
   });

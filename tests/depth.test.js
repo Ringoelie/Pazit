@@ -795,3 +795,39 @@ console.log('OK');
   assert.equal(dateOf(t.day).m, 3, 'empieza el 1 de abril');
 }
 console.log('OK bolsa');
+
+// 23. Organización: grupos, avisos de Inicio y buscador.
+{
+  const { GROUPS, TABS, groupOf, homeAlerts, sectionsOf, renderPanel } = await import('../public/js/panels.js');
+  const { searchItems, searchFilter, SECTIONS } = await import('../public/js/search.js');
+  // Cada pestaña está en un único grupo.
+  for (const t of TABS) assert.equal(GROUPS.filter((g) => g.tabs.includes(t.id)).length, 1, `pestaña ${t.id} en un grupo`);
+  assert.equal(groupOf('investors').id, 'money');
+  const s = fresh(41);
+  s.money = 1e6;
+  // Avisos: gente sin tarea y producto listo para lanzar.
+  G.createProduct(s, 'Listo', 'blog');
+  const p = s.products[0];
+  s.employees.push(Object.assign(makePerson(s, 'dev', { traits: [] }), { assign: null }));
+  Object.assign(p.features, { landing: 1, articles: 1 });
+  const alerts = homeAlerts(s);
+  assert.ok(alerts.some((a) => a.go.tab === 'team' && a.go.tf === 'idle'), 'aviso de gente sin tarea');
+  assert.ok(alerts.some((a) => a.go.pid === p.id), 'aviso de producto listo');
+  s.money = -10;
+  assert.equal(homeAlerts(s)[0].kind, 'bad', 'los números rojos van primero');
+  s.money = 1e6;
+  // Buscador: sin tildes, por palabras sueltas y con personas y productos.
+  const items = searchItems(s);
+  assert.equal(searchFilter(items, 'neon')[0].label, 'Letrero de neón');
+  assert.ok(searchFilter(items, 'POLITICAS')[0].go.tab === 'policies');
+  assert.ok(searchFilter(items, 'bolsa').some((h) => h.go.tab === 'investors'));
+  assert.ok(searchFilter(items, s.employees[1].name.split(' ')[0]).some((h) => h.go.emp === s.employees[1].id), 'encuentra personas');
+  assert.ok(searchFilter(items, 'listo').some((h) => h.go.pid === p.id), 'encuentra productos');
+  assert.equal(searchFilter(items, '').length, 0);
+  // Las secciones del buscador existen en su pestaña (las que no dependen de la partida).
+  for (const [tab, name] of SECTIONS.filter(([t]) => ['office', 'infra', 'finance', 'goals', 'world'].includes(t))) {
+    const secs = sectionsOf(renderPanel(s, { tab, move: {}, lastTab: {} })).map((x) => x.label);
+    assert.ok(secs.some((l) => l.includes(name)), `sección "${name}" en ${tab}`);
+  }
+}
+console.log('OK organización');

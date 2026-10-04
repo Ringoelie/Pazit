@@ -18,24 +18,39 @@ import { nominations, winChance as awardChance } from './awards.js';
 import { GUIDANCE, GUIDANCE_ORDER, WARN_COST, quarterName, quarterStatus, sharePrice, canWarn, nextQuarterDay } from './stock.js';
 import * as G from './sim.js';
 import { perkStats, birthdayOf, isBirthday } from './core.js';
-import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, dateOf, MONTHS } from './util.js';
+import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, dateOf, MONTHS, slug } from './util.js';
 import { bar, btn, avatar } from './ui.js';
 
 export const TABS = [
-  { id: 'office', icon: '🏢', name: 'Oficina' },
+  { id: 'home', icon: '🏠', name: 'Inicio' },
   { id: 'mail', icon: '📬', name: 'Correo' },
   { id: 'team', icon: '👥', name: 'Equipo' },
+  { id: 'office', icon: '🏢', name: 'Oficina' },
+  { id: 'policies', icon: '📜', name: 'Políticas' },
+  { id: 'infra', icon: '🖥️', name: 'Servidores' },
   { id: 'products', icon: '📦', name: 'Productos' },
   { id: 'contracts', icon: '📝', name: 'Contratos' },
-  { id: 'research', icon: '🔬', name: 'I+D' },
   { id: 'marketing', icon: '📣', name: 'Marketing' },
-  { id: 'infra', icon: '🖥️', name: 'Servidores' },
+  { id: 'research', icon: '🔬', name: 'I+D' },
   { id: 'finance', icon: '💰', name: 'Finanzas' },
   { id: 'investors', icon: '📈', name: 'Inversores' },
   { id: 'market', icon: '🌐', name: 'Mercado' },
   { id: 'world', icon: '🗺️', name: 'Mundo' },
   { id: 'goals', icon: '🏆', name: 'Logros' },
 ];
+export const TAB_BY_ID = Object.fromEntries(TABS.map((t) => [t.id, t]));
+
+// Las pestañas van agrupadas: arriba los grupos y debajo las del grupo abierto.
+export const GROUPS = [
+  { id: 'home', icon: '🏠', name: 'Inicio', tabs: ['home'], desc: 'Lo que necesita tu atención y accesos rápidos.' },
+  { id: 'mail', icon: '📬', name: 'Correo', tabs: ['mail'], desc: 'Decisiones y mensajes.' },
+  { id: 'company', icon: '🏢', name: 'Empresa', tabs: ['team', 'office', 'policies', 'infra'], desc: 'Tu gente, la oficina, las políticas y los servidores.' },
+  { id: 'business', icon: '📦', name: 'Negocio', tabs: ['products', 'contracts', 'marketing', 'research'], desc: 'Productos, contratos, campañas e investigación.' },
+  { id: 'money', icon: '💰', name: 'Dinero', tabs: ['finance', 'investors'], desc: 'Caja, préstamos, inversores y bolsa.' },
+  { id: 'globe', icon: '🌍', name: 'Mundo', tabs: ['market', 'world', 'goals'], desc: 'Rivales, países, leyes, plataformas y logros.' },
+];
+export const groupOf = (tab) => GROUPS.find((g) => g.tabs.includes(tab)) || GROUPS[0];
+
 
 const INC_LABEL = {
   contracts: 'Contratos', ads: 'Publicidad', subs: 'Suscripciones', tx: 'Comisiones', api: 'API', hardware: 'Venta de dispositivos',
@@ -59,22 +74,49 @@ const levelName = (skill) => LEVELS[G.levelOf(skill)].name;
 const moodColor = (v) => (v >= 60 ? 'var(--green)' : v >= 35 ? 'var(--yellow)' : 'var(--red)');
 
 export function renderPanel(s, U) {
+  const html = panelHtml(s, U);
+  return U.tab === 'home' ? html : withSecNav(html);
+}
+
+function panelHtml(s, U) {
   switch (U.tab) {
+    case 'home': return homePanel(s);
+    case 'policies': return policiesPanel(s);
     case 'office': return officePanel(s, U);
     case 'team': return teamPanel(s, U);
     case 'products': return U.pid && G.findProduct(s, U.pid) ? productDetail(s, G.findProduct(s, U.pid)) : productsPanel(s);
     case 'contracts': return contractsPanel(s);
-    case 'research': return researchPanel(s);
+    case 'research': return researchPanel(s, U);
     case 'marketing': return marketingPanel(s, U);
     case 'infra': return infraPanel(s);
     case 'finance': return financePanel(s);
     case 'investors': return investorsPanel(s);
     case 'market': return marketPanel(s, U);
-    case 'mail': return mailPanel(s);
+    case 'mail': return mailPanel(s, U);
     case 'world': return worldPanel(s);
     case 'goals': return goalsPanel(s);
     default: return '';
   }
+}
+
+// Pestañas largas: cada <h3> es una sección con su ancla, y si hay tres o más
+// aparece arriba una fila "Ir a" para saltar directamente.
+const SEC_RE = /<h3([^>]*)>([\s\S]*?)<\/h3>/g;
+export function sectionsOf(html) {
+  const out = [];
+  for (const m of html.matchAll(SEC_RE)) {
+    const label = m[2].replace(/<small[\s\S]*?<\/small>/g, '').replace(/<[^>]+>/g, '').trim();
+    out.push({ id: slug(label), label });
+  }
+  return out;
+}
+function withSecNav(html) {
+  const secs = sectionsOf(html);
+  let i = 0;
+  const out = html.replace(SEC_RE, (m, attrs, inner) => `<h3${attrs} data-sec="${secs[i++].id}">${inner}</h3>`);
+  if (secs.length < 3) return out;
+  const chips = secs.map((x) => `<button class="chip" data-act="secGo" data-sec="${x.id}">${x.label}</button>`).join('');
+  return `<nav class="chips scroll sec-nav" aria-label="Ir a una sección"><span>Ir a:</span>${chips}</nav>${out}`;
 }
 
 // ---------------------------------------------------------------- oficina
@@ -105,11 +147,111 @@ export function perkCards(s, act = 'buyPerk', sell = true, cat = 'all') {
     .join('');
 }
 
-function officePanel(s, U) {
-  const o = G.officeOf(s);
-  const ps = perkStats(s);
-  const items = s.office.layout.items.length;
-  const policies = Object.entries(POLICIES)
+// ---------------------------------------------------------------- inicio
+
+// Botón que lleva a una pestaña (y opcionalmente a una sección, producto o tarjeta).
+const goAttrs = (go) => Object.entries(go).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('');
+
+// Cosas que necesitan atención, de la más grave a la menos.
+export function homeAlerts(s) {
+  const out = [];
+  const add = (kind, icon, text, sub, go) => out.push({ kind, icon, text, sub, go });
+  const sm = G.summary(s);
+  if (s.money < 0) add('bad', '🚨', '¡Números rojos!', `Quedan ${Math.max(0, 45 - s.redDays)} días para la bancarrota. Pide un préstamo o recorta gastos.`, { tab: 'finance' });
+  else if (sm.net < 0 && s.money / -sm.net < 3) add('warn', '💸', `Te quedas sin caja en unos ${Math.max(1, Math.floor(s.money / -sm.net))} meses`, 'Gastas más de lo que ingresas. Mira préstamos e inversores.', { tab: 'finance' });
+  for (const c of s.contracts.active) {
+    const prog = G.costTotal(c.done) / Math.max(1, G.costTotal(c.need));
+    if (c.deadline - s.day <= 5 && prog < 0.85) add('bad', '⏰', `El contrato "${c.title}" va con retraso`, `${fmtPct(prog)} hecho y quedan ${fmtDays(c.deadline - s.day)}. Pon a más gente.`, { tab: 'contracts' });
+  }
+  for (const p of s.products) {
+    if (p.down > 0) add('bad', '🔥', `${p.name} está caído`, 'Revisa los servidores y la seguridad.', { tab: 'infra' });
+    else if (p.launched && (p.overload || 0) > 0.05) add('bad', '🖥️', `Los servidores no dan abasto con ${p.name}`, 'Compra racks o pásate a la nube.', { tab: 'infra' });
+    if (p.stockout) add('bad', '📦', `Sin stock de ${p.name}`, 'Estás perdiendo ventas: fabrica más unidades.', { pid: p.id });
+  }
+  const laws = s.products.filter((p) => complianceIssues(s, p).length);
+  if (laws.length) add('bad', '⚖️', `${laws.map((p) => p.name).join(', ')} incumple${laws.length > 1 ? 'n' : ''} una ley`, 'Añade la función que pide o te multarán.', { tab: 'world', sec: 'leyes-y-reguladores' });
+  const pending = pendingMail(s);
+  if (pending.length) {
+    const first = [...pending].sort((a, b) => a.expires - b.expires)[0];
+    add('warn', '📬', `${pending.length} ${pending.length === 1 ? 'decisión' : 'decisiones'} en el correo`, `${first.subject} · caduca en ${fmtDays(first.expires - s.day)}`, { tab: 'mail' });
+  }
+  const qs = quarterStatus(s);
+  if (qs && !qs.q.level) add('warn', '📊', `Anuncia tu previsión del ${quarterName(qs.q)}`, `Los analistas esperan ${fmtMoney(qs.q.exp)}.`, { tab: 'investors', sec: 'trimestre-actual' });
+  else if (qs && qs.ratio < 1 && qs.elapsed >= 14) add('warn', '📉', 'Al ritmo actual no llegas a la previsión', `Te faltarían ${fmtMoney(qs.target - qs.proj)} en ${fmtDays(qs.left)}.`, { tab: 'investors', sec: 'trimestre-actual' });
+  const idle = s.employees.filter((e) => G.isAssignable(e) && !e.assign && e.off <= 0).length;
+  if (idle) add('warn', '😴', `${idle} ${idle === 1 ? 'persona' : 'personas'} sin tarea`, 'Asígnales un producto o un contrato.', { tab: 'team', tf: 'idle' });
+  const n = s.employees.length;
+  if (n >= 3) {
+    const mood = s.employees.reduce((a, e) => a + e.mood, 0) / n;
+    const energy = s.employees.reduce((a, e) => a + e.energy, 0) / n;
+    if (mood < 45) add('warn', '😞', 'El equipo está desanimado', 'Mejora la oficina o las políticas.', { tab: 'policies' });
+    if (energy < 35) add('warn', '🥱', 'El equipo está agotado', 'Quita el crunch o compra café, sofás o cápsulas de siesta.', { tab: 'policies' });
+  }
+  for (const p of s.products) if (p.launched && !isHW(p) && G.debtLevel(p) > 1) add('warn', '🧱', `${p.name} acumula mucha deuda técnica`, 'Refactoriza o ve más despacio.', { pid: p.id });
+  if (s.funding.offer) add('good', '💼', `${s.funding.offer.investor} quiere invertir`, `${fmtMoney(s.funding.offer.amount)} por el ${s.funding.offer.dil}%. Caduca en ${fmtDays(s.funding.offer.expires - s.day)}.`, { tab: 'investors' });
+  for (const p of s.products) if (!p.launched && !p.keynote && G.coreDone(p)) add('good', '🚀', `${p.name} ya se puede lanzar`, 'Tiene las funciones básicas. Lánzalo o prepara una presentación.', { pid: p.id });
+  for (const p of s.products) if (p.keynote) add('info', '🎤', `Presentación de ${p.name}`, `El ${fmtDate(p.keynote.day)}.`, { pid: p.id });
+  if (G.freeDesks(s) <= 0) add('info', '🏢', 'La oficina está llena', 'Para contratar más, múdate o contrata en remoto.', { tab: 'office', sec: 'mudanza' });
+  const res = RESEARCH.filter((r) => G.researchState(s, r) === 'available' && s.rp >= r.cost).length;
+  if (res) add('info', '🔬', `Puedes investigar ${res} ${res === 1 ? 'tecnología' : 'tecnologías'}`, 'Tienes puntos de investigación de sobra.', { tab: 'research', rf: 'ready' });
+  if (s.b2b?.leads.length) add('info', '🏢', `${s.b2b.leads.length} ${s.b2b.leads.length === 1 ? 'empresa interesada' : 'empresas interesadas'} en tus productos`, 'Preséntales una oferta.', { tab: 'contracts', sec: 'clientes-empresa' });
+  if (!s.contracts.active.length && s.contracts.offers.length && sm.mrr < 20000) add('info', '📝', `${s.contracts.offers.length} contratos disponibles`, 'Dinero rápido mientras tus productos despegan.', { tab: 'contracts' });
+  return out;
+}
+
+const KIND_ORDER = { bad: 0, warn: 1, good: 2, info: 3 };
+
+function homePanel(s) {
+  const sm = G.summary(s);
+  const alerts = homeAlerts(s).sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
+  const shown = alerts.slice(0, 8);
+  const todo = shown
+    .map((a) => `<button class="todo ${a.kind}" data-act="go"${goAttrs(a.go)}><span class="todo-icon">${a.icon}</span>
+      <span class="grow"><b>${esc(a.text)}</b>${a.sub ? `<small>${esc(a.sub)}</small>` : ''}</span><span class="todo-go">Ir ›</span></button>`)
+    .join('');
+  const valKpi = s.funding.ipo ? kpi('Acción', '$' + sharePrice(s, sm.val).toFixed(2), `valoración ${fmtMoney(sm.val)}`) : kpi('Valoración', fmtMoney(sm.val), `tu parte: ${s.equity.toFixed(1)}%`);
+  const quick = [
+    ['➕ Contratar', 'hireOpen', {}],
+    ['📦 Nuevo producto', 'newProduct', {}, s.products.length >= 5],
+    ['✏️ Editar oficina', 'editToggle', {}],
+    ['📣 Campañas', 'go', { tab: 'marketing' }],
+    ['🔬 Investigar', 'go', { tab: 'research', rf: 'ready' }],
+    ['🔍 Buscar', 'search', {}],
+  ]
+    .map(([label, act, data, disabled]) => btn(label, act, data, { disabled: !!disabled }))
+    .join('');
+  const prods = s.products
+    .map((p) => {
+      const cat = CATEGORIES[p.cat];
+      const state = p.launched ? `${fmtNum(p.users)} ${isHW(p) ? 'en uso' : 'usuarios'} · ${fmtMoney((p.rev?.total || 0) * 30)}/mes` : `En desarrollo · ${p.queue.length ? `${p.queue.length} en cola` : 'cola vacía'}`;
+      return `<button class="mini-row" data-act="go" data-pid="${p.id}"><span>${cat.icon}</span><b>${esc(p.name)}</b><small>${state}</small><span class="todo-go">›</span></button>`;
+    })
+    .join('');
+  const map = GROUPS.filter((g) => g.tabs.length > 1)
+    .map((g) => `<div class="map-card"><b>${g.icon} ${g.name}</b><small>${g.desc}</small>
+      <div class="map-tabs">${g.tabs.map((t) => `<button class="chip" data-act="go" data-tab="${t}">${TAB_BY_ID[t].icon} ${TAB_BY_ID[t].name}</button>`).join('')}</div></div>`)
+    .join('');
+  return `<div class="kpis">
+      ${kpi('Caja', fmtMoney(s.money), `${sm.net >= 0 ? '+' : ''}${fmtMoney(sm.net)}/mes`, s.money < 0 ? 'warn' : '')}
+      ${kpi('Ingresos', fmtMoney(sm.mrr) + '/mes')}
+      ${kpi('Usuarios', fmtNum(sm.users))}
+      ${valKpi}
+    </div>
+    <h3>Necesita tu atención</h3>
+    <div class="todos">${todo || '<div class="todo calm"><span class="todo-icon">✨</span><span class="grow"><b>Todo en orden</b><small>Nada urgente. Buen momento para invertir en crecer.</small></span></div>'}</div>
+    ${alerts.length > shown.length ? `<small class="muted">Y ${alerts.length - shown.length} cosas más de menor prioridad.</small>` : ''}
+    <h3>Accesos rápidos</h3><div class="quick">${quick}</div>
+    ${prods ? `<h3>Tus productos</h3><div class="mini-rows">${prods}</div>` : ''}
+    <h3>Dónde está cada cosa</h3><div class="map">${map}</div>
+    <p class="muted small">Consejo: pulsa 🔍 (o la tecla /) para buscar cualquier cosa: una persona, un mueble, una tecnología...</p>`;
+}
+
+// Políticas de empresa: horario, comida, crunch, stock options...
+function policiesPanel(s) {
+  const n = s.employees.length;
+  const mood = n ? Math.round(s.employees.reduce((a, e) => a + e.mood, 0) / n) : 0;
+  const energy = n ? Math.round(s.employees.reduce((a, e) => a + e.energy, 0) / n) : 0;
+  const cards = Object.entries(POLICIES)
     .map(([id, p]) => {
       const locked = p.research && !G.has(s, p.research);
       const on = !!s.policies[id];
@@ -118,6 +260,16 @@ function officePanel(s, U) {
         <button class="switch ${on ? 'on' : ''}" data-act="policy" data-id="${id}" ${locked ? 'disabled' : ''} aria-pressed="${on}"><i></i></button></label>`;
     })
     .join('');
+  const active = Object.keys(POLICIES).filter((id) => s.policies[id]).length;
+  return `<div class="kpis">${kpi('Activas', `${active}/${Object.keys(POLICIES).length}`)}${kpi('Ánimo medio', mood, '', mood < 45 ? 'warn' : '')}${kpi('Energía media', energy, '', energy < 35 ? 'warn' : '')}</div>
+    <p class="muted">Las políticas afectan a todo el equipo: ánimo, energía, producción y costes. Se activan y desactivan cuando quieras.</p>
+    <div class="cards">${cards}</div>`;
+}
+
+function officePanel(s, U) {
+  const o = G.officeOf(s);
+  const ps = perkStats(s);
+  const items = s.office.layout.items.length;
   const moves = OFFICES.map((x, i) => ({ x, i }))
     .filter(({ i }) => i > s.office.tier)
     .slice(0, 3)
@@ -141,7 +293,6 @@ function officePanel(s, U) {
     <h3>Estilo de la oficina</h3>
     <p class="muted">Cambia suelo, paredes y muebles en cualquier oficina. Con un estilo puesto, el equipo gana +${STYLE_MOOD} de ánimo.</p>
     <div class="cards">${styleCards(s)}</div>
-    <h3>Políticas de empresa</h3><div class="cards">${policies}</div>
     <h3>Mudanza</h3>${moves ? '<p class="muted">Al mudarte te llevas las mejoras, pero el coche y las cajas se quedan en el garaje.</p>' : ''}
     <div class="cards">${moves || '<p class="muted">Ya estás en la mejor oficina del sistema solar.</p>'}</div>`;
 }
@@ -739,7 +890,8 @@ function b2bSection(s) {
 
 // ---------------------------------------------------------------- investigación
 
-function researchPanel(s) {
+const RES_FILTERS = { todo: 'Por investigar', ready: 'Disponibles ya', done: 'Completadas', all: 'Todas' };
+function researchPanel(s, U) {
   const rate = s.employees.reduce((a, e) => {
     if (e.off > 0) return a;
     if (e.role === 'research') return a + G.output(s, e);
@@ -748,9 +900,23 @@ function researchPanel(s) {
   }, 0);
   const tiers = [...new Set(RESEARCH.map((r) => r.tier))];
   const done = Object.keys(s.research).length;
+  const left = RESEARCH.some((r) => G.researchState(s, r) !== 'done');
+  // Con todo investigado, el filtro por defecto enseña el árbol completo.
+  const f = RES_FILTERS[U.resFilter] ? U.resFilter : left ? 'todo' : 'all';
+  const show = (r) => {
+    const st = G.researchState(s, r);
+    return f === 'all' || (f === 'done' ? st === 'done' : f === 'ready' ? st === 'available' : st !== 'done');
+  };
+  const count = (k) => RESEARCH.filter((r) => {
+    const st = G.researchState(s, r);
+    return k === 'all' || (k === 'done' ? st === 'done' : k === 'ready' ? st === 'available' : st !== 'done');
+  }).length;
+  const chips = Object.entries(RES_FILTERS)
+    .map(([k, label]) => `<button class="chip ${f === k ? 'on' : ''}" data-act="resFilter" data-f="${k}">${label} (${count(k)})</button>`)
+    .join('');
   const html = tiers
     .map((t) => {
-      const items = RESEARCH.filter((r) => r.tier === t)
+      const items = RESEARCH.filter((r) => r.tier === t && show(r))
         .map((r) => {
           const st = G.researchState(s, r);
           const reqs = (r.req || []).filter((q) => !G.has(s, q)).map((q) => RESEARCH_BY_ID[q].name);
@@ -759,11 +925,11 @@ function researchPanel(s) {
             ${st === 'done' ? '<span class="tag live">✔</span>' : btn(`${fmtNum(r.cost)} PI`, 'research', { id: r.id }, { kind: st === 'available' && s.rp >= r.cost ? 'primary' : '', disabled: st !== 'available' || s.rp < r.cost })}</div>`;
         })
         .join('');
-      return `<h3>Nivel ${t}</h3><div class="cards">${items}</div>`;
+      return items ? `<h3>Nivel ${t}</h3><div class="cards">${items}</div>` : '';
     })
     .join('');
   return `<div class="kpis">${kpi('Puntos de investigación', fmtNum(Math.floor(s.rp)) + ' PI')}${kpi('Producción', rate.toFixed(1) + ' PI/día', rate ? '' : 'Contrata investigadores o asígnate a I+D', rate ? '' : 'warn')}
-    ${kpi('Completado', `${done}/${RESEARCH.length}`)}</div>${html}`;
+    ${kpi('Completado', `${done}/${RESEARCH.length}`)}</div><div class="chips">${chips}</div>${html || '<div class="empty">🔬<p>Nada en este filtro.</p></div>'}`;
 }
 
 // ---------------------------------------------------------------- marketing
@@ -1060,25 +1226,38 @@ function marketPanel(s, U) {
 
 // ---------------------------------------------------------------- correo
 
-function mailPanel(s) {
-  const pending = pendingMail(s).length;
-  const items = s.mail
+function mailPanel(s, U) {
+  const pending = pendingMail(s);
+  const f = U.mailFilter === 'pending' && pending.length ? 'pending' : 'all';
+  // Primero lo que hay que decidir (lo que caduca antes arriba); después, lo demás.
+  const rest = s.mail.filter((m) => !(m.choices && m.done == null));
+  const limit = U.mailLimit || 15;
+  const list = [...[...pending].sort((a, b) => a.expires - b.expires), ...(f === 'pending' ? [] : rest.slice(0, limit))];
+  const hidden = f === 'pending' ? 0 : Math.max(0, rest.length - limit);
+  const items = list
     .map((m) => {
       const open = m.choices && m.done == null;
-      const choices = open
-        ? `<div class="mail-choices">${m.choices
-            .map((c, i) => `<button class="btn choice ${i === 0 ? 'primary' : ''}" data-act="answerMail" data-id="${m.id}" data-i="${i}"><b>${esc(c.label)}</b>${c.hint ? `<small>${esc(c.hint)}</small>` : ''}</button>`)
-            .join('')}</div><small class="muted">Caduca en ${fmtDays(m.expires - s.day)}. Si no contestas: "${esc(m.choices[defaultChoice(m)].label)}".</small>`
-        : m.choices
-          ? `<p class="mail-out">➡️ ${esc(m.choices[m.done]?.label || '')}${m.outcome ? ` — ${esc(m.outcome)}` : ''}</p>`
-          : '';
-      return `<article class="mail ${m.read ? '' : 'unread'} ${open ? 'open' : ''}" data-key="mail-${m.id}">
-        <header><span class="mail-icon">${m.icon}</span><div class="grow"><b>${esc(m.subject)}</b><small>${esc(m.from)} · ${fmtDate(m.day)}</small></div>${open ? '<span class="tag bad">Decide</span>' : ''}</header>
-        <p>${esc(m.body)}</p>${choices}</article>`;
+      const head = `<span class="mail-icon">${m.icon}</span><div class="grow"><b>${esc(m.subject)}</b><small>${esc(m.from)} · ${fmtDate(m.day)}</small></div>`;
+      if (open) {
+        const choices = `<div class="mail-choices">${m.choices
+          .map((c, i) => `<button class="btn choice ${i === 0 ? 'primary' : ''}" data-act="answerMail" data-id="${m.id}" data-i="${i}"><b>${esc(c.label)}</b>${c.hint ? `<small>${esc(c.hint)}</small>` : ''}</button>`)
+          .join('')}</div><small class="muted">Caduca en ${fmtDays(m.expires - s.day)}. Si no contestas: "${esc(m.choices[defaultChoice(m)].label)}".</small>`;
+        return `<article class="mail open ${m.read ? '' : 'unread'}" data-key="mail-${m.id}">
+          <header>${head}<span class="tag bad">Decide</span></header><p>${esc(m.body)}</p>${choices}</article>`;
+      }
+      // Lo ya resuelto o informativo, plegado: se abre para leerlo entero.
+      const out = m.choices ? `➡️ ${esc(m.choices[m.done]?.label || '')}${m.outcome ? ` — ${esc(m.outcome)}` : ''}` : '';
+      return `<details class="mail done ${m.read ? '' : 'unread'}" data-key="mail-${m.id}">
+        <summary><header>${head}</header>${out ? `<p class="mail-out">${out}</p>` : ''}</summary><p>${esc(m.body)}</p></details>`;
     })
     .join('');
-  return `<div class="row between"><p class="muted nomargin">${pending ? `Tienes ${pending} ${pending === 1 ? 'decisión pendiente' : 'decisiones pendientes'}.` : 'Nada pendiente. Buen trabajo.'}</p></div>
-    <div class="mails">${items || '<div class="empty">📭<p>Bandeja vacía.</p></div>'}</div>`;
+  const chips = [['all', `Todo (${s.mail.length})`], ['pending', `Por decidir (${pending.length})`]]
+    .map(([k, label]) => `<button class="chip ${f === k ? 'on' : ''}" data-act="mailFilter" data-f="${k}" ${k === 'pending' && !pending.length ? 'disabled' : ''}>${label}</button>`)
+    .join('');
+  return `<p class="muted nomargin">${pending.length ? `Tienes ${pending.length} ${pending.length === 1 ? 'decisión pendiente' : 'decisiones pendientes'}: van primero.` : 'Nada pendiente. Buen trabajo.'}</p>
+    <div class="chips">${chips}</div>
+    <div class="mails">${items || '<div class="empty">📭<p>Bandeja vacía.</p></div>'}</div>
+    ${hidden ? `<div class="row end">${btn(`Ver ${Math.min(20, hidden)} más antiguos (${hidden} en total)`, 'mailMore')}</div>` : ''}`;
 }
 
 // ---------------------------------------------------------------- mundo

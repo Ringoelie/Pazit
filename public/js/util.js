@@ -65,3 +65,12 @@ export function fmtDays(n) {
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const esc = (str) => String(str).replace(/[&<>"']/g, (c) => ESC[c]);
+
+// Identificador sin tildes ni emojis: 'Políticas de empresa' → 'politicas-de-empresa'.
+export const slug = (t) =>
+  String(t)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
