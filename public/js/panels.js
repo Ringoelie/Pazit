@@ -242,7 +242,8 @@ function teamCard(s, U, g, dest) {
   const roles = Object.keys(g.roles).filter((r) => r !== 'founder');
   const opt = (v, label, cur) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${esc(label)}</option>`;
   let lead = '';
-  if (g.target) {
+  // En I+D solo está la persona fundadora: dirigirse a sí misma no tiene sentido.
+  if (g.target && g.target !== 'rd') {
     const cands = [...g.members].sort((a, b) => b.skill - a.skill).slice(0, 15);
     if (g.lead && !cands.includes(g.lead)) cands.push(g.lead);
     const cur = g.lead?.id ?? '';
@@ -516,7 +517,7 @@ function productDetail(s, p) {
   const launchBtn = !p.launched
     ? `<div class="banner ${G.coreDone(p) ? 'ok' : ''}">${
         G.coreDone(p)
-          ? `<b>¡Listo para lanzar!</b>${btn('🚀 Lanzar', 'launch', { pid: p.id }, { kind: 'primary big' })}`
+          ? `<b>¡Listo para lanzar!</b>${btn(p.keynote ? '🚀 Lanzar ya (cancela la presentación)' : '🚀 Lanzar', 'launch', { pid: p.id }, { kind: p.keynote ? 'big' : 'primary big', title: p.keynote ? 'El dinero de la presentación no se recupera' : '' })}`
           : `<span>Para lanzar necesitas: ${cat.core.map((f) => `${FEATURES[f].icon} ${FEATURES[f].name}${p.features[f] ? ' ✅' : ''}`).join(', ')}</span>`
       }</div>`
     : '';

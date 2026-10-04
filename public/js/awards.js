@@ -43,7 +43,7 @@ export function awardsDay(s, tp) {
   if (d.m !== 10) return;
   if (d.d === 1 && A.noms?.year !== d.y) {
     const noms = nominations(s, tp);
-    A.noms = { year: d.y, list: noms, gala: 1, done: false };
+    A.noms = { year: d.y, list: noms, gala: 1, done: false, cost: GALA_COST * s.employees.length };
     if (noms.length) sendMail(s, 'awardsGala', { year: d.y });
   }
   if (d.d === 20 && A.noms?.year === d.y && !A.noms.done) ceremony(s, tp);
@@ -79,7 +79,7 @@ registerMail({
     make: (s, { year }) => {
       const N = s.awards?.noms;
       if (!N || N.year !== year || !N.list.length) return null;
-      const cost = GALA_COST * s.employees.length;
+      const cost = N.cost ?? GALA_COST * s.employees.length;
       const list = N.list.map((n) => `${AWARDS[n.id].icon} ${AWARDS[n.id].name} (${n.why}, ${fmtPct(winChance(s, n, 1))})`).join(', ');
       return {
         from: 'Premios Pixel',
@@ -98,7 +98,7 @@ registerMail({
     resolve: (s, { year }, i) => {
       const N = s.awards?.noms;
       if (!N || N.year !== year || N.done) return 'La gala ya pasó.';
-      const cost = GALA_COST * s.employees.length;
+      const cost = N.cost ?? GALA_COST * s.employees.length;
       if (i === 0 && s.money < cost) {
         N.gala = 1;
         return `No hay ${fmtMoney(cost)} para llevar a todo el equipo: vas con alguien.`;

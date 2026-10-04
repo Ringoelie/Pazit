@@ -52,7 +52,9 @@ function newLead(s) {
     if (!reqs.includes(f)) reqs.push(f);
   }
   const taken = new Set([...s.b2b.leads, ...s.b2b.deals].map((x) => x.client));
-  const client = pick(s, B2B_CLIENTS.filter((c) => !taken.has(c))) || pick(s, B2B_CLIENTS);
+  // Con muchos clientes, las filiales: "Banco Faro Norte", "Banco Faro Sur"...
+  const names = [...B2B_CLIENTS, ...['Norte', 'Sur', 'Este', 'Oeste', 'Internacional', 'Digital'].flatMap((r) => B2B_CLIENTS.map((c) => `${c} ${r}`))];
+  const client = names.find((c) => !taken.has(c) && chance(s, 0.25)) || names.find((c) => !taken.has(c)) || pick(s, B2B_CLIENTS);
   const value = Math.round((rint(s, Z.value[0], Z.value[1]) * (0.8 + quality(p) * 0.4)) / 1000) * 1000;
   s.b2b.leads.push({ id: uid(s), client, size, pid: p.id, value, sla: Z.sla, reqs, expires: s.day + 45, state: 'open', resolve: 0 });
   digest(s, 'b2bLead', `🏢 ${client} se interesa por ${p.name}: ${fmtMoney(value)} al año. Mira Contratos.`);
@@ -85,6 +87,7 @@ export function b2bDay(s) {
     if (p.down > 0) {
       d.down += 1;
       if (d.down > d.sla) slaBreach(s, d, p);
+      if (!B.deals.includes(d)) continue;
     }
     if (s.day >= d.end) renew(s, d);
   }

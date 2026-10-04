@@ -47,7 +47,7 @@ export function sendMail(s, type, ctx = {}) {
     s.mail = s.mail.filter((x) => x !== (drop || s.mail[s.mail.length - 1]));
   }
   notify(s, `📬 ${m.subject}`, 'mail');
-  if (mail.critical && s.settings.pauseCritical) s.pauseFor = mail.id;
+  if (mail.critical && s.settings.pauseCritical && s.speed > 0) s.pauseFor = mail.id;
   return mail;
 }
 

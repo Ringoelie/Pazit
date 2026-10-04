@@ -367,6 +367,7 @@ function panelToTop() {
 }
 
 function setSpeed(n) {
+  s.pauseFor = null;
   // En el editor el juego sigue en pausa: la velocidad elegida se aplica al salir.
   if (U.edit) {
     U.prevSpeed = n;
@@ -467,6 +468,9 @@ const ACTIONS = {
   refactor: (d) => result(G.queueRefactor(s, +d.pid), 'good'),
   teamsToggle: () => {
     U.teamsOpen = U.teamsOpen === false;
+    // El refresco no quita "open" de un <details>: se cierra aquí.
+    const box = document.querySelector('.teams-box');
+    if (box) box.open = U.teamsOpen;
     dirty = true;
   },
   autoAssign: () => {
@@ -475,9 +479,9 @@ const ACTIONS = {
     dirty = true;
   },
   moveGroup: (d) => {
-    const m = U.move[d.from] || {};
-    const to = m.to || document.querySelector(`[data-change=move][data-target="${d.from}"][data-f=to]`)?.value;
-    result(G.moveGroup(s, d.from, m.role || 'all', m.n || '5', to), 'good');
+    // Lo que se ve en los desplegables (lo guardado puede apuntar a algo que ya no existe).
+    const val = (f) => document.querySelector(`[data-change=move][data-target="${d.from}"][data-f=${f}]`)?.value;
+    result(G.moveGroup(s, d.from, val('role') || 'all', val('n') || '5', val('to')), 'good');
   },
 
   newProduct: () => {

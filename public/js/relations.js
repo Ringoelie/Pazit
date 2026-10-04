@@ -5,7 +5,7 @@
 import { clamp, chance, rint, rfloat, fmtPct } from './util.js';
 import { findEmp, notify, levelOf, digest } from './core.js';
 import { registerMail, sendMail } from './mail.js';
-import { teamPowers, isAssignable } from './sim.js';
+import { teamPowers, isAssignable, assignTargets, targetLabel } from './sim.js';
 
 const MAX_REL = 400;
 export const REL_KINDS = {
@@ -188,7 +188,10 @@ export function relSummary(s) {
 
 // Separar: la segunda persona deja su tarea y se va a la mesa libre más lejana.
 function separate(s, A, B) {
-  if (isAssignable(B)) B.assign = null;
+  if (isAssignable(B)) {
+    const alt = assignTargets(s, B).map((x) => x.v).filter((v) => v !== A.assign);
+    B.assign = alt.length ? alt[rint(s, 0, alt.length - 1)] : null;
+  }
   const desks = s.office.layout?.desks || [];
   const from = desks[A.desk];
   if (!from || B.region || B.traits.includes('remote')) return;
@@ -229,13 +232,15 @@ registerMail({
     resolve: (s, { a, b }, i) => {
       const A = findEmp(s, a);
       const B = findEmp(s, b);
-      const r = relOf(s, a, b);
-      if (!A || !B || !r) return 'Ya no trabajan juntos.';
+      if (!A || !B) return 'Esa persona ya no está en la empresa.';
+      // Si el roce ya no está registrado, se vuelve a apuntar para poder resolverlo.
+      let r = relOf(s, a, b);
+      if (!r) s.rel.push((r = { a, b, v: -45, kind: 'rival', since: s.day }));
       if (i === 0) {
         separate(s, A, B);
         r.v = -20;
         r.kind = null;
-        return `${B.name} cambia de sitio. Asígnale una tarea nueva.`;
+        return `${B.name} cambia de mesa${B.assign ? ` y pasa a ${targetLabel(s, B.assign)}` : ''}.`;
       }
       if (i === 1) {
         if (chance(s, Math.min(0.9, 0.45 + teamPowers(s).people * 0.1))) {

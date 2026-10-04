@@ -250,9 +250,20 @@ export function moveGroup(s, from, role, n, to) {
 }
 
 // Quien se queda sin tarea vuelve a trabajar solo (si la opción está activada).
+// Quien hace producto va al que tiene más trabajo pendiente (si no hay, a un
+// contrato); marketing y PM, al producto lanzado con más usuarios.
 function autoReassign(s) {
   if (!s.settings.autoAssign) return;
-  for (const e of s.employees) if (!e.assign && isAssignable(e) && e.off <= 0) autoAssign(s, e);
+  const idle = s.employees.filter((e) => !e.assign && isAssignable(e) && e.off <= 0);
+  if (!idle.length) return;
+  const pending = (p) => p.queue.reduce((a, t) => a + costTotal(t.need) - costTotal(t.done), 0);
+  const busiest = [...s.products].sort((a, b) => pending(b) - pending(a))[0];
+  const make = busiest && pending(busiest) > 0 ? 'p:' + busiest.id : s.contracts.active[0] ? 'c:' + s.contracts.active[0].id : busiest ? 'p:' + busiest.id : null;
+  const top = [...s.products].filter((p) => p.launched).sort((a, b) => b.users - a.users)[0] || s.products[0];
+  for (const e of idle) {
+    if (MAKERS.includes(e.role)) e.assign = make;
+    else e.assign = top ? 'p:' + top.id : e.role === 'marketer' ? 'brand' : null;
+  }
 }
 
 // Jefes que ya no están en su equipo o tareas que ya no existen.
@@ -606,7 +617,7 @@ export function hire(s, candId) {
   c.mood = 75;
   if (atHQ(c)) c.desk = firstFreeDesk(s);
   s.employees.push(c);
-  autoAssign(s, c);
+  if (s.settings.autoAssign !== false) autoAssign(s, c);
   return ok(`¡${c.name} se une al equipo como ${ROLES[c.role].name}!`);
 }
 
@@ -801,6 +812,7 @@ export function launch(s, pid) {
   const p = findProduct(s, pid);
   if (!p || p.launched) return fail('No se puede lanzar.');
   if (!coreDone(p)) return fail('Termina primero las funciones básicas.');
+  p.keynote = null;
   p.launched = true;
   p.launchDay = s.day;
   p.awareness = Math.min(0.3, 0.03 + p.hype * 0.0003);
@@ -1132,8 +1144,9 @@ export function stepDay(s) {
   birthdays(s);
   marketing(s, ps);
   keynoteDay(s);
-  products(s, tp);
+  // Clientes empresa antes de que los productos caídos cuenten un día menos.
   b2bDay(s);
+  products(s, tp);
   infra(s, tp);
   securityDay(s, tp);
   costs(s, tp);
@@ -1341,9 +1354,22 @@ function pour(tasks, pool) {
 const taskDone = (task) => TYPES.every((t) => task.done[t] >= (task.need[t] || 0) - 1e-6);
 
 function productWork(s, p, b) {
-  const pmBoost = (1 + Math.min(0.35, b.pm * 0.12)) * paceOf(p).speed * debtSpeed(p);
+  // El hardware no acumula deuda técnica ni tiene ritmo de desarrollo.
+  const hw = isHW(p);
+  const pace = hw ? PACES.normal : paceOf(p);
+  const pmBoost = (1 + Math.min(0.35, b.pm * 0.12)) * pace.speed * (hw ? 1 : debtSpeed(p));
   const pool = { code: b.code * pmBoost, design: b.design * pmBoost, ai: b.ai * pmBoost, flex: b.flex * pmBoost };
+  // La deuda y los bugs de cada tarea dependen del ritmo de cada día de trabajo,
+  // no del que haya justo al terminarla.
+  const before = p.queue.map((t) => costTotal(t.done));
   pour(p.queue, pool);
+  p.queue.forEach((t, i) => {
+    const w = costTotal(t.done) - before[i];
+    if (w <= 0) return;
+    t.wDebt = (t.wDebt || 0) + w * pace.debt;
+    t.wBugs = (t.wBugs || 0) + w * pace.bugs;
+    t.w = (t.w || 0) + w;
+  });
   // Lo que sobra se dedica a arreglar bugs.
   const spare = pool.code * 0.6 + pool.flex * 0.5 + pool.design * 0.25 + pool.ai * 0.3;
   p.bugs = Math.max(0, p.bugs - spare);
@@ -1360,8 +1386,10 @@ function productWork(s, p, b) {
     }
     p.features[task.f] = Math.max(p.features[task.f] || 0, task.lvl);
     p.invested += total;
-    p.bugs += total * 0.14 * (1.25 - avgSkill / 100) * (1 - 0.5 * perfect) * debtBugs(p) * paceOf(p).bugs;
-    p.debt = (p.debt || 0) + total * paceOf(p).debt * (1.2 - avgSkill / 100) * (1 - 0.4 * perfect) * (s.policies.crunch ? 1.5 : 1);
+    const paceBugs = task.w ? task.wBugs / task.w : pace.bugs;
+    const paceDebt = task.w ? task.wDebt / task.w : pace.debt;
+    p.bugs += total * 0.14 * (1.25 - avgSkill / 100) * (1 - 0.5 * perfect) * (hw ? 1 : debtBugs(p) * paceBugs);
+    if (!hw) p.debt = (p.debt || 0) + total * paceDebt * (1.2 - avgSkill / 100) * (1 - 0.4 * perfect) * (s.policies.crunch ? 1.5 : 1);
     s.stats.shipped += 1;
     const F = FEATURES[task.f];
     if (task.f === 'ads' && task.lvl === 1) p.ads = true;

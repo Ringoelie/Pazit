@@ -3,6 +3,7 @@
 // Uso: node tests/depth.test.js
 import assert from 'node:assert/strict';
 import { OFFICES, KEYNOTES } from '../public/js/data.js';
+import { costTotal } from '../public/js/sim.js';
 import { scheduleKeynote } from '../public/js/keynote.js';
 import { pitchLead, winChance, b2bDaily } from '../public/js/b2b.js';
 import * as G from '../public/js/sim.js';
@@ -682,4 +683,51 @@ console.log('OK');
   while (!N.done) G.stepDay(s);
   assert.equal(s.awards.won.length > 0, s.achievements.award != null || s.awards.won.length === 0);
   assert.ok(s.awards.won.every((w) => w.year === N.year));
+}
+
+// 21. Correcciones: deuda solo en software, ritmo por día de trabajo,
+// separar de verdad, lanzar a mano cancela la presentación.
+{
+  const s = fresh(24);
+  s.money = 1e8;
+  for (const r of ['hardware', 'compliance']) s.research[r] = 0;
+  G.createProduct(s, 'Fono', 'phone');
+  const hw = s.products[0];
+  for (let i = 0; i < 4; i++) s.employees.push(Object.assign(makePerson(s, 'dev', { traits: [] }), { assign: 'p:' + hw.id }));
+  for (let d = 0; d < 60; d++) G.stepDay(s);
+  assert.equal(hw.debt || 0, 0, 'el hardware no acumula deuda técnica');
+  // Ritmo: cambiar a "con cuidado" justo al final no borra la deuda de ir deprisa.
+  const mk = (switchAt) => {
+    const t = fresh(25);
+    t.money = 1e8;
+    const p = quickProduct(t, 'blog', { landing: 1, articles: 1 });
+    p.pace = 'fast';
+    for (let i = 0; i < 3; i++) t.employees.push(Object.assign(makePerson(t, 'dev', { skill: 40, traits: [] }), { assign: 'p:' + p.id }));
+    G.queueFeature(t, p.id, 'search');
+    for (let d = 0; d < 200 && p.queue.length; d++) {
+      const task = p.queue[0];
+      if (switchAt && costTotal(task.done) / costTotal(task.need) > switchAt) p.pace = 'careful';
+      G.stepDay(t);
+    }
+    return p.debt;
+  };
+  const full = mk(0);
+  assert.ok(mk(0.85) > full * 0.6, 'la deuda sigue el ritmo de cada día de trabajo');
+  // Separar a dos personas las pone en tareas distintas y no se deshace solo.
+  const A = s.employees[1];
+  const B = s.employees[2];
+  G.createProduct(s, 'Otro', 'blog');
+  const m = sendMail(s, 'relRival', { a: A.id, b: B.id });
+  answerMail(s, m.id, 0);
+  assert.notEqual(A.assign, B.assign);
+  G.stepDay(s);
+  assert.notEqual(A.assign, B.assign, 'la reasignación automática no los vuelve a juntar');
+  // Lanzar a mano cancela la presentación programada.
+  G.createProduct(s, 'Prisa', 'blog');
+  const k = s.products[s.products.length - 1];
+  Object.assign(k.features, { landing: 1, articles: 1 });
+  k.queue = [];
+  assert.equal(scheduleKeynote(s, k.id, 'office').ok, true);
+  assert.equal(G.launch(s, k.id).ok, true);
+  assert.equal(k.keynote, null, 'lanzar a mano cancela la presentación');
 }
