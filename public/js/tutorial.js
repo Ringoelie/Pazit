@@ -1,7 +1,10 @@
 // Tutorial guiado: un anillo señala el botón que toca pulsar y un bocadillo
 // explica por qué. Cada paso avanza solo cuando la persona hace lo que se le
 // pide (o pulsa "Entendido" en los pasos que solo explican algo).
-const tab = (t) => `[data-act=tab][data-tab=${t}]`;
+import { groupOf } from './panels.js';
+
+// La pestaña si está a la vista; si no, el grupo que la contiene.
+const tab = (t) => (document.querySelector(`[data-act=tab][data-tab=${t}]`) ? `[data-act=tab][data-tab=${t}]` : `[data-act=group][data-group=${groupOf(t).id}]`);
 const inModal = (sel) => document.querySelector(`#modals .modal-back:last-child ${sel}`);
 
 export const STEPS = [

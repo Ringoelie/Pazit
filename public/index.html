@@ -40,6 +40,7 @@
           <button data-act="speed" data-n="2" title="Rápido (2)" aria-label="Velocidad rápida">▶▶</button>
           <button data-act="speed" data-n="3" title="Muy rápido (3)" aria-label="Velocidad muy rápida">▶▶▶</button>
         </div>
+        <button class="icon-btn search-btn" data-act="search" aria-label="Buscar" title="Buscar (tecla /)">🔍</button>
         <button class="icon-btn menu-btn" data-act="menu" aria-label="Menú">☰</button>
         <span id="saved" aria-hidden="true">💾</span>
       </div>
@@ -65,7 +66,10 @@
         <div id="editBar" class="px-box" hidden></div>
       </section>
       <section class="side">
-        <nav id="tabs" class="tabs" role="tablist" aria-label="Secciones"></nav>
+        <div class="navs">
+          <nav id="tabs" class="tabs" role="tablist" aria-label="Secciones"></nav>
+          <nav id="subtabs" class="subtabs" role="tablist" aria-label="Pestañas del grupo" hidden></nav>
+        </div>
         <div id="panel" class="panel px-box" role="tabpanel"></div>
       </section>
     </main>
