@@ -4,7 +4,7 @@
 // los secuestros llegan al correo y piden una decisión.
 import { FEATURES } from './data.js';
 import { clamp, chance, rint, rfloat, fmtMoney, fmtNum } from './util.js';
-import { has, findProduct, notify, news, money, addEffect, hasEffect } from './core.js';
+import { has, findProduct, notify, news, money, addEffect, hasEffect, diffOf } from './core.js';
 import { registerMail, sendMail, mailDeadline } from './mail.js';
 import { lawActive } from './world.js';
 import { teamPowers, totalUsers, mrr, queueFeature, featureAvailable, queuedLevel } from './sim.js';
@@ -35,7 +35,7 @@ export function attackSurface(s) {
   return u < 5000 ? 0 : Math.log10(u) - 3;
 }
 
-export const dailyRisk = (s, tp) => 0.0016 * attackSurface(s) * (1 - secLevel(s, tp) / 100) * (hasEffect(s, 'secShield') ? 0.5 : 1);
+export const dailyRisk = (s, tp) => 0.0016 * attackSurface(s) * (1 - secLevel(s, tp) / 100) * (hasEffect(s, 'secShield') ? 0.5 : 1) * diffOf(s).attacks;
 export const yearlyAttacks = (s, tp) => dailyRisk(s, tp) * 365;
 
 const targets = (s) => s.products.filter((p) => p.launched && !isHW(p) && p.users > 1000);

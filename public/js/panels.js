@@ -3,7 +3,7 @@
 import {
   ROLES, TRAITS, OFFICES, PERKS, FIXTURES, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID, CAMPAIGNS, ROUNDS,
   QUESTS, ACHIEVEMENTS, POINT_TYPES, PREMIUM_PRICES, MAX_FEATURE_LEVEL, LEVELS, HW_PRICES, UNIVERSAL_WEIGHT,
-  REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD, PACES, KEYNOTES, B2B_SIZES, AWARDS, SHOP_CATS,
+  REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD, PACES, KEYNOTES, B2B_SIZES, AWARDS, SHOP_CATS, COFOUNDERS,
 } from './data.js';
 import { pendingMail, defaultChoice } from './mail.js';
 import { seasonOf, seasonDemand, regionMarket, langReach, regionStaff, complianceIssues, lawActive } from './world.js';
@@ -17,7 +17,7 @@ import { winChance, missingReqs, reqHint, b2bDaily } from './b2b.js';
 import { nominations, winChance as awardChance } from './awards.js';
 import { GUIDANCE, GUIDANCE_ORDER, WARN_COST, quarterName, quarterStatus, sharePrice, canWarn, nextQuarterDay } from './stock.js';
 import * as G from './sim.js';
-import { perkStats, birthdayOf, isBirthday } from './core.js';
+import { perkStats, birthdayOf, isBirthday, diffOf } from './core.js';
 import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, dateOf, MONTHS, slug } from './util.js';
 import { bar, btn, avatar } from './ui.js';
 
@@ -105,15 +105,24 @@ const SEC_RE = /<h3([^>]*)>([\s\S]*?)<\/h3>/g;
 export function sectionsOf(html) {
   const out = [];
   for (const m of html.matchAll(SEC_RE)) {
+    // Los títulos de cabecera (nomargin) no son secciones.
+    if (/nomargin/.test(m[1])) {
+      out.push(null);
+      continue;
+    }
     const label = m[2].replace(/<small[\s\S]*?<\/small>/g, '').replace(/<[^>]+>/g, '').trim();
     out.push({ id: slug(label), label });
   }
   return out;
 }
 function withSecNav(html) {
-  const secs = sectionsOf(html);
+  const all = sectionsOf(html);
   let i = 0;
-  const out = html.replace(SEC_RE, (m, attrs, inner) => `<h3${attrs} data-sec="${secs[i++].id}">${inner}</h3>`);
+  const out = html.replace(SEC_RE, (m, attrs, inner) => {
+    const sec = all[i++];
+    return sec ? `<h3${attrs} data-sec="${sec.id}">${inner}</h3>` : m;
+  });
+  const secs = all.filter(Boolean);
   if (secs.length < 3) return out;
   const chips = secs.map((x) => `<button class="chip" data-act="secGo" data-sec="${x.id}">${x.label}</button>`).join('');
   return `<nav class="chips scroll sec-nav" aria-label="Ir a una sección"><span>Ir a:</span>${chips}</nav>${out}`;
@@ -157,7 +166,7 @@ export function homeAlerts(s) {
   const out = [];
   const add = (kind, icon, text, sub, go) => out.push({ kind, icon, text, sub, go });
   const sm = G.summary(s);
-  if (s.money < 0) add('bad', '🚨', '¡Números rojos!', `Quedan ${Math.max(0, 45 - s.redDays)} días para la bancarrota. Pide un préstamo o recorta gastos.`, { tab: 'finance' });
+  if (s.money < 0) add('bad', '🚨', '¡Números rojos!', `Quedan ${Math.max(0, diffOf(s).redDays - s.redDays)} días para la bancarrota. Pide un préstamo o recorta gastos.`, { tab: 'finance' });
   else if (sm.net < 0 && s.money / -sm.net < 3) add('warn', '💸', `Te quedas sin caja en unos ${Math.max(1, Math.floor(s.money / -sm.net))} meses`, 'Gastas más de lo que ingresas. Mira préstamos e inversores.', { tab: 'finance' });
   for (const c of s.contracts.active) {
     const prog = G.costTotal(c.done) / Math.max(1, G.costTotal(c.need));
@@ -188,6 +197,7 @@ export function homeAlerts(s) {
     if (energy < 35) add('warn', '🥱', 'El equipo está agotado', 'Quita el crunch o compra café, sofás o cápsulas de siesta.', { tab: 'policies' });
   }
   for (const p of s.products) if (p.launched && !isHW(p) && G.debtLevel(p) > 1) add('warn', '🧱', `${p.name} acumula mucha deuda técnica`, 'Refactoriza o ve más despacio.', { pid: p.id });
+  for (const p of s.products) if (G.staleness(s, p) > 0 && !p.queue.some((t) => t.f === 'version')) add('warn', '🥱', `${p.name} empieza a aburrir a sus usuarios`, `Prepara la versión ${(p.version || 1) + 1}.0: más atractivo, hype y usuarios contentos.`, { pid: p.id });
   if (s.funding.offer) add('good', '💼', `${s.funding.offer.investor} quiere invertir`, `${fmtMoney(s.funding.offer.amount)} por el ${s.funding.offer.dil}%. Caduca en ${fmtDays(s.funding.offer.expires - s.day)}.`, { tab: 'investors' });
   for (const p of s.products) if (!p.launched && !p.keynote && G.coreDone(p)) add('good', '🚀', `${p.name} ya se puede lanzar`, 'Tiene las funciones básicas. Lánzalo o prepara una presentación.', { pid: p.id });
   for (const p of s.products) if (p.keynote) add('info', '🎤', `Presentación de ${p.name}`, `El ${fmtDate(p.keynote.day)}.`, { pid: p.id });
@@ -696,7 +706,7 @@ function productDetail(s, p) {
   const alerts = productAlerts(s, p);
   return `<div class="row gap wrap">${btn('← Productos', 'backProducts', {}, { kind: 'ghost' })}
       <h3 class="grow nomargin">${cat.icon} ${esc(p.name)} ${statusTag(p)}</h3>${btn('✏️', 'renameProduct', { pid: p.id }, { kind: 'ghost', title: 'Renombrar' })}</div>
-    ${launchBtn}${keynoteSection(s, p)}${alerts}
+    ${launchBtn}${keynoteSection(s, p)}${alerts}${whySection(s, p)}
     <div class="kpis">
       ${hw ? hwKpis(s, p) : kpi('Usuarios', fmtNum(p.users), p.launched ? `pico ${fmtNum(p.peak)}` : 'sin lanzar')}
       ${kpi('Ingresos', fmtMoney(rev.total * 30) + '/mes')}
@@ -713,12 +723,78 @@ function productDetail(s, p) {
       <small class="muted">${team.marketers} marketing · ${team.pms} PM</small>${btn('Asignar a quien esté libre', 'assignIdle', { target: 'p:' + p.id }, { kind: 'small' })}</div>
     ${missing.length ? `<div class="banner warn">⚠️ Nadie produce ${missing.map((k) => POINT_TYPES[k].name).join(' ni ')} en este producto. Contrata o asigna a alguien.</div>` : ''}
     ${paceSection(s, p)}
+    ${versionSection(s, p)}
     <h3>Cola de desarrollo <small class="muted">${p.queue.length}/8</small></h3>
     <div class="queue">${queue || '<p class="muted">Cola vacía. Añade funciones abajo; mientras tanto, el equipo arregla bugs.</p>'}</div>
     <h3>Funciones</h3><div class="feats">${feats}</div>
     ${hw ? hwSection(s, p) : `<h3>Monetización</h3><div class="monet">${monet.join('') || '<p class="muted">Investiga "Modelos de negocio" y desarrolla Publicidad o Plan Premium para ganar dinero.</p>'}
       ${p.launched ? `<small class="muted">Publicidad ${fmtMoney(rev.ads * 30)} · Premium ${fmtMoney(rev.subs * 30)} · Comisiones ${fmtMoney(rev.tx * 30)} · API ${fmtMoney(rev.api * 30)} (al mes)</small>` : ''}</div>`}
-    <div class="row end">${btn('Retirar producto', 'retireProduct', { pid: p.id }, { kind: 'danger small' })}</div>`;
+    <div class="row end gap">${p.launched ? btn(`💼 Vender · ${fmtMoney(G.saleValue(s, p))}`, 'sellProduct', { pid: p.id }, { kind: 'small', disabled: G.saleValue(s, p) < 1000, title: 'Otra empresa te lo compra: cobras ahora, pierdes sus ingresos y liberas un hueco' }) : ''}
+      ${btn('Retirar producto', 'retireProduct', { pid: p.id }, { kind: 'danger small' })}</div>`;
+}
+
+// ¿Por qué suben o bajan los usuarios? El titular va plegado y al abrirlo se
+// ve cada factor, con lo que más frena destacado.
+function whySection(s, p) {
+  if (!p.launched) return '';
+  const hw = isHW(p);
+  const sat = G.satisfaction(s, p);
+  const sh = G.share(s, p);
+  const pct = (x) => fmtPct(x, x < 0.1 ? 1 : 0);
+  const sign = (v) => (v >= 0 ? '+' : '−') + fmtPct(Math.abs(v));
+  const rows = [];
+  const row = (icon, label, value, note, kind = '') => rows.push(`<div class="why-row ${kind}"><span>${icon}</span><b>${label}</b><span class="why-v">${value}</span><small>${note}</small></div>`);
+  const rivals = s.competitors.filter((c) => c.alive && c.cat === p.cat).reduce((a, c) => a + c.appeal, 0);
+  let head;
+  let limit;
+  if (hw) {
+    const demand = p.demand || 0;
+    head = `${fmtNum(demand * 30)} unidades al mes de demanda${p.stockout ? ', pero te falta stock' : ''}`;
+    limit = p.stockout ? 'el stock: fabrica más' : sh < 0.25 ? 'la competencia: mejora el producto o saca una versión nueva' : p.awareness < 0.5 ? 'que poca gente lo conoce: haz campañas' : null;
+  } else {
+    const T = G.userTarget(s, p, sat, sh);
+    const diff = T.target / Math.max(1, p.users) - 1;
+    head = diff > 0.03 ? `📈 Los usuarios suben hacia ${fmtNum(T.target)}` : diff < -0.03 ? `📉 Los usuarios bajan hacia ${fmtNum(T.target)}` : `➡️ Usuarios estables en torno a ${fmtNum(T.target)}`;
+    row('🌍', 'Mercado', fmtNum(T.pot), 'Personas que podrían usar algo así (más con sedes, idiomas y apps).');
+    const lims = [
+      ['📅', 'Temporada', T.lim.season],
+      ['⚔️', 'Guerra de precios', T.lim.war],
+      ['⚖️', 'Investigación antimonopolio', T.lim.antitrust],
+      ['📱', 'Tiendas de apps', T.lim.platform],
+      ['🤖', 'Fiebre de la IA', T.boost],
+    ].filter(([, , v]) => Math.abs(v - 1) > 0.005);
+    for (const [icon, label, v] of lims) row(icon, label, `×${v.toFixed(2)}`, v > 1 ? 'Ahora mismo te ayuda.' : 'Ahora mismo te frena.', v > 1 ? 'good' : 'bad');
+    const weakest = [
+      [sh / 0.5, 'la competencia: mejora funciones o saca una versión nueva'],
+      [(0.12 + 0.88 * p.awareness) / 0.6, 'que poca gente te conoce: haz campañas de marketing'],
+      [(0.35 + 0.65 * sat) / 0.8, 'la satisfacción: mira qué la baja aquí abajo'],
+    ].sort((a, b) => a[0] - b[0])[0];
+    limit = weakest[0] < 1 ? weakest[1] : null;
+  }
+  row('⚔️', 'Cuota frente a rivales', pct(sh), `Tu atractivo ${fmtNum(G.productAppeal(s, p))} frente a ${fmtNum(rivals)} de los rivales.`, sh >= 0.5 ? 'good' : sh < 0.2 ? 'bad' : '');
+  row('📣', 'Conocimiento de marca', pct(p.awareness), 'Sube con hype: campañas, lanzamientos y versiones.', p.awareness >= 0.7 ? 'good' : p.awareness < 0.4 ? 'bad' : '');
+  const parts = G.satisfactionParts(s, p)
+    .filter((x) => x.id !== 'base')
+    .map((x) => `<span class="${x.v >= 0 ? 'up' : 'down'}">${esc(x.label)} ${sign(x.v)}</span>`)
+    .join('');
+  row('❤️', 'Satisfacción', pct(sat), parts || 'Sin nada especial a favor ni en contra.', sat >= 0.75 ? 'good' : sat < 0.5 ? 'bad' : '');
+  const age = G.versionAge(s, p);
+  row('🆕', `Versión ${p.version || 1}.0`, `×${G.versionMult(p).toFixed(2)}`, `Hace ${fmtDays(age)}. ${G.staleness(s, p) ? 'Los usuarios se aburren: toca versión nueva.' : age > 600 ? 'Pronto empezará a aburrir.' : 'Se ve fresca.'}`, G.staleness(s, p) ? 'bad' : '');
+  return `<details class="why"><summary><b>${head}</b>${limit ? `<small>Lo que más te frena: ${limit}.</small>` : '<small>Nada te frena especialmente. ¡Bien!</small>'}<span class="why-more">¿Por qué?</span></summary>
+    <div class="why-rows">${rows.join('')}</div></details>`;
+}
+
+// Versiones: atractivo multiplicado, hype y usuarios contentos otra vez.
+function versionSection(s, p) {
+  if (!p.launched) return '';
+  const v = p.version || 1;
+  const st = G.versionState(s, p);
+  const queued = p.queue.find((t) => t.f === 'version');
+  const age = G.versionAge(s, p);
+  return `<h3>Versiones</h3><div class="card version"><div class="card-icon">🆕</div><div class="grow">
+    <b>${esc(p.name)} ${v}.0</b><small>Salió hace ${fmtDays(age)} · atractivo ×${G.versionMult(p).toFixed(2)}${G.staleness(s, p) ? ` · <span class="bad-text">los usuarios se aburren (−${fmtPct(G.staleness(s, p))} de satisfacción)</span>` : ''}</small>
+    <small class="muted">La ${v + 1}.0 multiplica el atractivo ×${G.VERSION_BOOST}, llega con mucho hype, limpia bugs y deuda, y quita el aburrimiento. Cuesta ${costStr(queued ? queued.need : G.versionCost(p))}.</small></div>
+    <div class="col-btns">${queued ? '<span class="tag live">En desarrollo</span>' : btn(`🆕 Preparar la ${v + 1}.0`, 'queueVersion', { pid: p.id }, { kind: 'primary', disabled: !st.ok, title: st.why || '' })}</div></div>`;
 }
 
 // Presentación de lanzamiento: programar, seguir la campaña y el pronóstico.
@@ -1076,7 +1152,7 @@ function financePanel(s) {
       ${kpi('Costes fijos', fmtMoney(c.total) + '/mes')}
       ${kpi('Resultado', (net >= 0 ? '+' : '') + fmtMoney(net) + '/mes', Number.isFinite(runway) ? `Caja para ${runway < 1 ? '<1' : Math.floor(runway)} meses` : 'Rentable 🎉', net < 0 ? 'warn' : 'good')}
     </div>
-    ${s.redDays > 0 ? `<div class="banner warn">⚠️ Números rojos: bancarrota en ${fmtDays(45 - s.redDays)} si no recuperas la caja.</div>` : ''}
+    ${s.redDays > 0 ? `<div class="banner warn">⚠️ Números rojos: bancarrota en ${fmtDays(diffOf(s).redDays - s.redDays)} si no recuperas la caja.</div>` : ''}
     <h3>Evolución</h3>
     ${chart(s.history, [{ k: 'cash', c: 'var(--yellow)', label: 'Caja', money: true }])}
     ${chart(s.history, [{ k: 'mrr', c: 'var(--green)', label: 'Ingresos/mes', money: true }, { k: 'cost', c: 'var(--red)', label: 'Costes/mes' }])}
@@ -1348,10 +1424,16 @@ function awardsSection(s) {
 }
 
 function goalsPanel(s) {
-  const quests = QUESTS.map((q) => {
+  const item = (q) => {
     const done = s.quests[q.id] != null;
     return `<li class="${done ? 'done' : ''}">${done ? '✅' : '⬜'} ${q.text}${q.reward ? ` <small class="muted">(+${fmtMoney(q.reward)})</small>` : ''}</li>`;
-  }).join('');
+  };
+  const first = QUESTS.filter((q) => !q.phase);
+  const second = QUESTS.filter((q) => q.phase === 2);
+  const firstDone = first.every((q) => s.quests[q.id] != null);
+  const quests = `${first.map(item).join('')}
+    <li class="phase">🌍 <b>Segunda fase: el imperio</b>${firstDone ? '' : ' <small class="muted">(puedes adelantarlos)</small>'}</li>${second.map(item).join('')}
+    ${s.won ? `<li class="phase">👑 <b>¡Victoria el ${fmtDate(s.won.day)}!</b></li>` : ''}`;
   const ach = ACHIEVEMENTS.map((a) => {
     const d = s.achievements[a.id];
     return `<div class="ach ${d != null ? 'on' : ''}" title="${esc(a.desc)}"><span>${d != null ? a.icon : '🔒'}</span><b>${a.name}</b><small>${a.desc}</small></div>`;
@@ -1361,6 +1443,7 @@ function goalsPanel(s) {
     <h3>Logros <small class="muted">${got}/${ACHIEVEMENTS.length}</small></h3><div class="achs">${ach}</div>
     ${awardsSection(s)}
     <h3>Estadísticas</h3><div class="kpis">
+      ${kpi('Dificultad', `${diffOf(s).icon} ${diffOf(s).name}`)}${kpi('Cofundación', `${(COFOUNDERS[s.cofounder] || COFOUNDERS.solo).icon} ${(COFOUNDERS[s.cofounder] || COFOUNDERS.solo).name}`)}
       ${kpi('Días', s.day)}${kpi('Ingresos totales', fmtMoney(s.stats.revenue))}${kpi('Récord de usuarios', fmtNum(s.stats.peakUsers))}
-      ${kpi('Funciones lanzadas', s.stats.shipped)}${kpi('Contratos', s.stats.contractsDone)}${kpi('Compras', s.stats.acquired)}</div>`;
+      ${kpi('Funciones lanzadas', s.stats.shipped)}${kpi('Versiones nuevas', s.stats.versions || 0)}${kpi('Contratos', s.stats.contractsDone)}${kpi('Compras', s.stats.acquired)}</div>`;
 }

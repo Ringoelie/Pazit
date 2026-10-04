@@ -3,12 +3,12 @@
 import {
   ROLES, HIRABLE, MAKERS, OFFICES, PERKS, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID,
   CAMPAIGNS, ROUNDS, CLIENTS, JOBS, QUESTS, ACHIEVEMENTS, MAX_FEATURE_LEVEL, LEVEL_COST, LEVEL_APPEAL,
-  PREMIUM_PRICES, STARTUP_SUFFIX, PRODUCT_NAMES, REGIONS, UNIVERSAL_WEIGHT, STYLES, STYLE_MOOD, PACES,
+  PREMIUM_PRICES, STARTUP_SUFFIX, PRODUCT_NAMES, REGIONS, UNIVERSAL_WEIGHT, STYLES, STYLE_MOOD, PACES, DIFFICULTIES, COFOUNDERS,
 } from './data.js';
 import { rnd, rint, rfloat, pick, chance, gauss, clamp, dateOf, fmtMoney, fmtNum, fmtPct, MONTHS } from './util.js';
 import {
   uid, has, officeOf, findEmp, findProduct, notify, news, money, effectMult, addEffect, levelOf,
-  expectedSalary, makeLooks, makePerson, perkStats, isBirthday, digest, flushDigest,
+  expectedSalary, makeLooks, makePerson, perkStats, isBirthday, digest, flushDigest, diffOf, marketMaturity,
 } from './core.js';
 import { EVENTS, deliverEvent } from './events.js';
 import { defaultLayout, addItem, canPlace, getRef, snapPos, deskEffects, itemDef } from './layout.js';
@@ -42,16 +42,20 @@ const FLOORS = { angel: 3e5, seed: 1.5e6, a: 8e6, b: 4e7, c: 2e8, ipo: 1e9 };
 
 // ---------------------------------------------------------------- partida nueva
 
-export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null, seed } = {}) {
+export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null, seed, difficulty = 'normal', cofounder = 'solo' } = {}) {
+  const D = DIFFICULTIES[difficulty] || DIFFICULTIES.normal;
+  const CO = COFOUNDERS[cofounder] || COFOUNDERS.solo;
   const s = {
     v: 1,
     rng: seed ?? (Math.random() * 2 ** 31) | 0,
     company,
     day: 0,
-    money: 25000,
+    money: D.money + (CO.money || 0),
+    difficulty: DIFFICULTIES[difficulty] ? difficulty : 'normal',
+    cofounder: COFOUNDERS[cofounder] ? cofounder : 'solo',
     rp: 0,
     reputation: 5,
-    equity: 100,
+    equity: CO.equity,
     speed: 1,
     tutorial: -1,
     xmas: -1,
@@ -95,6 +99,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     notes: [],
     redDays: 0,
     gameOver: null,
+    won: null,
     settings: { sound: true, music: true, pauseCritical: false, autoAssign: true },
   };
   const f = makePerson(s, 'founder', { skill: 45, traits: [] });
@@ -104,6 +109,15 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
   if (looks) f.looks = { ...f.looks, ...looks };
   f.desk = 0;
   s.employees.push(f);
+  // Quien cofunda: buena, barata, leal y con su parte de la empresa.
+  if (CO.role) {
+    const c = makePerson(s, CO.role, { skill: 52, traits: ['loyal'] });
+    c.salary = Math.round((expectedSalary(c, s) * 0.4) / 50) * 50;
+    c.cofounder = true;
+    c.mood = 85;
+    c.desk = 1;
+    s.employees.push(c);
+  }
   for (const [cat, def] of Object.entries(CATEGORIES)) {
     for (const [name, appeal] of def.rivals) s.competitors.push(makeCompetitor(s, cat, name, appeal));
   }
@@ -333,6 +347,48 @@ export function queueRefactor(s, pid) {
   return ok(`🧹 Refactorización de ${p.name} en la cola.`);
 }
 
+// Versiones: cada versión nueva multiplica el atractivo (tecnología al día) y
+// se lanza con hype. Sin versiones nuevas, a los dos años los usuarios se
+// empiezan a aburrir.
+export const VERSION_BOOST = 1.45;
+export const VERSION_GAP = 180;
+export const versionMult = (p) => VERSION_BOOST ** ((p.version || 1) - 1);
+export const versionAge = (s, p) => (p.launched ? s.day - (p.versionDay ?? p.launchDay ?? s.day) : 0);
+export const staleness = (s, p) => clamp((versionAge(s, p) - 730) / 730, 0, 1) * 0.12;
+
+// Lo que cuesta la siguiente versión: un tercio de lo invertido, con la misma
+// mezcla de código, diseño e IA que sus funciones.
+export function versionCost(p) {
+  const mix = { code: 0, design: 0, ai: 0 };
+  for (const [f, l] of Object.entries(p.features)) {
+    for (const [k, v] of Object.entries(FEATURES[f].cost)) if (mix[k] != null) mix[k] += v * l;
+  }
+  const tot = costTotal(mix) || 1;
+  const budget = Math.max(60, (p.invested || 0) * 0.35);
+  const need = {};
+  for (const k of TYPES) if (mix[k]) need[k] = Math.max(10, Math.round((budget * mix[k]) / tot));
+  return need;
+}
+
+export function versionState(s, p) {
+  if (!p.launched) return { ok: false, why: 'Lánzalo primero.' };
+  if (p.queue.some((t) => t.f === 'version')) return { ok: false, why: 'Ya hay una versión en desarrollo.' };
+  const wait = VERSION_GAP - versionAge(s, p);
+  if (wait > 0) return { ok: false, why: `La última versión es muy reciente: espera ${Math.ceil(wait)} días.` };
+  if (p.queue.length >= MAX_QUEUE) return { ok: false, why: `La cola admite ${MAX_QUEUE} tareas.` };
+  return { ok: true };
+}
+
+export function queueVersion(s, pid) {
+  const p = findProduct(s, pid);
+  if (!p) return fail();
+  const st = versionState(s, p);
+  if (!st.ok) return fail(st.why);
+  const v = (p.version || 1) + 1;
+  p.queue.push({ f: 'version', lvl: v, need: versionCost(p), done: { code: 0, design: 0, ai: 0 } });
+  return ok(`🆕 ${p.name} ${v}.0 en desarrollo.`);
+}
+
 export function quality(p) {
   return clamp(1 - p.bugs / (25 + p.invested * 0.05), 0.35, 1);
 }
@@ -344,7 +400,7 @@ export function productAppeal(s, p) {
     const w = cat.features[k] ?? (FEATURES[k].universal ? UNIVERSAL_WEIGHT : 0);
     a += FEATURES[k].appeal * w * (1 + LEVEL_APPEAL * (l - 1));
   }
-  return Math.max(1, a * (0.5 + 0.5 * quality(p)));
+  return Math.max(1, a * (0.5 + 0.5 * quality(p)) * versionMult(p));
 }
 
 export function rivalsAppeal(s, cat, exceptPid = null) {
@@ -370,6 +426,27 @@ export function potential(s, p) {
   return CATEGORIES[p.cat].market * marketGrowth(s) * (1 + bonus) * regionMarket(s, p);
 }
 
+// Las piezas de la satisfacción, para explicarla (suman lo mismo que satisfaction()).
+export function satisfactionParts(s, p) {
+  const f = p.features;
+  const parts = [{ id: 'base', label: 'Punto de partida', v: 0.6 }];
+  let ret = 0;
+  for (const [k, l] of Object.entries(f)) {
+    const r = FEATURES[k].retention;
+    if (r) ret += r * (1 + 0.3 * (l - 1));
+  }
+  if (ret) parts.push({ id: 'retention', label: 'Funciones que enganchan', v: ret });
+  const q = (quality(p) - 1) * 0.6;
+  if (q) parts.push({ id: 'bugs', label: 'Bugs', v: q });
+  if (f.ads && p.ads) parts.push({ id: 'ads', label: 'Anuncios', v: -(0.04 + 0.012 * (f.ads - 1)) });
+  if (f.subs && p.price > 0) parts.push({ id: 'price', label: `Precio del Premium ($${p.price})`, v: -(0.01 + 0.003 * p.price) });
+  if (p.down > 0) parts.push({ id: 'down', label: 'Servicio caído', v: -0.25 });
+  if (p.overload) parts.push({ id: 'overload', label: 'Servidores saturados', v: -p.overload * 0.4 });
+  const st = staleness(s, p);
+  if (st) parts.push({ id: 'stale', label: 'Aburrimiento (versión antigua)', v: -st });
+  return parts;
+}
+
 export function satisfaction(s, p) {
   const f = p.features;
   let sat = 0.6;
@@ -382,6 +459,7 @@ export function satisfaction(s, p) {
   if (f.subs && p.price > 0) sat -= 0.01 + 0.003 * p.price;
   if (p.down > 0) sat -= 0.25;
   sat -= (p.overload || 0) * 0.4;
+  sat -= staleness(s, p);
   return clamp(sat, 0.05, 1);
 }
 
@@ -545,7 +623,7 @@ export function makeContract(s) {
   const need = { code: 0, design: 0, ai: 0 };
   for (const [k, w] of Object.entries(job.mix)) need[k] = Math.max(1, Math.round(total * w));
   const tp = teamPowers(s);
-  const pay = Math.round((total * rint(s, 55, 80) * (1 + scale * 0.08) * (1 + Math.min(0.6, tp.sales * 0.08))) / 50) * 50;
+  const pay = Math.round((total * rint(s, 55, 80) * (1 + scale * 0.08) * (1 + Math.min(0.6, tp.sales * 0.08)) * diffOf(s).pay) / 50) * 50;
   return {
     id: uid(s),
     client: pick(s, CLIENTS),
@@ -817,6 +895,7 @@ export function launch(s, pid) {
   p.keynote = null;
   p.launched = true;
   p.launchDay = s.day;
+  p.versionDay = s.day;
   p.awareness = Math.min(0.3, 0.03 + p.hype * 0.0003);
   p.hype += 40;
   p.users = isHW(p) ? 0 : 50 + p.hype * 3;
@@ -847,12 +926,42 @@ export function renameProduct(s, pid, name) {
   return ok();
 }
 
+// Quitar un producto: se lleva sus campañas, su equipo y sus clientes empresa.
+function dropProduct(s, p) {
+  const pid = p.id;
+  s.products = s.products.filter((x) => x !== p);
+  s.campaigns = s.campaigns.filter((c) => c.pid !== pid);
+  if (s.b2b) {
+    s.b2b.leads = s.b2b.leads.filter((l) => l.pid !== pid);
+    s.b2b.deals = s.b2b.deals.filter((d) => d.pid !== pid);
+  }
+  if (s.leads) delete s.leads['p:' + pid];
+  unassignTarget(s, 'p:' + pid);
+}
+
+// Lo que pagaría otra empresa: unos 3 años de ingresos y algo por usuario.
+export function saleValue(s, p) {
+  if (!p.launched) return 0;
+  const yearly = (p.rev?.total || 0) * 365;
+  return Math.round((yearly * 3 + p.users * 2) / 1000) * 1000;
+}
+
+export function sellProduct(s, pid) {
+  const p = findProduct(s, pid);
+  if (!p) return fail();
+  const v = saleValue(s, p);
+  if (v < 1000) return fail('Nadie quiere comprarlo todavía. Puedes retirarlo.');
+  money(s, v, 'other');
+  dropProduct(s, p);
+  s.stats.sold = (s.stats.sold || 0) + 1;
+  news(s, `💼 ${s.company} vende ${p.name} por ${fmtMoney(v)}.`, 'good');
+  return ok(`💼 ${p.name} vendido por ${fmtMoney(v)}. Tienes hueco para otro producto.`);
+}
+
 export function retireProduct(s, pid) {
   const p = findProduct(s, pid);
   if (!p) return fail();
-  s.products = s.products.filter((x) => x !== p);
-  s.campaigns = s.campaigns.filter((c) => c.pid !== pid);
-  unassignTarget(s, 'p:' + pid);
+  dropProduct(s, p);
   news(s, `${s.company} cierra ${p.name}. Descanse en paz.`, 'bad');
   return ok(`${p.name} ha sido retirado.`);
 }
@@ -1180,9 +1289,10 @@ export function stepDay(s) {
 
   if (s.money < 0) {
     s.redDays += 1;
-    if (s.redDays === 1) notify(s, '⚠️ ¡Números rojos! Tienes 45 días para recuperarte o quebrarás.', 'bad');
-    if (s.redDays === 30) notify(s, '⚠️ Quedan 15 días para la bancarrota.', 'bad');
-    if (s.redDays >= 45) s.gameOver = { reason: 'bankrupt', day: s.day };
+    const red = diffOf(s).redDays;
+    if (s.redDays === 1) notify(s, `⚠️ ¡Números rojos! Tienes ${red} días para recuperarte o quebrarás.`, 'bad');
+    if (s.redDays === red - 15) notify(s, '⚠️ Quedan 15 días para la bancarrota.', 'bad');
+    if (s.redDays >= red) s.gameOver = { reason: 'bankrupt', day: s.day };
   } else s.redDays = 0;
 }
 
@@ -1384,6 +1494,19 @@ function productWork(s, p, b) {
   while (p.queue.length && taskDone(p.queue[0])) {
     const task = p.queue.shift();
     const total = costTotal(task.need);
+    if (task.f === 'version') {
+      p.version = task.lvl;
+      p.versionDay = s.day;
+      p.invested += total;
+      p.hype += 120 + 40 * task.lvl;
+      p.bugs *= 0.7;
+      if (!hw) p.debt = (p.debt || 0) * 0.6;
+      s.stats.versions = (s.stats.versions || 0) + 1;
+      s.reputation = Math.min(100, s.reputation + 2);
+      notify(s, `🆕 ¡${p.name} ${task.lvl}.0 ya está aquí! Más atractivo y un buen empujón de hype.`, 'good');
+      news(s, `🆕 ${s.company} lanza ${p.name} ${task.lvl}.0.`, 'good');
+      continue;
+    }
     if (task.f === 'refactor') {
       const before = debtLevel(p);
       p.debt = Math.max(0, (p.debt || 0) - task.debt);
@@ -1437,8 +1560,17 @@ function marketing(s, ps) {
   if (ps.hype) for (const p of s.products) if (p.launched) p.hype += ps.hype;
 }
 
+// Usuarios hacia los que tiende un producto de software y de qué depende.
+export function userTarget(s, p, sat = satisfaction(s, p), sh = share(s, p)) {
+  const pot = potential(s, p);
+  const boost = isAIProduct(p) ? effectMult(s, 'aiHype') : 1;
+  const lim = { season: seasonDemand(s, p.cat), war: warFx(s, p).target, antitrust: p.antitrust > s.day ? 0.8 : 1, platform: platformDemand(s, p) };
+  const limits = lim.season * lim.war * lim.antitrust * lim.platform;
+  const target = pot * sh * (0.12 + 0.88 * p.awareness) * (0.35 + 0.65 * sat) * boost * limits;
+  return { target, pot, sh, sat, aw: p.awareness, boost, lim };
+}
+
 function products(s, tp) {
-  const aiHype = effectMult(s, 'aiHype');
   let dayRev = 0;
   for (const p of s.products) {
     if (isHW(p)) dayRev += hwStep(s, p);
@@ -1458,10 +1590,7 @@ function products(s, tp) {
       p.peak = Math.max(p.peak, p.users);
       continue;
     }
-    const pot = potential(s, p);
-    const boost = isAIProduct(p) ? aiHype : 1;
-    const limits = seasonDemand(s, p.cat) * warFx(s, p).target * (p.antitrust > s.day ? 0.8 : 1) * platformDemand(s, p);
-    const target = pot * sh * (0.12 + 0.88 * p.awareness) * (0.35 + 0.65 * sat) * boost * limits;
+    const { target } = userTarget(s, p, sat, sh);
     if (p.down > 0) {
       p.users *= 0.985;
     } else {
@@ -1554,10 +1683,12 @@ function market(s, newMonth) {
   if (!newMonth) return;
   const pressure = {};
   for (const p of s.products) if (p.launched) pressure[p.cat] = (pressure[p.cat] || 0) + (p.share || 0);
+  // Los mercados maduran: con los años, los rivales innovan más despacio.
+  const mature = marketMaturity(s);
   for (const c of s.competitors) {
     if (!c.alive) continue;
-    c.appeal *= 1 + rfloat(s, 0.008, 0.028) + Math.min(0.06, (pressure[c.cat] || 0) * 0.1);
-    if (chance(s, 0.05)) {
+    c.appeal *= 1 + (rfloat(s, 0.008, 0.028) + Math.min(0.04, (pressure[c.cat] || 0) * 0.07)) * diffOf(s).rivals * mature;
+    if (chance(s, 0.05 * mature)) {
       c.appeal *= 1.15;
       news(s, `${c.name} lanza una gran actualización. Sube su atractivo.`);
     }
@@ -1590,7 +1721,7 @@ function funding(s) {
   if (!F.offer && s.day >= F.cooldown && roundReady(s)) {
     const r = ROUNDS[F.round];
     const dil = rint(s, r.dil[0], r.dil[1]);
-    const v = Math.max(valuation(s), FLOORS[r.id]) * effectMult(s, 'invest') * rfloat(s, 0.9, 1.25);
+    const v = Math.max(valuation(s), FLOORS[r.id]) * effectMult(s, 'invest') * diffOf(s).invest * rfloat(s, 0.9, 1.25);
     F.offer = { round: F.round, dil, amount: Math.round((v * dil) / 100 / 1000) * 1000, val: v, expires: s.day + 30, investor: pick(s, INVESTORS) };
     notify(s, `📈 ${F.offer.investor} quiere invertir: ${r.name}. Mira la pestaña Inversores.`, 'good');
   }
@@ -1662,6 +1793,16 @@ const QUEST_CHECK = {
   unicorn: (s) => valuation(s) >= 1e9,
   ipo: (s) => s.funding.ipo,
   agi: (s) => has(s, 'agi'),
+  regions3: (s) => Object.keys(s.regions).length >= 3,
+  v3: (s) => s.products.some((p) => (p.version || 1) >= 3),
+  beat3: (s) => (s.stock?.streak || 0) >= 3,
+  decacorn: (s) => valuation(s) >= 1e10,
+  lead2: (s) => s.products.filter((p) => p.launched && p.share > 0.5).length >= 2,
+  acquire: (s) => s.stats.acquired > 0,
+  award8: (s) => (s.awards?.won.length || 0) >= 8,
+  moon: (s) => OFFICES[s.office.tier].id === 'moon',
+  users500m: (s) => totalUsers(s) >= 5e8,
+  val50b: (s) => valuation(s) >= 5e10,
 };
 
 function quests(s) {
@@ -1670,6 +1811,11 @@ function quests(s) {
     s.quests[q.id] = s.day;
     if (q.reward) money(s, q.reward, 'other');
     notify(s, `🎯 Objetivo cumplido: ${q.text}${q.reward ? ` (+${fmtMoney(q.reward)})` : ''}`, 'good');
+  }
+  // Todos los objetivos: victoria (una sola vez; se puede seguir jugando).
+  if (!s.won && QUESTS.every((q) => s.quests[q.id] != null)) {
+    s.won = { day: s.day, val: valuation(s) };
+    news(s, `👑 ${s.company} conquista el mundo de la tecnología.`, 'good');
   }
 }
 export const currentQuest = (s) => QUESTS.find((q) => s.quests[q.id] == null) || null;
@@ -1702,6 +1848,9 @@ const ACH_CHECK = {
   agi: (s) => has(s, 'agi'),
   showman: (s) => (s.stats.epicKeynotes || 0) > 0,
   award: (s) => (s.awards?.won.length || 0) > 0,
+  hardUnicorn: (s) => s.difficulty === 'hard' && valuation(s) >= 1e9,
+  victory: (s) => !!s.won,
+  versions: (s) => (s.stats.versions || 0) >= 10,
   beat4: (s) => (s.stock?.streak || 0) >= 4,
   moonshot: (s) => !!s.stock?.log.some((l) => l.level === 'high' && l.rev >= l.target),
 };

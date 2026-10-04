@@ -826,8 +826,83 @@ console.log('OK bolsa');
   assert.equal(searchFilter(items, '').length, 0);
   // Las secciones del buscador existen en su pestaña (las que no dependen de la partida).
   for (const [tab, name] of SECTIONS.filter(([t]) => ['office', 'infra', 'finance', 'goals', 'world'].includes(t))) {
-    const secs = sectionsOf(renderPanel(s, { tab, move: {}, lastTab: {} })).map((x) => x.label);
+    const secs = sectionsOf(renderPanel(s, { tab, move: {}, lastTab: {} })).filter(Boolean).map((x) => x.label);
     assert.ok(secs.some((l) => l.includes(name)), `sección "${name}" en ${tab}`);
   }
 }
 console.log('OK organización');
+
+// 24. Jugabilidad: dificultad, cofundación, versiones, venta, porqué y victoria.
+{
+  const { QUESTS, DIFFICULTIES } = await import('../public/js/data.js');
+  const { diffOf } = await import('../public/js/core.js');
+  // Dificultad: caja, sueldos y días hasta quebrar.
+  const easy = G.newGame({ seed: 51, difficulty: 'easy' });
+  const hard = G.newGame({ seed: 51, difficulty: 'hard' });
+  assert.equal(easy.money, DIFFICULTIES.easy.money + 8000);
+  assert.equal(hard.money, DIFFICULTIES.hard.money + 8000);
+  const e1 = makePerson(easy, 'dev', { skill: 50, traits: [] });
+  const e2 = makePerson(hard, 'dev', { skill: 50, traits: [] });
+  assert.ok(G.newGame({ seed: 51, difficulty: 'raro' }).difficulty === 'normal', 'dificultad desconocida: normal');
+  const { expectedSalary } = await import('../public/js/core.js');
+  assert.ok(expectedSalary(e2, hard) > expectedSalary(e1, easy), 'en difícil los sueldos son más caros');
+  hard.money = -1;
+  for (let i = 0; i < DIFFICULTIES.hard.redDays - 1; i++) G.stepDay(hard), (hard.money = Math.min(hard.money, -1));
+  assert.equal(hard.gameOver, null);
+  G.stepDay(hard);
+  hard.money = -1;
+  G.stepDay(hard);
+  assert.equal(hard.gameOver?.reason, 'bankrupt', `en difícil se quiebra a los ${diffOf(hard).redDays} días`);
+  // Cofundación: alguien leal y barato, y te quedas con el 85%.
+  const co = G.newGame({ seed: 52, cofounder: 'tech' });
+  assert.equal(co.equity, 85);
+  const c = co.employees.find((e) => e.cofounder);
+  assert.ok(c && c.role === 'dev' && c.traits.includes('loyal') && c.salary < expectedSalary(c, co));
+  assert.equal(G.newGame({ seed: 52 }).equity, 100);
+  // Versiones: hay que esperar, cuestan, multiplican el atractivo y quitan el aburrimiento.
+  const s = fresh(53);
+  s.money = 1e8;
+  const p = quickProduct(s, 'blog', { landing: 1, articles: 1, comments: 2 });
+  p.invested = 3000;
+  assert.equal(G.versionState(s, p).ok, false, 'recién lanzado no hay versión nueva');
+  s.day += G.VERSION_GAP + 600;
+  assert.ok(G.staleness(s, p) > 0, 'una versión vieja aburre');
+  const satBefore = G.satisfaction(s, p);
+  const appealBefore = G.productAppeal(s, p);
+  assert.equal(G.queueVersion(s, p.id).ok, true);
+  assert.equal(G.queueVersion(s, p.id).ok, false, 'solo una versión a la vez');
+  const task = p.queue.find((t) => t.f === 'version');
+  assert.ok(G.costTotal(task.need) >= 1000, 'una versión cuesta en serio');
+  for (const k of ['code', 'design', 'ai']) task.done[k] = task.need[k] || 0;
+  for (let i = 0; i < 3; i++) s.employees.push(Object.assign(makePerson(s, 'dev', { traits: [] }), { assign: 'p:' + p.id }));
+  G.stepDay(s);
+  assert.equal(p.version, 2);
+  assert.ok(G.productAppeal(s, p) > appealBefore * 1.3, 'la 2.0 es mucho más atractiva');
+  assert.ok(G.satisfaction(s, p) > satBefore, 'y ya no aburre');
+  // Las piezas de la satisfacción suman lo mismo.
+  const sum = G.satisfactionParts(s, p).reduce((a, x) => a + x.v, 0);
+  assert.ok(Math.abs(Math.min(1, Math.max(0.05, sum)) - G.satisfaction(s, p)) < 1e-9);
+  // El objetivo de usuarios es el mismo que usa la simulación.
+  const T = G.userTarget(s, p);
+  assert.ok(T.target > 0 && T.sh > 0 && T.pot > 0);
+  // Vender: cobras, se libera el hueco y se van sus clientes empresa.
+  p.users = 50000;
+  p.rev = { total: 300 };
+  s.b2b.leads.push({ id: 9999, pid: p.id, client: 'X', size: 'small', reqs: [], state: 'open', expires: s.day + 30 });
+  const before = s.money;
+  const v = G.saleValue(s, p);
+  assert.ok(v > 0);
+  assert.equal(G.sellProduct(s, p.id).ok, true);
+  assert.equal(s.money, before + v);
+  assert.ok(!s.products.includes(p) && !s.b2b.leads.some((l) => l.pid === p.id));
+  assert.ok(!s.employees.some((e) => e.assign === 'p:' + p.id), 'nadie sigue asignado al producto vendido');
+  G.stepDay(s);
+  // Victoria: con todos los objetivos cumplidos, una sola vez.
+  for (const q of QUESTS) s.quests[q.id] = s.day;
+  G.stepDay(s);
+  assert.ok(s.won && s.achievements.victory != null, 'victoria y logro');
+  const won = s.won.day;
+  G.stepDay(s);
+  assert.equal(s.won.day, won, 'la victoria no se repite');
+}
+console.log('OK jugabilidad');

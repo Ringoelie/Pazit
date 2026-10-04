@@ -3,7 +3,7 @@
 // intentar fichar a tu gente o copiar tus funciones. Tú también puedes atacar.
 import { RIVAL_STYLES, FEATURES, CATEGORIES, FIRST_NAMES, LAST_NAMES } from './data.js';
 import { rint, pick, chance, fmtMoney, fmtPct } from './util.js';
-import { uid, findEmp, findProduct, news, money, makePerson } from './core.js';
+import { uid, findEmp, findProduct, news, money, makePerson, diffOf, marketMaturity } from './core.js';
 import { registerMail, sendMail } from './mail.js';
 import { legalWinChance } from './world.js';
 
@@ -45,7 +45,7 @@ export function rivalMonth(s) {
   const active = [];
   for (const c of s.competitors) {
     if (!c.alive) continue;
-    c.appeal *= 1 + RIVAL_STYLES[c.style].growth;
+    c.appeal *= 1 + RIVAL_STYLES[c.style].growth * marketMaturity(s);
     const p = bestProduct(s, c.cat);
     if (!p) continue;
     c.rivalry = Math.min(100, c.rivalry + 2 + (p.share || 0) * 12);
@@ -58,7 +58,7 @@ export function rivalMonth(s) {
     const j = rint(s, 0, i);
     [active[i], active[j]] = [active[j], active[i]];
   }
-  const hit = active.find(({ c }) => chance(s, 0.07 + c.rivalry / 450));
+  const hit = active.find(({ c }) => chance(s, (0.07 + c.rivalry / 450) * diffOf(s).rivals));
   if (hit) rivalMove(s, hit.c, hit.p);
 }
 

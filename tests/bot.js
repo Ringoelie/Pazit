@@ -63,6 +63,8 @@ export function botDay(s) {
     if (!p.launched && G.coreDone(p)) G.launch(s, p.id);
     for (const law of complianceIssues(s, p)) if (!p.queue.some((q) => q.f === law.require)) G.queueFeature(s, p.id, law.require);
     if (p.features.ads && !p.ads) G.toggleAds(s, p.id);
+    // Una versión nueva cada año para no quedarse atrás.
+    if (G.versionAge(s, p) > 365 && G.versionState(s, p).ok) G.queueVersion(s, p.id);
     if (p.queue.length < 2) {
       const opts = Object.keys(CATEGORIES[p.cat].features)
         .filter((f) => G.featureUnlocked(s, f) && G.queuedLevel(p, f) < 10)

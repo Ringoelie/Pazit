@@ -1,6 +1,6 @@
 // Punto de entrada: bucle del juego, HUD, enrutado de acciones y modales.
 import * as G from './sim.js';
-import { ROLES, RESEARCH } from './data.js';
+import { ROLES, RESEARCH, DIFFICULTIES, COFOUNDERS, QUESTS } from './data.js';
 import { makeLooks } from './core.js';
 import { fmtMoney, fmtNum, fmtDate, esc } from './util.js';
 import { save, load, clearSave, exportSave, importSave } from './state.js';
@@ -219,6 +219,7 @@ function frame(now) {
   }
   flushNotes();
   if (s.gameOver && !overModal?.wrap.isConnected) showGameOver();
+  else if (s.won && !s.wonSeen) showVictory();
   office.frame(s, dt, blocked ? 0 : s.speed);
   uiTimer -= dt;
   if (dirty || (ticked && uiTimer <= 0)) {
@@ -316,7 +317,9 @@ function render() {
   setMusicMood(s.money < 0 ? 'crisis' : partying || (sm.val >= 1e9 && sm.net > 0) ? 'success' : 'normal', s.office.tier);
   for (const b of document.querySelectorAll('[data-act=speed]')) b.classList.toggle('on', +b.dataset.n === s.speed);
   const q = G.currentQuest(s);
-  $('#quest').innerHTML = q ? `🎯 <b>Objetivo:</b> ${esc(q.text)}${q.reward ? ` <small>(+${fmtMoney(q.reward)})</small>` : ''}` : '🦄 ¡Has cumplido todos los objetivos! Sigue creciendo.';
+  $('#quest').innerHTML = q
+    ? `${q.phase === 2 ? '🌍' : '🎯'} <b>Objetivo${q.phase === 2 ? ' (fase 2)' : ''}:</b> ${esc(q.text)}${q.reward ? ` <small>(+${fmtMoney(q.reward)})</small>` : ''}`
+    : '👑 ¡Has cumplido todos los objetivos! Sigue creciendo.';
   const bd = badges();
   const cur = groupOf(U.tab).id;
   for (const t of document.querySelectorAll('.tab.group')) {
@@ -692,6 +695,16 @@ const ACTIONS = {
       closeModal(m);
     });
   },
+  queueVersion: (d) => result(G.queueVersion(s, +d.pid), 'good'),
+  sellProduct: (d) => {
+    const p = G.findProduct(s, +d.pid);
+    if (!p) return;
+    const v = G.saleValue(s, p);
+    confirmModal('Vender producto', `¿Vender ${p.name} por ${fmtMoney(v)}? Cobras ahora, pero pierdes sus ${fmtNum(p.users)} usuarios y sus ingresos (${fmtMoney((p.rev?.total || 0) * 30)}/mes). Su equipo queda libre.`, 'Vender', () => {
+      result(G.sellProduct(s, p.id), 'coin');
+      U.pid = null;
+    });
+  },
   retireProduct: (d) => {
     const p = G.findProduct(s, +d.pid);
     if (!p) return;
@@ -890,6 +903,45 @@ function showGameOver() {
   };
 }
 
+// Récords de las partidas ganadas en este navegador.
+const RECORDS_KEY = 'pixel-unicorn:records';
+function loadRecords() {
+  try {
+    const r = JSON.parse(localStorage.getItem(RECORDS_KEY) || '[]');
+    return Array.isArray(r) ? r : [];
+  } catch {
+    return [];
+  }
+}
+
+function showVictory() {
+  s.wonSeen = true;
+  s.speed = 0;
+  const D = DIFFICULTIES[s.difficulty] || DIFFICULTIES.normal;
+  const rec = { company: s.company, days: s.won.day, val: s.won.val, diff: s.difficulty || 'normal', when: Date.now() };
+  const records = [...loadRecords(), rec].sort((a, b) => a.days - b.days).slice(0, 10);
+  try {
+    localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
+  } catch {
+    // Sin almacenamiento: los récords no se guardan.
+  }
+  sfx('achievement');
+  office.burst(160);
+  office.party('award');
+  const rows = records
+    .slice(0, 5)
+    .map((r, i) => `<tr${r === rec ? ' class="me"' : ''}><td>${i + 1}</td><td>${esc(r.company)}</td><td>${(DIFFICULTIES[r.diff] || D).icon} ${(DIFFICULTIES[r.diff] || D).name}</td><td>${r.days.toLocaleString('es-ES')} días</td></tr>`)
+    .join('');
+  openModal({
+    title: '👑 ¡Has conquistado el mundo!',
+    body: `<p class="lg">${esc(s.company)} ha cumplido todos los objetivos en <b>${s.won.day.toLocaleString('es-ES')} días</b> (unos ${(s.won.day / 365).toFixed(1)} años), en dificultad ${D.icon} ${D.name}.</p>
+      <p>Del garaje de tus padres a una valoración de <b>${fmtMoney(s.won.val)}</b>. Puedes seguir jugando todo lo que quieras.</p>
+      ${summaryStats()}
+      <h3>Tus mejores partidas</h3><table class="tbl records">${rows}</table>
+      <div class="row end gap"><button class="btn primary big" data-close>Seguir jugando</button></div>`,
+  });
+}
+
 function summaryStats() {
   return `<div class="kpis">
     <div class="kpi"><span>Récord de usuarios</span><b>${fmtNum(s.stats.peakUsers)}</b></div>
@@ -901,6 +953,15 @@ function summaryStats() {
 function newGameModal(closable, founderName = 'Alex') {
   let looks = makeLooks({ rng: (Math.random() * 2 ** 31) | 0 });
   let previewId = 0;
+  let difficulty = 'normal';
+  let cofounder = 'solo';
+  const pickers = () => `
+      <div class="ng-pick"><b>Dificultad</b><div class="chips">${Object.entries(DIFFICULTIES)
+        .map(([id, d]) => `<button class="chip ${id === difficulty ? 'on' : ''}" data-diff="${id}">${d.icon} ${d.name}</button>`)
+        .join('')}</div><small class="muted">${DIFFICULTIES[difficulty].desc}</small></div>
+      <div class="ng-pick"><b>¿Con quién fundas la empresa?</b><div class="chips">${Object.entries(COFOUNDERS)
+        .map(([id, c]) => `<button class="chip ${id === cofounder ? 'on' : ''}" data-co="${id}">${c.icon} ${c.name}</button>`)
+        .join('')}</div><small class="muted">${COFOUNDERS[cofounder].desc}</small></div>`;
   const m = openModal({
     title: '🦄 Pixel Unicorn',
     closable,
@@ -909,7 +970,16 @@ function newGameModal(closable, founderName = 'Alex') {
       <div class="grow"><label class="field">Tu startup<input id="ng-company" maxlength="18" value="${esc(s.company)}"></label>
       <label class="field">Tu nombre<input id="ng-founder" maxlength="18" value="${esc(founderName)}"></label></div></div>
       <div class="row gap wrap"><button class="btn" id="ng-look">🎲 Cambiar aspecto</button></div>
+      <div id="ng-pickers">${pickers()}</div>
       <div class="row end gap">${closable ? '<button class="btn" data-close>Cancelar</button>' : ''}<button class="btn primary big" id="ng-go">¡Empezar!</button></div>`,
+  });
+  m.body.querySelector('#ng-pickers').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-diff], [data-co]');
+    if (!b) return;
+    if (b.dataset.diff) difficulty = b.dataset.diff;
+    if (b.dataset.co) cofounder = b.dataset.co;
+    m.body.querySelector('#ng-pickers').innerHTML = pickers();
+    sfx('click');
   });
   const paint = () => {
     previewId += 1;
@@ -926,7 +996,7 @@ function newGameModal(closable, founderName = 'Alex') {
     const founder = m.body.querySelector('#ng-founder').value.trim() || 'Alex';
     clearSave();
     closeModal(m);
-    start(G.newGame({ company, founder, looks }));
+    start(G.newGame({ company, founder, looks, difficulty, cofounder }));
     s.speed = 1;
     draft = false;
     save(s);
@@ -942,7 +1012,7 @@ function helpModal(first = false) {
       <ol class="help">
       <li>📝 <b>Contratos:</b> acepta trabajos de clientes para ganar tus primeros dólares. Tú mismo puedes hacerlos.</li>
       <li>👥 <b>Equipo:</b> contrata desarrolladores (💻), diseñadores (🎨) e investigadores (🔬). Asigna a cada persona a un producto o contrato.</li>
-      <li>📦 <b>Productos:</b> elige una categoría, completa sus funciones básicas y lánzalo. Después, añade funciones y súbelas de nivel para ganar a la competencia.</li>
+      <li>📦 <b>Productos:</b> elige una categoría, completa sus funciones básicas y lánzalo. Después, añade funciones y súbelas de nivel para ganar a la competencia. Cada año o dos, saca una <b>versión nueva</b> (2.0, 3.0...): los rivales no paran de mejorar. Abre <b>«¿Por qué?»</b> para ver qué frena a cada producto.</li>
       <li>🔬 <b>I+D:</b> investiga "Modelos de negocio" para poder ganar dinero con publicidad o suscripciones. Luego desbloquea móviles, IA, streaming...</li>
       <li>📣 <b>Marketing, 🖥️ servidores y 📈 inversores:</b> haz crecer tu producto, mantenlo en pie y busca financiación.</li>
       <li>🏢 <b>Oficina:</b> compra mejoras para que el equipo esté feliz y con energía, y múdate cuando te falte espacio.</li>
