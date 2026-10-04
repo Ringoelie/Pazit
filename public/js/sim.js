@@ -22,6 +22,7 @@ import { relationsWeek, relFx } from './relations.js';
 import { keynoteDay } from './keynote.js';
 import { b2bDay, b2bDaily } from './b2b.js';
 import { awardsDay } from './awards.js';
+import { stockDay, SENTIMENT } from './stock.js';
 
 export { has, officeOf, findEmp, findProduct, perkStats, expectedSalary, levelOf };
 
@@ -83,6 +84,7 @@ export function newGame({ company = 'Mi Startup', founder = 'Alex', looks = null
     history: [],
     loans: [],
     funding: { round: 0, offer: null, cooldown: 0, raised: 0, ipo: false, sentiment: 1, lastIssue: -999 },
+    stock: null,
     effects: [],
     event: null,
     nextEventDay: 30,
@@ -877,6 +879,7 @@ export function perkState(s, id) {
   const n = s.office.perks[id] || 0;
   if (p.research && !has(s, p.research)) return { ok: false, why: `Requiere ${RESEARCH_BY_ID[p.research].name}` };
   if (s.office.tier < p.tier) return { ok: false, why: `Requiere ${OFFICES[p.tier].name}` };
+  if (p.ipo && !s.funding.ipo) return { ok: false, why: 'Requiere salir a bolsa' };
   if (n >= p.max) return { ok: false, why: 'Máximo alcanzado' };
   return { ok: true };
 }
@@ -1074,6 +1077,7 @@ export function issueShares(s) {
   const amount = Math.round(v * 0.05);
   money(s, amount, 'funding');
   s.equity *= 0.95;
+  if (s.stock) s.stock.shares /= 0.95;
   s.funding.lastIssue = s.day;
   s.funding.sentiment *= 0.97;
   return ok(`Emisión de acciones: +${fmtMoney(amount)}.`);
@@ -1158,6 +1162,8 @@ export function stepDay(s) {
     monthly(s, today);
     platformsMonth(s);
   }
+  // Después del cierre de mes: la previsión usa el mes recién cerrado.
+  stockDay(s);
   mailStep(s);
   awardsDay(s, tp);
   worldDay(s, newMonth);
@@ -1589,8 +1595,9 @@ function funding(s) {
     notify(s, `📈 ${F.offer.investor} quiere invertir: ${r.name}. Mira la pestaña Inversores.`, 'good');
   }
   if (F.ipo) {
-    const drift = (1 - F.sentiment) * 0.02;
-    F.sentiment = clamp(F.sentiment * Math.exp(gauss(s, drift, 0.015)), 0.5, 1.8);
+    // El día a día oscila alrededor de lo que el mercado cree que vales.
+    const drift = Math.log((s.stock?.anchor ?? 1) / F.sentiment) * 0.02;
+    F.sentiment = clamp(F.sentiment * Math.exp(gauss(s, drift, 0.015)), ...SENTIMENT);
   }
 }
 
@@ -1695,6 +1702,8 @@ const ACH_CHECK = {
   agi: (s) => has(s, 'agi'),
   showman: (s) => (s.stats.epicKeynotes || 0) > 0,
   award: (s) => (s.awards?.won.length || 0) > 0,
+  beat4: (s) => (s.stock?.streak || 0) >= 4,
+  moonshot: (s) => !!s.stock?.log.some((l) => l.level === 'high' && l.rev >= l.target),
 };
 
 function achievements(s) {

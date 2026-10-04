@@ -1974,3 +1974,383 @@ export function drawBike(ctx, x, y) {
     R(g, 11, 9, 3, 1, PAL.slate);
   }), x, y);
 }
+
+// ---------------------------------------------------------------- más decoración
+
+export function drawLava(ctx, x, y, t) {
+  const f = Math.floor(t * 1.2 + x * 0.1) % 4;
+  blit(ctx, sprite('lava|' + f, 6, 12, (g) => {
+    const glass = '#7b3a8a';
+    R(g, 2, 0, 2, 1, PAL.silver);
+    R(g, 1, 1, 4, 1, PAL.slate);
+    R(g, 1, 2, 4, 1, glass);
+    R(g, 0, 3, 6, 4, glass);
+    R(g, 1, 7, 4, 1, glass);
+    // Gotas de lava que suben y bajan
+    const a = [6, 5, 4, 3][f];
+    const b = [3, 4, 5, 6][f];
+    R(g, 2, a, 2, 1, PAL.orange);
+    px(g, 2, a - 1, PAL.yellow);
+    R(g, 3, b, 2, 1, '#ff6b8b');
+    px(g, 4, b - 1, '#ffb0c4');
+    R(g, 1, 6, 4, 1, PAL.orange);
+    px(g, 1, 3, '#b77bd0');
+    px(g, 1, 4, '#b77bd0');
+    // Base
+    R(g, 1, 8, 4, 1, PAL.slate);
+    R(g, 0, 9, 6, 3, PAL.dark);
+    R(g, 0, 9, 6, 1, PAL.slate);
+    px(g, 1, 10, PAL.silver);
+  }), x, y);
+}
+
+// Tres pósteres distintos según el objeto: cohete, bombilla y gato.
+export function drawWallPoster(ctx, x, y, v = 0) {
+  v = ((v % 3) + 3) % 3;
+  blit(ctx, sprite('wallposter|' + v, 12, 16, (g) => {
+    R(g, 0, 0, 12, 16, '#3a2a1e');
+    if (v === 0) {
+      R(g, 1, 1, 10, 14, PAL.navy);
+      for (const [sx, sy] of [[2, 2], [8, 3], [3, 9], [9, 10], [2, 13]]) px(g, sx, sy, PAL.white);
+      R(g, 5, 4, 2, 6, PAL.white);
+      px(g, 5, 3, PAL.red);
+      px(g, 6, 3, PAL.red);
+      px(g, 5, 2, PAL.red);
+      px(g, 6, 6, PAL.sky);
+      R(g, 4, 8, 1, 3, PAL.red);
+      R(g, 7, 8, 1, 3, PAL.red);
+      R(g, 5, 10, 2, 1, PAL.orange);
+      px(g, 5, 11, PAL.yellow);
+      px(g, 6, 12, PAL.yellow);
+      px(g, 5, 13, PAL.orange);
+    } else if (v === 1) {
+      R(g, 1, 1, 10, 14, PAL.teal);
+      R(g, 1, 1, 10, 1, shade(PAL.teal, 0.25));
+      blob(g, 6, 6, 3, 3, PAL.yellow);
+      px(g, 5, 4, PAL.white);
+      px(g, 4, 5, PAL.white);
+      R(g, 5, 9, 3, 1, PAL.silver);
+      R(g, 5, 10, 3, 1, PAL.slate);
+      for (const [rx, ry] of [[1, 2], [10, 2], [1, 7], [10, 7], [6, 1]]) px(g, rx, ry, PAL.yellow);
+      R(g, 2, 12, 8, 1, PAL.white);
+      R(g, 3, 13, 6, 1, PAL.cyan);
+    } else {
+      R(g, 1, 1, 10, 14, PAL.sky);
+      R(g, 1, 11, 10, 4, '#2f9a55');
+      R(g, 1, 3, 10, 1, WOOD);
+      px(g, 9, 2, LEAF);
+      px(g, 2, 2, LEAF);
+      // Gato colgado de la rama
+      R(g, 4, 4, 1, 2, '#8d8d99');
+      R(g, 7, 4, 1, 2, '#8d8d99');
+      R(g, 4, 6, 4, 4, '#a7a7b3');
+      px(g, 4, 7, PAL.ink);
+      px(g, 7, 7, PAL.ink);
+      px(g, 4, 5, '#a7a7b3');
+      px(g, 7, 5, '#a7a7b3');
+      R(g, 5, 10, 2, 2, '#a7a7b3');
+      px(g, 7, 12, '#8d8d99');
+      R(g, 2, 13, 8, 1, PAL.white);
+    }
+  }), x, y);
+}
+
+const BEAN_COLORS = [PAL.red, PAL.sky, PAL.lime, PAL.orange, '#b77bd0'];
+export function drawBeanbag(ctx, x, y, v = 0) {
+  const c = BEAN_COLORS[((v % BEAN_COLORS.length) + BEAN_COLORS.length) % BEAN_COLORS.length];
+  blit(ctx, sprite('bean|' + c, 12, 9, (g) => {
+    // Respaldo, asiento hundido y base aplastada
+    blob(g, 6, 6, 5, 2, shade(c, -0.28));
+    blob(g, 7, 3, 4, 3, c);
+    blob(g, 4, 5, 3, 2, shade(c, 0.08));
+    R(g, 3, 5, 4, 1, shade(c, -0.15));
+    R(g, 6, 2, 3, 1, shade(c, 0.3));
+    px(g, 6, 1, shade(c, 0.5));
+    px(g, 2, 4, shade(c, 0.35));
+    line(g, 8, 6, 10, 4, shade(c, -0.18));
+    R(g, 2, 8, 9, 1, shade(c, -0.5));
+  }), x, y);
+}
+
+export function drawPalm(ctx, x, y, t) {
+  const sway = Math.sin(t * 1.1 + x * 0.3) > 0.5 ? 1 : 0;
+  blit(ctx, sprite('palm|' + sway, 12, 26, (g) => {
+    // Tronco por anillos
+    for (let i = 0; i < 6; i++) {
+      const tx = 5 + (i < 2 ? sway : 0);
+      R(g, tx, 7 + i * 2, 2, 2, i % 2 ? '#8a5a34' : WOOD);
+      px(g, tx, 7 + i * 2, WOOD_L);
+    }
+    // Hojas
+    const fronds = [
+      [6 + sway, 6, 1, 2], [6 + sway, 6, 0, 4], [6 + sway, 6, 11, 4], [6 + sway, 6, 10, 1], [6 + sway, 6, 2, 0], [6 + sway, 6, 8, 0],
+    ];
+    for (const [x0, y0, x1, y1] of fronds) {
+      line(g, x0, y0, x1, y1, LEAF);
+      line(g, x0, y0 + 1, x1, y1 + 1, LEAF_D);
+    }
+    px(g, 3 + sway, 2, LEAF_L);
+    px(g, 9 + sway, 2, LEAF_L);
+    px(g, 6 + sway, 5, '#6b4024');
+    px(g, 5 + sway, 6, '#6b4024');
+    // Maceta
+    R(g, 2, 19, 8, 2, shade(TERRA, 0.15));
+    R(g, 2, 19, 8, 1, shade(TERRA, 0.35));
+    R(g, 3, 21, 6, 5, TERRA);
+    R(g, 3, 21, 1, 5, shade(TERRA, 0.12));
+    R(g, 8, 21, 1, 5, shade(TERRA, -0.25));
+    R(g, 3, 23, 6, 1, shade(TERRA, -0.15));
+  }), x, y);
+}
+
+// Letrero de neón "SHIP IT": de vez en cuando parpadea.
+export function drawNeon(ctx, x, y, t) {
+  const on = (t + x * 0.37) % 11 > 0.25;
+  blit(ctx, sprite('neon|' + on, 34, 12, (g) => {
+    R(g, 0, 0, 34, 12, '#1c1530');
+    R(g, 0, 0, 34, 1, '#2e2448');
+    for (const [sx, sy] of [[1, 1], [32, 1], [1, 10], [32, 10]]) px(g, sx, sy, PAL.slate);
+    const pink = on ? '#ff8fb0' : '#7a3a55';
+    const core = on ? '#ffe0ea' : '#8f4d68';
+    drawText(g, 'SHIP IT', 4, 4, pink);
+    drawText(g, 'SHIP IT', 4, 3, core);
+    // Rayo
+    const cy = on ? PAL.cyan : '#2b5d66';
+    px(g, 31, 2, cy);
+    px(g, 30, 3, cy);
+    R(g, 29, 4, 2, 1, cy);
+    px(g, 30, 5, cy);
+    px(g, 29, 6, cy);
+  }, 0.5), x, y);
+}
+
+export function drawZen(ctx, x, y, t) {
+  const f = Math.floor(t * 3 + x) % 3;
+  blit(ctx, sprite('zen|' + f, 16, 14, (g) => {
+    // Bambú que vierte agua
+    R(g, 1, 0, 2, 8, '#7fae4a');
+    px(g, 1, 3, '#5d8a35');
+    px(g, 2, 3, '#5d8a35');
+    R(g, 1, 1, 6, 2, '#9cc95e');
+    R(g, 1, 2, 6, 1, '#7fae4a');
+    // Chorrito
+    for (let i = 0; i < 4; i++) px(g, 7, 3 + i, (i + f) % 3 ? PAL.cyan : PAL.white);
+    // Pila de piedra con agua
+    blob(g, 8, 10, 7, 3, '#7d8796');
+    blob(g, 8, 9, 6, 2, '#9aa4b2');
+    blob(g, 8, 9, 5, 1, PAL.teal);
+    R(g, 5 + f, 9, 2, 1, PAL.cyan);
+    px(g, 10 - f, 10, PAL.cyan);
+    // Piedrecitas
+    px(g, 1, 12, PAL.silver);
+    px(g, 14, 12, PAL.silver);
+    px(g, 2, 13, PAL.slate);
+  }), x, y);
+}
+
+export function drawJukebox(ctx, x, y, t) {
+  const f = Math.floor(t * 4) % 4;
+  blit(ctx, sprite('jukebox|' + f, 14, 22, (g) => {
+    // Cuerpo con arco
+    R(g, 2, 0, 10, 1, '#c24d62');
+    R(g, 1, 1, 12, 2, '#c24d62');
+    box(g, 0, 3, 14, 19, WOOD, 0.22, -0.3);
+    R(g, 1, 1, 12, 1, shade('#c24d62', 0.25));
+    // Tubos de luz que cambian de color
+    const cols = [PAL.yellow, PAL.orange, '#ff6b8b', PAL.cyan];
+    R(g, 1, 3, 2, 16, cols[f]);
+    R(g, 11, 3, 2, 16, cols[(f + 2) % 4]);
+    px(g, 1, 3 + f * 3, PAL.white);
+    px(g, 12, 15 - f * 3, PAL.white);
+    // Cristal con discos
+    R(g, 3, 4, 8, 6, PAL.ink);
+    blob(g, 7, 7, 2, 2, '#20222e');
+    px(g, 7, 7, PAL.red);
+    R(g, 3, 4, 8, 1, '#3a3f5a');
+    // Botonera y altavoz
+    R(g, 3, 11, 8, 2, PAL.silver);
+    for (let i = 0; i < 4; i++) px(g, 4 + i * 2, 11, i === f ? PAL.lime : PAL.slate);
+    R(g, 3, 14, 8, 6, '#4a2f1f');
+    for (let yy = 15; yy < 20; yy += 2) R(g, 4, yy, 6, 1, '#2a1c14');
+  }), x, y);
+  // Notas que salen flotando
+  const ph = (t * 0.8 + x * 0.05) % 1;
+  const ny = y - 2 - Math.round(ph * 8);
+  const nx = x + 10 + Math.round(Math.sin(ph * 6) * 2);
+  if (ph < 0.85) {
+    R(ctx, nx, ny, 1, 3, PAL.yellow);
+    R(ctx, nx - 1, ny + 2, 2, 1, PAL.yellow);
+    px(ctx, nx + 1, ny, PAL.yellow);
+  }
+}
+
+export function drawPingPong(ctx, x, y, t) {
+  blit(ctx, sprite('pingpong', 32, 18, (g) => {
+    // Patas
+    R(g, 3, 11, 2, 7, PAL.dark);
+    R(g, 27, 11, 2, 7, PAL.dark);
+    R(g, 14, 12, 4, 1, PAL.slate);
+    // Mesa
+    R(g, 0, 1, 32, 11, '#1f5e8a');
+    R(g, 0, 11, 32, 2, '#16405e');
+    R(g, 1, 2, 30, 8, '#2a77ad');
+    R(g, 1, 2, 30, 1, PAL.white);
+    R(g, 1, 9, 30, 1, PAL.white);
+    R(g, 1, 2, 1, 8, PAL.white);
+    R(g, 30, 2, 1, 8, PAL.white);
+    R(g, 2, 6, 28, 1, '#7fb6dc');
+    // Red
+    R(g, 15, 0, 2, 11, PAL.silver);
+    for (let yy = 1; yy < 10; yy += 2) px(g, 15, yy, PAL.white);
+    // Palas
+    R(g, 3, 4, 3, 3, PAL.red);
+    px(g, 4, 7, WOOD);
+    R(g, 26, 5, 3, 3, PAL.red);
+    px(g, 27, 8, WOOD);
+  }), x, y);
+  // Pelota yendo y viniendo
+  const ph = (t * 0.9 + x * 0.01) % 2;
+  const k = ph < 1 ? ph : 2 - ph;
+  const bx = x + 6 + Math.round(k * 20);
+  const by = y + 3 - Math.round(Math.sin(k * Math.PI) * 4);
+  R(ctx, bx, by, 2, 2, PAL.white);
+  px(ctx, bx + 1, by + 1, PAL.silver);
+}
+
+export function drawFireplace(ctx, x, y, t) {
+  const f = Math.floor(t * 6) % 3;
+  blit(ctx, sprite('fireplace|' + f, 24, 22, (g) => {
+    const brick = '#9e4a3a';
+    R(g, 0, 3, 24, 19, brick);
+    for (let yy = 4; yy < 22; yy += 3) {
+      R(g, 0, yy, 24, 1, shade(brick, -0.25));
+      for (let xx = (yy % 2 ? 0 : 3); xx < 24; xx += 6) px(g, xx, yy + 1, shade(brick, -0.25));
+    }
+    // Repisa con vela y planta
+    R(g, 0, 2, 24, 2, WOOD_L);
+    R(g, 0, 3, 24, 1, WOOD_D);
+    R(g, 4, 0, 1, 2, PAL.white);
+    px(g, 4, -1, PAL.yellow);
+    R(g, 18, 0, 3, 2, TERRA);
+    px(g, 19, -1, LEAF);
+    // Hueco con fuego
+    R(g, 4, 8, 16, 14, '#24140f');
+    R(g, 5, 9, 14, 13, '#140b08');
+    R(g, 6, 19, 12, 2, WOOD_D);
+    R(g, 7, 18, 10, 1, WOOD);
+    const flames = [[7, 15, 3], [10, 12, 6], [13, 14, 4], [15, 16, 2]];
+    flames.forEach(([fx, fy, h], i) => {
+      const hh = h + ((i + f) % 3) - 1;
+      R(g, fx, fy + (h - hh), 2, hh + 2, PAL.orange);
+      R(g, fx, fy + (h - hh) + 2, 1, hh, PAL.yellow);
+    });
+    px(g, 11, 11 - f, PAL.yellow);
+  }, 0.6), x, y);
+}
+
+export function drawHammock(ctx, x, y, t) {
+  const sw = Math.sin(t * 1.4 + x) > 0 ? 1 : 0;
+  blit(ctx, sprite('hammock|' + sw, 28, 14, (g) => {
+    // Postes
+    R(g, 0, 1, 3, 13, WOOD_D);
+    R(g, 25, 1, 3, 13, WOOD_D);
+    R(g, 0, 0, 3, 2, WOOD_L);
+    R(g, 25, 0, 3, 2, WOOD_L);
+    R(g, 1, 2, 1, 11, WOOD);
+    R(g, 26, 2, 1, 11, WOOD);
+    // Cuerdas
+    line(g, 3, 2, 6, 4 + sw, PAL.silver);
+    line(g, 24, 2, 21, 4 + sw, PAL.silver);
+    // Lona a rayas: más honda en el centro
+    const stripes = [PAL.red, PAL.yellow, PAL.sky, PAL.white];
+    for (let i = 0; i <= 15; i++) {
+      const k = Math.sin((Math.PI * i) / 15);
+      const top = 4 + sw + Math.round(k * 3);
+      const h = 2 + Math.round(k * 3);
+      const c = stripes[Math.floor(i / 2) % 4];
+      R(g, 6 + i, top, 1, h, c);
+      px(g, 6 + i, top, shade(c, 0.3));
+      px(g, 6 + i, top + h - 1, shade(c, -0.35));
+    }
+    // Cojín
+    R(g, 7, 4 + sw, 4, 2, PAL.white);
+    px(g, 7, 4 + sw, '#dfe7f0');
+    R(g, 7, 6 + sw, 4, 1, PAL.silver);
+  }), x, y);
+}
+
+// Mural: una ciudad de noche con luna.
+export function drawMural(ctx, x, y) {
+  blit(ctx, sprite('mural', 40, 21, (g) => {
+    const bands = ['#29366f', '#3b3f8a', '#5d4a9c', '#8a4f9e', '#c06a8f'];
+    bands.forEach((c, i) => R(g, 0, i * 3, 40, 3, c));
+    R(g, 0, 15, 40, 6, '#c06a8f');
+    blob(g, 31, 4, 3, 3, PAL.yellow);
+    blob(g, 32, 3, 2, 2, '#ffe9b0');
+    for (const [sx, sy] of [[4, 2], [12, 1], [20, 4], [26, 1], [37, 8]]) px(g, sx, sy, PAL.white);
+    const blds = [[0, 11, 6], [6, 8, 5], [11, 13, 6], [17, 6, 4], [21, 10, 7], [28, 12, 5], [33, 9, 7]];
+    for (const [bx, by, bw] of blds) {
+      R(g, bx, by, bw, 21 - by, '#1a1c2c');
+      for (let wy = by + 2; wy < 19; wy += 3) for (let wx = bx + 1; wx < bx + bw - 1; wx += 2) if (hash(wx, wy, 5) > 0.45) px(g, wx, wy, PAL.yellow);
+    }
+    R(g, 18, 4, 1, 2, '#1a1c2c');
+    R(g, 0, 20, 40, 1, PAL.ink);
+  }, 0.4), x, y);
+}
+
+export function drawTelescope(ctx, x, y) {
+  blit(ctx, sprite('telescope', 12, 20, (g) => {
+    // Trípode
+    line(g, 6, 11, 1, 19, PAL.dark);
+    line(g, 6, 11, 11, 19, PAL.dark);
+    line(g, 6, 11, 6, 19, PAL.slate);
+    R(g, 5, 10, 3, 2, PAL.slate);
+    // Tubo apuntando al cielo
+    for (let i = 0; i < 8; i++) R(g, 2 + i, 9 - i, 3, 2, i < 2 ? PAL.silver : PAL.white);
+    R(g, 9, 1, 3, 2, PAL.dark);
+    R(g, 5, 6, 2, 2, PAL.yellow);
+    px(g, 1, 10, PAL.dark);
+    px(g, 2, 11, PAL.dark);
+  }), x, y);
+}
+
+// Pantalla de bolsa: la cotización de las últimas semanas en verde o rojo.
+export function drawTicker(ctx, x, y, t, data) {
+  blit(ctx, sprite('ticker', 28, 16, (g) => {
+    R(g, 0, 0, 28, 14, PAL.dark);
+    R(g, 0, 0, 28, 1, PAL.slate);
+    R(g, 1, 1, 26, 12, '#0b0f1c');
+    R(g, 12, 14, 4, 2, PAL.slate);
+  }), x, y);
+  const pts = data?.pts || [];
+  const up = data ? data.up : true;
+  const c = up ? PAL.lime : '#ff6b6b';
+  for (let gy = 4; gy < 13; gy += 4) R(ctx, x + 2, y + gy, 24, 1, '#152038');
+  if (pts.length >= 2) {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const p of pts) {
+      min = Math.min(min, p);
+      max = Math.max(max, p);
+    }
+    const n = pts.length;
+    let prev = null;
+    for (let i = 0; i < n; i++) {
+      const px2 = x + 2 + Math.round((i / (n - 1)) * 23);
+      const py = y + 11 - Math.round(((pts[i] - min) / (max - min || 1)) * 8);
+      if (prev) line(ctx, prev[0], prev[1], px2, py, c);
+      prev = [px2, py];
+    }
+  } else R(ctx, x + 2, y + 8, 24, 1, PAL.slate);
+  // Flecha que parpadea
+  if (t % 1.4 < 1) {
+    const ax = x + 22;
+    if (up) {
+      px(ctx, ax + 1, y + 2, c);
+      R(ctx, ax, y + 3, 3, 1, c);
+    } else {
+      R(ctx, ax, y + 2, 3, 1, c);
+      px(ctx, ax + 1, y + 3, c);
+    }
+  }
+}

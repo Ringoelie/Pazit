@@ -19,6 +19,7 @@ import { relFx, relOf, relationsWeek } from '../public/js/relations.js';
 import { EVENTS, deliverEvent } from '../public/js/events.js';
 import { officeFx, birthdayOf, isBirthday, hasEffect, effectMult, addEffect, digest, flushDigest } from '../public/js/core.js';
 import { botDay } from './bot.js';
+import { GUIDANCE, setGuidance, lowerGuidance, canWarn, sharePrice, quarterStatus, reaction } from '../public/js/stock.js';
 
 const fresh = (seed = 1) => {
   const s = G.newGame({ seed });
@@ -731,3 +732,66 @@ console.log('OK');
   assert.equal(G.launch(s, k.id).ok, true);
   assert.equal(k.keynote, null, 'lanzar a mano cancela la presentación');
 }
+
+// 22. Bolsa: previsión trimestral, rebaja, resultados, racha y logros.
+{
+  const s = fresh(31);
+  s.money = 1e8;
+  const p = quickProduct(s, 'blog', { landing: 1, articles: 1 });
+  p.users = 2e5;
+  s.funding.ipo = true;
+  s.funding.round = 6;
+  G.stepDay(s);
+  const St = s.stock;
+  assert.ok(St && St.q, 'al salir a bolsa empieza el primer trimestre');
+  assert.equal(St.q.end, 90, 'el trimestre acaba el 1 de abril');
+  const mail = s.mail.find((m) => m.type === 'guidance');
+  assert.ok(mail && mail.choices.length === 3 && mail.def === 1, 'correo de previsión con la realista por defecto');
+  // Ambiciosa: la acción sube el día del anuncio.
+  const before = s.funding.sentiment;
+  answerMail(s, mail.id, 2);
+  assert.equal(St.q.level, 'high');
+  assert.ok(Math.abs(St.q.target - St.q.exp * GUIDANCE.high.mult) < 1);
+  assert.ok(s.funding.sentiment > before, 'una previsión ambiciosa ilusiona al mercado');
+  assert.equal(setGuidance(s, 'low').ok, false, 'no se anuncia dos veces');
+  // Rebajarla: baja la acción y el objetivo, y solo una vez.
+  assert.ok(canWarn(s));
+  const sent = s.funding.sentiment;
+  assert.equal(lowerGuidance(s).ok, true);
+  assert.ok(s.funding.sentiment < sent && St.q.level === 'low' && St.q.warned);
+  assert.equal(lowerGuidance(s).ok, false, 'solo se rebaja una vez');
+  assert.ok(quarterStatus(s).target < St.q.exp, 'el objetivo baja');
+  // Fallar la previsión hunde la acción y la credibilidad.
+  St.q.target = 1e12;
+  const cred = St.cred;
+  while (St.log.length === 0) G.stepDay(s);
+  assert.ok(St.log[0].jump < 0 && St.cred < cred && St.streak === 0, 'fallar castiga');
+  assert.ok(officeFx(s, 'results').pct < 0, 'la oficina se entera');
+  // El trimestre siguiente empieza solo con su correo; cumplir sube la acción.
+  assert.equal(St.q.start, s.day);
+  const next = s.mail.find((m) => m.type === 'guidance' && m.done == null);
+  assert.ok(next, 'nuevo correo de previsión');
+  answerMail(s, next.id, 2);
+  St.q.target = 0;
+  while (St.log.length === 1) G.stepDay(s);
+  assert.ok(St.log[0].jump > 0 && St.streak === 1, 'cumplir premia');
+  G.stepDay(s);
+  assert.ok(s.achievements.moonshot != null, 'logro por cumplir una previsión ambiciosa');
+  // Cuanto más prometes, más duele fallar y más premia cumplir.
+  assert.ok(reaction('high', 80, 100, 100) < reaction('mid', 80, 90, 100));
+  assert.ok(reaction('high', 120, 120, 100) > reaction('mid', 120, 100, 100));
+  // Emitir acciones diluye: más acciones en circulación.
+  const shares = St.shares;
+  s.funding.lastIssue = -999;
+  assert.equal(G.issueShares(s).ok, true);
+  assert.ok(St.shares > shares && sharePrice(s) > 0);
+  // Salir a bolsa con el trimestre casi acabado: se espera al siguiente.
+  const t = fresh(32);
+  while (dateOf(t.day).m !== 2 || dateOf(t.day).d !== 15) G.stepDay(t);
+  t.funding.ipo = true;
+  G.stepDay(t);
+  assert.ok(t.stock && !t.stock.q, 'no hay previsión con dos semanas de trimestre');
+  while (!t.stock.q) G.stepDay(t);
+  assert.equal(dateOf(t.day).m, 3, 'empieza el 1 de abril');
+}
+console.log('OK bolsa');

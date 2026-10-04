@@ -12,6 +12,7 @@ import { toggleBackups, toggleBounty, buyAudit } from './security.js';
 import { toggleWebpay } from './platforms.js';
 import { scheduleKeynote, cancelKeynote } from './keynote.js';
 import { pitchLead, dropLead } from './b2b.js';
+import { GUIDANCE, GUIDANCE_ORDER, WARN_COST, setGuidance, lowerGuidance, quarterStatus } from './stock.js';
 import { OfficeView } from './office.js';
 import { sfx, setSound } from './audio.js';
 import { setMusic, setMusicMood, unlockMusic } from './music.js';
@@ -20,7 +21,7 @@ import { PET_NAMES } from './pets.js';
 import {
   patch, openModal, closeModal, closeAllModals, topModal, modalOpen, refreshModals, confirmModal, toast, avatar, pixIcon, btn,
 } from './ui.js';
-import { TABS, renderPanel, hireModal, employeeModal, newProductModal, editBar, perkCards } from './panels.js';
+import { TABS, renderPanel, hireModal, employeeModal, newProductModal, editBar, perkShop } from './panels.js';
 
 // Días de juego por segundo real: normal 4 s por día, rápida 1,5 s, muy rápida 0,5 s.
 const DAYS_PER_SEC = [0, 0.25, 0.67, 2];
@@ -412,7 +413,7 @@ const ACTIONS = {
   },
   editDeselect: () => selectEdit(null),
   editAdd: () => {
-    openModal({ title: '➕ Añadir a la oficina', wide: true, render: () => `<p class="muted">Se coloca en el primer hueco libre; después arrástralo donde quieras.</p><div class="cards">${perkCards(s, 'editBuy', false)}</div>` });
+    openModal({ title: '➕ Añadir a la oficina', wide: true, render: () => `<p class="muted">Se coloca en el primer hueco libre; después arrástralo donde quieras.</p>${perkShop(s, U, 'editBuy', false)}` });
   },
   editBuy: (d) => {
     const r = G.buyPerk(s, d.id);
@@ -587,10 +588,24 @@ const ACTIONS = {
   },
   rejectOffer: () => result(G.rejectOffer(s)),
   issueShares: () => result(G.issueShares(s), 'coin'),
+  guidance: (d) => {
+    // Si el correo de la previsión sigue pendiente, se contesta por ahí para que no se quede abierto.
+    const m = s.mail.find((x) => x.type === 'guidance' && x.done == null);
+    const r = m ? answerMail(s, m.id, GUIDANCE_ORDER.indexOf(d.level)) : setGuidance(s, d.level);
+    result(r, 'coin');
+  },
+  lowerGuidance: () => {
+    const qs = quarterStatus(s);
+    if (!qs) return;
+    confirmModal('Rebajar la previsión', `La acción caerá un ${Math.round(WARN_COST * 100)}% hoy y perderás algo de credibilidad, pero el objetivo bajará a ${fmtMoney(qs.q.exp * GUIDANCE.low.mult)}. ¿Seguro?`, 'Rebajar', () => result(lowerGuidance(s)));
+  },
   loan: (d) => result(G.takeLoan(s, +d.amount), 'coin'),
   repay: (d) => result(G.repayLoan(s, +d.id)),
   catPick: (d) => {
     U.cat = d.cat;
+  },
+  shopCat: (d) => {
+    U.shopCat = d.cat;
   },
   acquire: (d) => {
     const c = s.competitors.find((x) => x.id === +d.id);

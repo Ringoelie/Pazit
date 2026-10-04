@@ -3,7 +3,7 @@
 import {
   ROLES, TRAITS, OFFICES, PERKS, FIXTURES, POLICIES, FEATURES, CATEGORIES, RESEARCH, RESEARCH_BY_ID, CAMPAIGNS, ROUNDS,
   QUESTS, ACHIEVEMENTS, POINT_TYPES, PREMIUM_PRICES, MAX_FEATURE_LEVEL, LEVELS, HW_PRICES, UNIVERSAL_WEIGHT,
-  REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD, PACES, KEYNOTES, B2B_SIZES, AWARDS,
+  REGIONS, LAWS, RIVAL_STYLES, STYLES, STYLE_MOOD, PACES, KEYNOTES, B2B_SIZES, AWARDS, SHOP_CATS,
 } from './data.js';
 import { pendingMail, defaultChoice } from './mail.js';
 import { seasonOf, seasonDemand, regionMarket, langReach, regionStaff, complianceIssues, lawActive } from './world.js';
@@ -15,6 +15,7 @@ import { REL_KINDS, relationsOf, relSummary } from './relations.js';
 import { keynoteOdds, tierOf, KEYNOTE_TIERS } from './keynote.js';
 import { winChance, missingReqs, reqHint, b2bDaily } from './b2b.js';
 import { nominations, winChance as awardChance } from './awards.js';
+import { GUIDANCE, GUIDANCE_ORDER, WARN_COST, quarterName, quarterStatus, sharePrice, canWarn, nextQuarterDay } from './stock.js';
 import * as G from './sim.js';
 import { perkStats, birthdayOf, isBirthday } from './core.js';
 import { esc, fmtMoney, fmtNum, fmtPct, fmtDays, fmtDate, dateOf, MONTHS } from './util.js';
@@ -59,7 +60,7 @@ const moodColor = (v) => (v >= 60 ? 'var(--green)' : v >= 35 ? 'var(--yellow)' :
 
 export function renderPanel(s, U) {
   switch (U.tab) {
-    case 'office': return officePanel(s);
+    case 'office': return officePanel(s, U);
     case 'team': return teamPanel(s, U);
     case 'products': return U.pid && G.findProduct(s, U.pid) ? productDetail(s, G.findProduct(s, U.pid)) : productsPanel(s);
     case 'contracts': return contractsPanel(s);
@@ -78,9 +79,18 @@ export function renderPanel(s, U) {
 
 // ---------------------------------------------------------------- oficina
 
-// Tienda de mejoras; `act` cambia si se compra desde el editor.
-export function perkCards(s, act = 'buyPerk', sell = true) {
+// Tienda de mejoras por secciones; `act` cambia si se compra desde el editor.
+export function perkShop(s, U, act = 'buyPerk', sell = true) {
+  const cat = SHOP_CATS[U.shopCat] ? U.shopCat : 'all';
+  const chips = Object.entries(SHOP_CATS)
+    .map(([id, name]) => `<button class="chip ${id === cat ? 'on' : ''}" data-act="shopCat" data-cat="${id}">${name}</button>`)
+    .join('');
+  return `<div class="chips scroll shop-cats">${chips}</div><div class="cards">${perkCards(s, act, sell, cat)}</div>`;
+}
+
+export function perkCards(s, act = 'buyPerk', sell = true, cat = 'all') {
   return Object.entries(PERKS)
+    .filter(([, p]) => cat === 'all' || p.cat === cat)
     .map(([id, p]) => {
       const n = s.office.perks[id] || 0;
       const st = G.perkState(s, id);
@@ -95,7 +105,7 @@ export function perkCards(s, act = 'buyPerk', sell = true) {
     .join('');
 }
 
-function officePanel(s) {
+function officePanel(s, U) {
   const o = G.officeOf(s);
   const ps = perkStats(s);
   const items = s.office.layout.items.length;
@@ -127,7 +137,7 @@ function officePanel(s) {
     </div>
     <div class="banner"><span>🛠️ Coloca mesas y muebles donde quieras. La decoración cerca de las mesas sube el ánimo y los juegos hacen ruido.</span>
       ${btn('✏️ Editar la oficina', 'editToggle', {}, { kind: 'primary' })}</div>
-    <h3>Mejoras de oficina</h3><div class="cards">${perkCards(s)}</div>
+    <h3>Mejoras y decoración</h3>${perkShop(s, U)}
     <h3>Estilo de la oficina</h3>
     <p class="muted">Cambia suelo, paredes y muebles en cualquier oficina. Con un estilo puesto, el equipo gana +${STYLE_MOOD} de ánimo.</p>
     <div class="cards">${styleCards(s)}</div>
@@ -847,12 +857,13 @@ function securitySection(s, tp) {
 
 // ---------------------------------------------------------------- finanzas
 
-function chart(hist, series, h = 70) {
+function chart(hist, series, h = 70, fit = false) {
   const pts = hist.slice(-104);
   if (pts.length < 2) return '<p class="muted">Los gráficos aparecen tras unas semanas de juego.</p>';
   const W = 300;
-  let max = 1;
-  let min = 0;
+  // fit: el eje empieza cerca del mínimo para que se vean bien las subidas y bajadas.
+  let max = fit ? -Infinity : 1;
+  let min = fit ? Infinity : 0;
   for (const p of pts) for (const s of series) {
     max = Math.max(max, p[s.k]);
     min = Math.min(min, p[s.k]);
@@ -935,19 +946,70 @@ function investorsPanel(s) {
       <small class="muted">Tu participación pasaría del ${s.equity.toFixed(1)}% al ${(s.equity * (1 - o.dil / 100)).toFixed(1)}%. Caduca en ${fmtDays(o.expires - s.day)}.</small></div>
       <div class="col-btns">${btn('Aceptar', 'acceptOffer', {}, { kind: 'primary' })}${btn('Rechazar', 'rejectOffer', {}, { kind: 'ghost' })}</div></div>`
     : `<p class="muted">${F.round >= ROUNDS.length ? 'Ya cotizas en bolsa.' : G.roundReady(s) ? 'Los inversores están estudiando tu empresa...' : `Siguiente ronda: ${ROUNDS[F.round].name} (${ROUNDS[F.round].reqText}).`}</p>`;
-  const ipo = F.ipo
-    ? `<h3>Bolsa</h3><div class="kpis">${kpi('Precio por acción', '$' + (v / 1e8).toFixed(2))}${kpi('Sentimiento', fmtPct(F.sentiment), '', F.sentiment < 0.9 ? 'warn' : 'good')}</div>
-      <div class="row">${btn('Emitir acciones (5%)', 'issueShares', {}, { disabled: s.day - F.lastIssue < 180 })}<small class="muted">Consigue caja a cambio de diluirte. Una vez cada 180 días.</small></div>`
-    : '';
+  const ipo = F.ipo ? stockSection(s, v) : '';
   return `<div class="kpis">
       ${kpi('Valoración', fmtMoney(v))}
       ${kpi('Tu participación', s.equity.toFixed(1) + '%')}
       ${kpi('Tu patrimonio', fmtMoney(G.netWorth(s, v)))}
       ${kpi('Captado', fmtMoney(F.raised))}
     </div>
-    <p class="muted">Valoración ≈ ingresos anuales × 8 + usuarios × $4 + caja + activos. Vender acciones da caja para crecer, pero tu parte del pastel se reduce.</p>
-    <h3>Oferta actual</h3>${offer}
-    <h3>Rondas</h3><div class="rounds">${ladder}</div>${ipo}`;
+    <p class="muted">Valoración ≈ ingresos anuales × 8 + usuarios × $4 + caja + activos${F.ipo ? ', por el sentimiento del mercado' : ''}. Vender acciones da caja para crecer, pero tu parte del pastel se reduce.</p>
+    ${F.ipo ? `${ipo}<h3>Rondas</h3><div class="rounds">${ladder}</div>` : `<h3>Oferta actual</h3>${offer}<h3>Rondas</h3><div class="rounds">${ladder}</div>`}`;
+}
+
+// Bolsa: cotización, previsión del trimestre y resultados anteriores.
+function stockSection(s, v) {
+  const F = s.funding;
+  const St = s.stock;
+  const price = sharePrice(s, v);
+  const hist = St?.hist || [];
+  const prev = hist.length ? hist[Math.max(0, hist.length - 13)].p : price;
+  const change = prev ? price / prev - 1 : 0;
+  const up = change >= 0;
+  const head = `<h3>Bolsa</h3><div class="kpis">
+      ${kpi('Precio por acción', '$' + price.toFixed(2), `${up ? '▲' : '▼'} ${fmtPct(Math.abs(change), 1)} en 3 meses`, up ? 'good' : 'warn')}
+      ${kpi('Sentimiento', fmtPct(F.sentiment), F.sentiment < 0.9 ? 'El mercado desconfía' : F.sentiment > 1.1 ? 'El mercado te adora' : 'Normal', F.sentiment < 0.9 ? 'warn' : 'good')}
+      ${kpi('Credibilidad', `${Math.round(St?.cred ?? 60)}/100`, 'Sube si cumples lo que prometes', (St?.cred ?? 60) < 35 ? 'warn' : '')}
+      ${kpi('Racha', `${St?.streak || 0} trimestres`, 'cumpliendo la previsión')}
+    </div>
+    ${hist.length >= 2 ? chart(hist, [{ k: 'p', c: up ? 'var(--green)' : 'var(--red)', label: 'Precio por acción', money: true }], 70, true) : ''}`;
+  const qs = quarterStatus(s);
+  let quarter;
+  if (!qs) {
+    quarter = `<p class="muted">Tu primer trimestre como empresa cotizada empieza el ${fmtDate(nextQuarterDay(s.day))}. Ese día anunciarás qué ingresos prometes.</p>`;
+  } else if (!qs.q.level) {
+    const choices = GUIDANCE_ORDER.map((k) => {
+      const G = GUIDANCE[k];
+      return btn(`${G.icon} ${G.name} · ${fmtMoney(qs.q.exp * G.mult)}`, 'guidance', { level: k }, { kind: k === 'mid' ? 'primary' : '', title: G.hint });
+    }).join('');
+    quarter = `<div class="card stock-q"><div class="card-icon">📊</div><div class="grow">
+      <b>Previsión del ${quarterName(qs.q)}</b>
+      <small>Los analistas esperan unos <b>${fmtMoney(qs.q.exp)}</b> de ingresos hasta el ${fmtDate(qs.q.end - 1)}. ¿Qué prometes?</small>
+      <small class="muted">🐢 Prudente: fácil de cumplir, pero la acción baja un poco hoy. 🎯 Realista: lo esperado. 🚀 Ambiciosa: sube hoy y, si no cumples, se hunde.</small>
+      <div class="row wrap">${choices}</div></div></div>`;
+  } else {
+    const G = GUIDANCE[qs.q.level];
+    const okNow = qs.proj >= qs.target;
+    const gap = qs.target - qs.proj;
+    quarter = `<div class="card stock-q ${okNow ? 'good' : 'warn'}"><div class="card-icon">${G.icon}</div><div class="grow">
+      <b>${quarterName(qs.q)} · previsión ${G.name.toLowerCase()}${qs.q.warned ? ' (rebajada)' : ''}: ${fmtMoney(qs.target)}</b>
+      <small>Llevas <b>${fmtMoney(qs.rev)}</b> · quedan ${fmtDays(qs.left)}.</small>
+      ${bar(qs.rev / qs.target, okNow ? 'var(--green)' : 'var(--orange)')}
+      <small>Al ritmo actual acabarías con <b>${fmtMoney(qs.proj)}</b>: ${okNow ? '✔ cumplirías.' : `✖ te faltarían ${fmtMoney(gap)}.`}</small>
+      ${okNow ? '' : '<small class="muted">Para llegar: campañas de marketing, lanzar productos, subir precios o cerrar ventas a empresas.</small>'}</div>
+      ${canWarn(s) ? `<div class="col-btns">${btn('⚠️ Rebajar previsión', 'lowerGuidance', {}, { kind: 'small', title: `La acción cae un ${Math.round(WARN_COST * 100)}% hoy, pero el objetivo baja a ${fmtMoney(qs.q.exp * GUIDANCE.low.mult)}` })}</div>` : ''}</div>`;
+  }
+  const log = (St?.log || [])
+    .map((l) => {
+      const beat = l.rev >= l.target;
+      return `<tr><td>${quarterName(l)}</td><td>${GUIDANCE[l.level].icon} ${fmtMoney(l.target)}${l.warned ? ' ⚠️' : ''}</td><td>${fmtMoney(l.rev)} ${beat ? '✔' : '✖'}</td>
+        <td class="${l.jump >= 0 ? 'up' : 'down'}">${l.jump >= 0 ? '▲' : '▼'} ${fmtPct(Math.abs(l.jump))}</td></tr>`;
+    })
+    .join('');
+  return `${head}
+    <h3>Trimestre actual</h3>${quarter}
+    ${log ? `<h3>Resultados anteriores</h3><table class="tbl stock-log"><tr><th>Trimestre</th><th>Prometido</th><th>Ingresos</th><th>Acción</th></tr>${log}</table>` : ''}
+    <div class="row">${btn('Emitir acciones (5%)', 'issueShares', {}, { disabled: s.day - F.lastIssue < 180 })}<small class="muted">Consigue caja a cambio de diluirte. Una vez cada 180 días.</small></div>`;
 }
 
 // ---------------------------------------------------------------- mercado

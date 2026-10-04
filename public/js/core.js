@@ -51,13 +51,16 @@ export function news(s, text, kind = 'info') {
   if (s.news.length > 40) s.news.length = 40;
 }
 
+// Categorías del libro que cuentan como ingresos (no la financiación ni los préstamos).
+export const REVENUE_CATS = ['ads', 'subs', 'tx', 'api', 'contracts', 'hardware', 'store', 'b2b'];
+
 // Todo movimiento de caja pasa por aquí para que el libro mensual cuadre.
 export function money(s, amount, cat) {
   if (!amount) return;
   s.money += amount;
   const bucket = amount >= 0 ? s.ledger.month.inc : s.ledger.month.exp;
   bucket[cat] = (bucket[cat] || 0) + Math.abs(amount);
-  if (amount > 0 && ['ads', 'subs', 'tx', 'api', 'contracts', 'hardware', 'store', 'b2b'].includes(cat)) s.stats.revenue += amount;
+  if (amount > 0 && REVENUE_CATS.includes(cat)) s.stats.revenue += amount;
 }
 
 // Un efecto de N días añadido hoy dura del día siguiente al día de hoy + N,
