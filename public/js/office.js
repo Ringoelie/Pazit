@@ -36,12 +36,13 @@ function darknessAt(hour) {
 const frac = (v) => v - Math.floor(v);
 
 // Muebles a los que el equipo va a descansar.
-const BREAK = new Set(['coffee', 'snacks', 'arcade', 'sofa', 'foosball', 'ballpit', 'gym', 'nappods', 'chef', 'robot', 'library', 'cooler', 'aquarium', 'meeting']);
+const BREAK = new Set(['coffee', 'snacks', 'arcade', 'sofa', 'foosball', 'ballpit', 'gym', 'nappods', 'chef', 'robot', 'library', 'cooler', 'aquarium', 'meeting',
+  'beanbag', 'jukebox', 'pingpong', 'fireplace', 'hammock', 'telescope']);
 const MAKERS_VIEW = ['founder', 'dev', 'design', 'ai', 'marketer', 'pm'];
 const strHash = (str) => [...String(str)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 const PARTY_TEXT = {
   launch: 'LANZAMIENTO!', funding: 'RONDA CERRADA!', ipo: 'SALIMOS A BOLSA!', move: 'OFICINA NUEVA!', acquire: 'COMPRADA!', achievement: 'LOGRO!',
-  keynote: 'KEYNOTE!', award: 'PREMIO!', newyear: 'FELIZ AÑO!',
+  keynote: 'KEYNOTE!', award: 'PREMIO!', newyear: 'FELIZ AÑO!', results: 'RESULTADOS!',
 };
 const GLYPH = {
   code: ['</>', PAL.sky], design: ['~', PAL.orange], ai: ['01', PAL.silver], flex: ['*', PAL.yellow],
@@ -49,7 +50,10 @@ const GLYPH = {
   sec: ['#', PAL.lime], legal: ['&', PAL.silver],
 };
 
-function drawItem(g, id, x, y, t) {
+// Datos de la pantalla de bolsa para este fotograma.
+let tickerData = null;
+
+function drawItem(g, id, x, y, t, uid = 0) {
   switch (id) {
     case 'plant': return S.drawPlant(g, x, y, t);
     case 'rug': return S.drawRug(g, x, y);
@@ -75,6 +79,19 @@ function drawItem(g, id, x, y, t) {
     case 'car': return S.drawCar(g, x, y);
     case 'boxes': return S.drawBoxes(g, x, y);
     case 'bike': return S.drawBike(g, x, y);
+    case 'lava': return S.drawLava(g, x, y, t);
+    case 'poster': return S.drawWallPoster(g, x, y, uid);
+    case 'beanbag': return S.drawBeanbag(g, x, y, uid);
+    case 'palm': return S.drawPalm(g, x, y, t);
+    case 'neon': return S.drawNeon(g, x, y, t);
+    case 'zen': return S.drawZen(g, x, y, t);
+    case 'jukebox': return S.drawJukebox(g, x, y, t);
+    case 'pingpong': return S.drawPingPong(g, x, y, t);
+    case 'fireplace': return S.drawFireplace(g, x, y, t);
+    case 'hammock': return S.drawHammock(g, x, y, t);
+    case 'mural': return S.drawMural(g, x, y);
+    case 'telescope': return S.drawTelescope(g, x, y);
+    case 'ticker': return S.drawTicker(g, x, y, t, tickerData);
   }
 }
 
@@ -768,6 +785,13 @@ export class OfficeView {
       this.relDay = -1;
       this.party('award');
     }
+    // Resultados trimestrales: fiesta si la acción sube, cartel si se hunde.
+    const rs = officeFx(s, 'results');
+    if (rs && this.resultsKey !== rs.until) {
+      this.resultsKey = rs.until;
+      if (rs.pct >= 0) this.party('results');
+      this.banner = { text: `ACCION ${rs.pct >= 0 ? '+' : ''}${rs.pct}%${rs.pct >= 0 ? '!' : '...'}`, until: this.t + 4 };
+    }
     // Presentación: escenario durante el día y, si sale bien, fiesta.
     const kn = officeFx(s, 'keynote');
     if (kn && this.keynoteKey !== kn.until + kn.name) {
@@ -780,6 +804,8 @@ export class OfficeView {
     const g = this.wctx;
     const t = this.t;
     const dragRef = this.drag?.moved ? this.drag.ref : null;
+    const hist = s.stock?.hist;
+    tickerData = hist?.length ? { pts: hist.slice(-16).map((h) => h.p), up: hist.length < 2 || hist[hist.length - 1].p >= hist[Math.max(0, hist.length - 5)].p } : null;
     g.drawImage(this.bg, 0, 0);
     paintWindows(g, L, s, t, this.windows, this.hour);
     this.drawSeasonSky(g, t);
@@ -792,12 +818,12 @@ export class OfficeView {
 
     for (const it of layout.items) {
       if (!isWall(it.id)) continue;
-      drawItem(g, it.id, it.x, it.y, t);
+      drawItem(g, it.id, it.x, it.y, t, it.uid);
       this.editHits.push({ ref: 'i:' + it.uid, ...itemRect(it) });
     }
     for (const it of layout.items) {
       if (!FLAT.has(it.id)) continue;
-      drawItem(g, it.id, it.x, it.y, t);
+      drawItem(g, it.id, it.x, it.y, t, it.uid);
       this.editHits.push({ ref: 'i:' + it.uid, ...itemRect(it) });
     }
 
@@ -808,7 +834,7 @@ export class OfficeView {
       const draw = () => {
         S.floorShadow(g, r.x, r.y + r.h - 1, r.w);
         if (PET_IDS.includes(it.id)) drawPetHome(this, g, it, t);
-        else drawItem(g, it.id, it.x, it.y, t);
+        else drawItem(g, it.id, it.x, it.y, t, it.uid);
       };
       drawables.push({ y: r.y + r.h, ref: 'i:' + it.uid, rect: r, draw });
     }
@@ -1020,7 +1046,16 @@ export class OfficeView {
       }
       for (const it of layout.items) {
         if (it.id === 'snacks' || it.id === 'arcade' || it.id === 'aquarium') g.drawImage(S.glowSprite('rgba(115,239,247,.22)', 14), it.x - 7, it.y);
+        else if (it.id === 'lava') g.drawImage(S.glowSprite('rgba(255,120,150,.32)', 10), it.x - 7, it.y - 4);
+        else if (it.id === 'neon' && (t + it.x * 0.37) % 11 > 0.25) g.drawImage(S.glowSprite('rgba(255,110,160,.3)', 24), it.x - 7, it.y - 18);
+        else if (it.id === 'jukebox') g.drawImage(S.glowSprite('rgba(255,190,90,.25)', 14), it.x - 7, it.y);
+        else if (it.id === 'ticker') g.drawImage(S.glowSprite(tickerData && !tickerData.up ? 'rgba(255,100,100,.22)' : 'rgba(167,240,112,.22)', 16), it.x - 2, it.y - 8);
       }
+    }
+    for (const it of layout.items) {
+      if (it.id !== 'fireplace') continue;
+      const flick = 0.28 + 0.06 * Math.sin(t * 9 + it.x) + this.dark * 0.35;
+      g.drawImage(S.glowSprite(`rgba(255,150,70,${flick.toFixed(2)})`, 30), it.x + 12 - 30, it.y + 15 - 30);
     }
     petLights(this, g, this.dark);
     const r = L.room;

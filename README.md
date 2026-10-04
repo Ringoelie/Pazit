@@ -7,7 +7,7 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 ## Qué incluye
 
 - **Oficina en pixel art animada**: tu equipo trabaja, se toma cafés, juega al arcade y se va de vacaciones. Cada perfil tiene su estilo (cascos para quien programa, boina para diseño, bata en I+D, traje para abogados...). Nueve oficinas con su propio suelo, paredes y vistas, desde el garaje de hormigón hasta una isla privada con vistas al mar y una sede en la Luna, con luz que entra por las ventanas, sombras, zoom y arrastre.
-- **Editor de oficina** (✏️ o tecla **E**): arrastra mesas y muebles donde quieras. La decoración cerca de una mesa (plantas, lámparas, alfombras, acuario, estatua) sube el ánimo de quien se sienta ahí; el arcade, el futbolín o el gimnasio pegados a las mesas restan productividad por el ruido. En el garaje puedes incluso vender el coche de tus padres.
+- **Editor de oficina** (✏️ o tecla **E**): arrastra mesas y muebles donde quieras. La decoración cerca de una mesa (plantas, palmeras, lámparas de lava, pufs, alfombras, acuario, fuente zen, chimenea, estatua) sube el ánimo de quien se sienta ahí; el arcade, el futbolín, el ping-pong, la jukebox o el gimnasio pegados a las mesas restan productividad por el ruido. En la pared caben pósteres, un letrero de neón, un mural y, si cotizas, una pantalla con tu acción en directo. La tienda va por secciones (decoración, descanso, ocio, trabajo y mascotas). En el garaje puedes incluso vender el coche de tus padres.
 - **Día y noche**: la oficina amanece y anochece, se encienden las lámparas y los monitores, y la gente se va a casa por la tarde. En crunch (o en un hackathon) se quedan de noche con ojeras.
 - **Equipo**: 11 perfiles para contratar (desarrollo, diseño, IA, DevOps, PM, marketing, ventas, I+D, RR.HH., abogados y seguridad), 12 rasgos de personalidad, niveles, ánimo, energía, sueldos, formación, renuncias y bajas por agotamiento.
 - **Equipos**: la gente de cada producto o contrato forma un equipo. Nombra a un jefe o jefa (su producción baja a la mitad, pero el resto rinde hasta un 20% más), mueve a varias personas de golpe (repartidas por habilidad) y deja que quien se quede sin tarea vuelva a trabajar solo.
@@ -28,14 +28,15 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 - **Temporadas**: San Valentín, verano, vuelta al cole, Black Friday y Navidades cambian la demanda de cada tipo de producto.
 - **Clientes empresa**: con Ventas B2B, empresas que se interesan por tus productos, piden funciones concretas y un máximo de días caído al año, y pagan una cuota anual. Si te pasas, penalización; a la segunda, se van. Los comerciales traen más clientes y cierran más ventas.
 - **Premios Pixel**: gala anual con nominaciones (Startup del año, Mejor producto, Mejor lugar para trabajar, Innovación). Ir con todo el equipo sube el ánimo y las opciones. Los trofeos y medallas se lucen en una vitrina en la oficina.
-- **Dinero**: rondas de inversión (business angel → IPO), préstamos, bolsa y bancarrota.
+- **Dinero**: rondas de inversión (business angel → IPO), préstamos y bancarrota.
+- **Bolsa con resultados trimestrales**: al empezar cada trimestre los analistas calculan tus ingresos (según lo que vendes y la temporada) y tú prometes una cifra: prudente (fácil, pero la acción baja un poco), realista o ambiciosa (la acción sube ese día, pero si no cumples se hunde). En la pestaña Inversores ves cuánto llevas y si llegarás al ritmo actual; puedes rebajar la previsión a tiempo (duele menos que fallar). Cumplir te da credibilidad, que amplifica las subidas; y con stock options, al equipo también le importa la cotización.
 - **Vida en la oficina**: fiestas con guirnaldas, globos y confeti cuando lanzas un producto, cierras una ronda o sales a bolsa; inversores que vienen de visita; un equipo que suda cuando la empresa está en números rojos; y eventos como el hackathon nocturno con pizzas, la fiesta de Navidad con árbol y gorros, cumpleaños con tarta y gorro (cada persona tiene su fecha y lo celebra una vez al año), la visita de una persona famosa o un apagón a la luz de las velas. Y fiestas de temporada: disfraces, calabazas, telarañas y murciélagos en Halloween; helados y ventiladores en verano; gorros y fuegos artificiales en Nochevieja.
 - **Mascotas**: perro, gato (que duerme en su cesta y se sube a las mesas), loro (que vuela a los monitores y repite lo que oye) y perro robot que patrulla de noche. Tócalas para darles mimos.
 - **Estilos de oficina**: cyberpunk, zen japonés, retro de los 80 y casa en la playa cambian suelo, paredes y muebles en cualquier oficina, y suben el ánimo.
 - **Música chiptune** generada al momento: cambia de ritmo y tonalidad si todo va bien, si hay crisis y con cada oficina. Se puede apagar en el menú.
 - **Tutorial guiado** para la primera partida: señala cada botón y avanza cuando haces lo que te pide. Se puede repetir desde el menú.
 - **App instalable**: se puede instalar en el móvil o el ordenador y jugar sin conexión.
-- **Más cosas**: 25 muebles y mejoras de oficina, 7 políticas de empresa (semana de 4 días, crunch, copilotos de IA...), 24 eventos aleatorios, 15 objetivos, 27 logros, gráficos, sonido chiptune y guardado automático.
+- **Más cosas**: 38 muebles y mejoras de oficina, 7 políticas de empresa (semana de 4 días, crunch, copilotos de IA...), 24 eventos aleatorios, 15 objetivos, 29 logros, gráficos, sonido chiptune y guardado automático.
 - Funciona en **móvil y escritorio**, sin dependencias ni paso de build.
 
 ## Jugar en local
@@ -106,6 +107,7 @@ public/
     keynote.js  presentaciones de lanzamiento
     b2b.js      clientes empresa: oportunidades, contratos anuales y penalizaciones
     awards.js   Premios Pixel: nominaciones y gala anual
+    stock.js    Bolsa: previsión trimestral, resultados y cotización
     state.js    guardado, exportación e importación
     layout.js   plano de la oficina: posiciones, colisiones y efectos de cercanía
     sprites.js  pixel art dibujado con código (con contorno y caché) y fuente de 3x5 px

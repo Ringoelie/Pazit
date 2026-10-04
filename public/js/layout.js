@@ -16,6 +16,8 @@ export const SIZES = {
   ballpit: [34, 16], podcast: [26, 28], gym: [36, 14], statue: [16, 26], nappods: [30, 16], chef: [34, 18],
   robot: [16, 24], whiteboard: [28, 16], ac: [22, 7], car: [58, 28], boxes: [30, 24], bike: [26, 14], pet: [16, 10],
   cat: [14, 9], parrot: [10, 20], robodog: [16, 8],
+  lava: [6, 12], poster: [12, 16], beanbag: [12, 9], palm: [12, 26], neon: [34, 12], zen: [16, 14], jukebox: [14, 22],
+  pingpong: [32, 18], fireplace: [24, 22], hammock: [28, 14], mural: [40, 21], telescope: [12, 20], ticker: [28, 16],
   // No es un mueble: el árbol de Navidad busca sitio libre con estas medidas.
   xmastree: [16, 26],
   stage: [44, 30],
@@ -23,7 +25,7 @@ export const SIZES = {
   pumpkin: [10, 9],
 };
 // Objetos de pared: solo se mueven en horizontal, a esta altura.
-export const WALL_ITEMS = { whiteboard: 20, ac: 2 };
+export const WALL_ITEMS = { whiteboard: 20, ac: 2, poster: 20, neon: 22, mural: 19, ticker: 20 };
 // Objetos planos: se dibujan bajo todo y no chocan con nada.
 export const FLAT = new Set(['rug']);
 
@@ -98,16 +100,28 @@ export function snapPos(id, x, y) {
   return { x: snap(x), y: isWall(id) ? WALL_ITEMS[id] : snap(y) };
 }
 
+// ¿Queda al menos `gap` px de pared libre a cada lado?
+function wallGap(L, id, x, y, gap) {
+  if (!gap) return true;
+  const r = rectFor(id, x, y);
+  const wide = { x: r.x - gap, y: r.y, w: r.w + gap * 2, h: r.h };
+  return !L.items.some((it) => isWall(it.id) && overlap(wide, itemRect(it)));
+}
+
 // Busca el primer hueco libre, empezando por la zona de descanso.
 export function findSpot(L, tier, id) {
   const { W, H } = officeSize(tier);
   const [w] = SIZES[id] || [12, 12];
   if (isWall(id)) {
-    const pref = id === 'ac' ? W - w - 8 : 64;
+    const y = WALL_ITEMS[id];
     const xs = [];
     for (let x = 0; x + w <= W; x += GRID) xs.push(x);
-    xs.sort((a, b) => Math.abs(a - pref) - Math.abs(b - pref));
-    for (const x of xs) if (canPlace(L, tier, id, x, WALL_ITEMS[id])) return { x, y: WALL_ITEMS[id] };
+    // El aire va a la derecha; el resto, a partir del póster de la entrada y
+    // con un poco de aire entre cuadros.
+    const order = id === 'ac' ? xs.sort((a, b) => Math.abs(a - (W - w - 8)) - Math.abs(b - (W - w - 8))) : [...xs.filter((x) => x >= 64), ...xs.filter((x) => x < 64).reverse()];
+    for (const gap of [6, 0]) {
+      for (const x of order) if (canPlace(L, tier, id, x, y) && wallGap(L, id, x, y, gap)) return { x, y };
+    }
     return null;
   }
   const lx = snap(loungeX(tier));
