@@ -55,6 +55,24 @@ export const TRAITS = {
   remote: { name: 'Remoto', icon: '🏠', desc: 'Trabaja desde casa: no ocupa escritorio, -10% productividad.' },
 };
 
+// Dificultad: multiplica la caja inicial, los sueldos, el crecimiento y la
+// agresividad de los rivales, lo que pagan inversores y clientes, los ataques
+// y los días en números rojos antes de quebrar.
+export const DIFFICULTIES = {
+  easy: { name: 'Fácil', icon: '🌱', desc: 'Más caja al empezar, rivales tranquilos e inversores generosos.', money: 40000, salary: 0.9, rivals: 0.7, invest: 1.2, attacks: 0.6, pay: 1.15, redDays: 60 },
+  normal: { name: 'Normal', icon: '⚖️', desc: 'La experiencia equilibrada.', money: 25000, salary: 1, rivals: 1, invest: 1, attacks: 1, pay: 1, redDays: 45 },
+  hard: { name: 'Difícil', icon: '🔥', desc: 'Menos caja, sueldos caros, rivales agresivos, inversores exigentes y más ataques. Quiebras a los 30 días en rojo.', money: 15000, salary: 1.15, rivals: 1.45, invest: 0.8, attacks: 1.5, pay: 0.88, redDays: 30 },
+};
+
+// Con quién fundas la empresa. Quien cofunda trabaja por poco, nunca se va y
+// se queda con parte de la empresa.
+export const COFOUNDERS = {
+  solo: { name: 'En solitario', icon: '🙋', desc: 'Toda la empresa es tuya y empiezas con $8k más.', money: 8000, equity: 100 },
+  tech: { name: 'Técnica', icon: '💻', role: 'dev', desc: 'Programa muy rápido y cobra poco. Se queda con el 15% de la empresa.', equity: 85 },
+  design: { name: 'Diseño', icon: '🎨', role: 'design', desc: 'Productos pulidos desde el primer día. Se queda con el 15% de la empresa.', equity: 85 },
+  biz: { name: 'Comercial', icon: '🤝', role: 'sales', desc: 'Contratos mejor pagados y clientes empresa. Se queda con el 15% de la empresa.', equity: 85 },
+};
+
 export const OFFICES = [
   { id: 'garage', name: 'Garaje de tus padres', desks: 4, rent: 0, move: 0, mood: -4, w: 256, h: 176, theme: 'garage' },
   { id: 'cowork', name: 'Coworking', desks: 8, rent: 1800, move: 3000, mood: 0, w: 320, h: 200, theme: 'cowork' },
@@ -207,6 +225,7 @@ export const FEATURES = {
   // Cumplimiento normativo: sirven en cualquier producto (universal).
   // Tarea interna: pagar la deuda técnica. No es una función del producto.
   refactor: { name: 'Refactorizar', icon: '🧹', cost: { code: 1 }, appeal: 0, internal: true },
+  version: { name: 'Nueva versión', icon: '🆕', cost: { code: 1 }, appeal: 0, internal: true },
   privacy: { name: 'Privacidad y RGPD', icon: '🔏', cost: { code: 50, design: 15 }, appeal: 1, universal: true, research: 'compliance' },
   aiaudit: { name: 'Auditoría de IA', icon: '🧾', cost: { code: 40, ai: 60 }, appeal: 1, universal: true, research: 'compliance' },
   // Hardware. unit: cuánto encarece cada nivel el coste de fabricación.
@@ -470,6 +489,17 @@ export const QUESTS = [
   { id: 'unicorn', text: 'Alcanza una valoración de $1B: ¡unicornio!', reward: 500000 },
   { id: 'ipo', text: 'Sal a bolsa', reward: 0 },
   { id: 'agi', text: 'Investiga la AGI', reward: 0 },
+  // Segunda fase: el imperio. La última es la victoria.
+  { id: 'regions3', text: 'Abre sedes en 3 regiones del mundo', reward: 1e6, phase: 2 },
+  { id: 'v3', text: 'Lanza la versión 3.0 de un producto', reward: 2e6, phase: 2 },
+  { id: 'beat3', text: 'Cumple tu previsión en bolsa 3 trimestres seguidos', reward: 5e6, phase: 2 },
+  { id: 'decacorn', text: 'Alcanza $10.000M de valoración: ¡decacornio!', reward: 1e7, phase: 2 },
+  { id: 'lead2', text: 'Lidera 2 mercados (más de la mitad de la cuota)', reward: 1e7, phase: 2 },
+  { id: 'acquire', text: 'Compra un rival (pestaña Mercado)', reward: 5e6, phase: 2 },
+  { id: 'award8', text: 'Gana 8 Premios Pixel', reward: 5e6, phase: 2 },
+  { id: 'moon', text: 'Lleva la sede a la Luna', reward: 2e7, phase: 2 },
+  { id: 'users500m', text: 'Llega a 500 millones de usuarios', reward: 2.5e7, phase: 2 },
+  { id: 'val50b', text: 'Alcanza $50.000M de valoración y conquista el mundo', reward: 0, phase: 2 },
 ];
 
 export const ACHIEVEMENTS = [
@@ -496,6 +526,9 @@ export const ACHIEVEMENTS = [
   { id: 'friends', name: 'Como una familia', icon: '🤝', desc: 'Diez amistades en la plantilla a la vez.' },
   { id: 'showman', name: 'Una cosa más...', icon: '🎤', desc: 'Da una presentación de lanzamiento épica.' },
   { id: 'award', name: 'Y el premio es para...', icon: '🏆', desc: 'Gana un Premio Pixel.' },
+  { id: 'victory', name: 'Leyenda', icon: '👑', desc: 'Completa todos los objetivos.' },
+  { id: 'versions', name: 'Siempre al día', icon: '🆕', desc: 'Lanza 10 versiones nuevas de tus productos.' },
+  { id: 'hardUnicorn', name: 'Contra viento y marea', icon: '🌪️', desc: 'Llega a unicornio en dificultad Difícil.' },
   { id: 'beat4', name: 'Máquina de cumplir', icon: '📊', desc: 'Supera tu previsión de ingresos 4 trimestres seguidos.' },
   { id: 'moonshot', name: 'Promesa cumplida', icon: '🌕', desc: 'Cumple una previsión ambiciosa en bolsa.' },
   { id: 'happy', name: 'Mejor lugar para trabajar', icon: '😊', desc: 'Ánimo medio superior a 85 con 20+ empleados.' },

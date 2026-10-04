@@ -547,6 +547,30 @@ details.mail > summary .mail-out { margin: 6px 0 0; }
 details.mail.done { padding: 8px 12px; }
 details.mail[open] > summary { margin-bottom: 4px; }
 
+/* ---------- ¿por qué? y versiones ---------- */
+details.why { margin: 10px 0; background: var(--panel2); border: 1px solid var(--edge); border-radius: 12px; padding: 8px 12px; }
+details.why > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; }
+details.why > summary::-webkit-details-marker { display: none; }
+details.why > summary small { grid-column: 1; color: var(--muted); }
+.why-more { grid-column: 2; grid-row: 1 / span 2; color: var(--yellow); font-size: 14px; border: 1px solid var(--edge); border-radius: 999px; padding: 3px 10px; }
+details.why[open] .why-more { background: var(--yellow); color: var(--ink); }
+.why-rows { display: grid; gap: 6px; margin-top: 10px; }
+.why-row { display: grid; grid-template-columns: 24px 1fr auto; gap: 2px 8px; align-items: center; padding: 6px 8px; border-radius: 10px; background: var(--panel); border-left: 3px solid var(--edge); }
+.why-row small { grid-column: 2 / -1; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.why-row.good { border-left-color: var(--green); }
+.why-row.bad { border-left-color: var(--red); }
+.why-v { font-family: var(--px); font-size: 10px; color: var(--text); }
+.why-row small .up { color: var(--lime); }
+.why-row small .down { color: var(--orange); }
+.bad-text { color: var(--orange); }
+
+/* ---------- partida nueva, fases y victoria ---------- */
+.ng-pick { margin: 10px 0; }
+.ng-pick .chips { margin: 6px 0 4px; }
+.ng-pick small { display: block; min-height: 2.6em; }
+.quests li.phase { list-style: none; margin: 12px 0 4px; color: var(--yellow); }
+.records tr.me td { color: var(--yellow); }
+
 /* ---------- bolsa ---------- */
 .card.stock-q .row.wrap { gap: 6px; margin-top: 6px; }
 .card.stock-q.good { border-color: rgba(56, 183, 100, 0.55); }

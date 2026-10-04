@@ -2,7 +2,7 @@
 
 **De garaje a unicornio.** Juego de gestión de startups en pixel art para el navegador, inspirado en los tycoon de empresas tecnológicas. Es un juego original: todo el arte se dibuja con código y no usa recursos de otros juegos.
 
-Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos para pagar las facturas, contratas talento, lanzas productos, investigas tecnología y compites contra gigantes hasta salir a bolsa... o quebrar en el intento.
+Empiezas en el garaje de tus padres con una idea (y $15.000, $25.000 o $40.000 según la dificultad). Aceptas contratos para pagar las facturas, contratas talento, lanzas productos, investigas tecnología y compites contra gigantes hasta salir a bolsa... o quebrar en el intento.
 
 ## Qué incluye
 
@@ -13,6 +13,9 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 - **Equipo**: 11 perfiles para contratar (desarrollo, diseño, IA, DevOps, PM, marketing, ventas, I+D, RR.HH., abogados y seguridad), 12 rasgos de personalidad, niveles, ánimo, energía, sueldos, formación, renuncias y bajas por agotamiento.
 - **Equipos**: la gente de cada producto o contrato forma un equipo. Nombra a un jefe o jefa (su producción baja a la mitad, pero el resto rinde hasta un 20% más), mueve a varias personas de golpe (repartidas por habilidad) y deja que quien se quede sin tarea vuelva a trabajar solo.
 - **Relaciones**: los compañeros de mesa y de equipo se hacen amigos (más ánimo), tienen roces (menos ánimo y productividad) o empiezan a salir, y a veces rompen. Los seniors adoptan juniors como mentores y los hacen crecer más rápido. Los roces llegan al correo: separarlos, mediar o dejarlo estar.
+- **Dificultad y cofundación**: al empezar eliges Fácil, Normal o Difícil (caja inicial, sueldos, rivales, inversores, ataques, clientes y días en rojo antes de quebrar) y si fundas en solitario (toda la empresa y $8k más) o con alguien técnico, de diseño o comercial (barato, leal y con el 15% de la empresa).
+- **Versiones y ciclo de vida**: cada producto puede sacar su 2.0, 3.0... (cuesta un tercio de lo invertido): multiplica el atractivo ×1,45, llega con hype, limpia bugs y deuda. A los dos años sin versión nueva los usuarios se aburren. Los rivales innovan rápido al principio y más despacio cuando el mercado madura, así que quien saca versiones sigue creciendo. Puedes vender un producto (cobras unos 3 años de ingresos) o retirarlo para hacer hueco.
+- **¿Por qué?**: cada producto explica hacia dónde van sus usuarios y lo que más le frena: mercado, cuota frente a rivales, conocimiento de marca, satisfacción (con cada pieza: anuncios, precio, bugs, caídas, aburrimiento...), temporada y versión.
 - **Productos**: 11 categorías de software (medio digital, tienda online, red social, app de citas, SaaS, streaming, videojuego, buscador, neobanco, asistente de IA y metaverso), 4 de hardware y 45 funciones con 10 niveles cada una.
 - **Deuda técnica**: cada producto se desarrolla a un ritmo (rápido, normal o con cuidado). Ir deprisa acumula deuda, que frena el desarrollo y multiplica los bugs hasta que refactorizas.
 - **Presentaciones de lanzamiento**: en vez de lanzar sin más, programa una presentación (en la oficina, en un auditorio o a lo grande). La campaña previa sube el hype cada día y el producto se lanza en directo, con escenario en la oficina: sale épica, buena o floja según lo completo y pulido que esté y quién presente. Si faltan las funciones básicas, la demo se cuelga.
@@ -37,7 +40,8 @@ Empiezas en el garaje de tus padres con $25.000 y una idea. Aceptas contratos pa
 - **Música chiptune** generada al momento: cambia de ritmo y tonalidad si todo va bien, si hay crisis y con cada oficina. Se puede apagar en el menú.
 - **Tutorial guiado** para la primera partida: señala cada botón y avanza cuando haces lo que te pide. Se puede repetir desde el menú.
 - **App instalable**: se puede instalar en el móvil o el ordenador y jugar sin conexión.
-- **Más cosas**: 38 muebles y mejoras de oficina, 7 políticas de empresa (semana de 4 días, crunch, copilotos de IA...), 24 eventos aleatorios, 15 objetivos, 29 logros, gráficos, sonido chiptune y guardado automático.
+- **Objetivos en dos fases y victoria**: 15 objetivos para llegar a unicornio y salir a bolsa, y una segunda fase de 10 (sedes, versiones, bolsa, decacornio, liderar mercados, comprar rivales, premios, la Luna, 500 millones de usuarios y $50.000M de valoración). Al cumplirlos todos ganas la partida, guardas tu récord y puedes seguir jugando.
+- **Más cosas**: 38 muebles y mejoras de oficina, 7 políticas de empresa (semana de 4 días, crunch, copilotos de IA...), 24 eventos aleatorios, 25 objetivos, 32 logros, gráficos, sonido chiptune y guardado automático.
 - Funciona en **móvil y escritorio**, sin dependencias ni paso de build.
 
 ## Jugar en local

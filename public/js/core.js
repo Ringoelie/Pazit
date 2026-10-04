@@ -1,8 +1,11 @@
 // Helpers de estado compartidos por la simulación y los eventos.
-import { ROLES, LEVELS, TRAITS, LOOKS, FIRST_NAMES, LAST_NAMES, OFFICES, PERKS, REGIONS } from './data.js';
+import { ROLES, LEVELS, TRAITS, LOOKS, FIRST_NAMES, LAST_NAMES, OFFICES, PERKS, REGIONS, DIFFICULTIES } from './data.js';
 import { rnd, rint, rfloat, pick, chance, gauss, clamp, dateOf } from './util.js';
 
 export const uid = (s) => s.nextId++;
+export const diffOf = (s) => DIFFICULTIES[s?.difficulty] || DIFFICULTIES.normal;
+// Los mercados maduran: con los años, los rivales innovan más despacio.
+export const marketMaturity = (s) => 1 / (1 + Math.max(0, s.day - 730) / 1460);
 export const has = (s, id) => s.research[id] != null;
 export const officeOf = (s) => OFFICES[s.office.tier];
 export const findEmp = (s, id) => s.employees.find((e) => e.id === id);
@@ -103,6 +106,7 @@ export function expectedSalary(e, s) {
   let x = ROLES[e.role].base * payFactor(e.skill) * Math.pow(1.03, (s?.day || 0) / 365);
   if (e.region) x *= REGIONS[e.region].salary;
   if (e.traits.includes('tenx')) x *= 1.3;
+  if (s) x *= diffOf(s).salary;
   return Math.round(x / 50) * 50;
 }
 

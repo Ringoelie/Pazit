@@ -71,6 +71,8 @@ function migrate(s) {
     if (!Array.isArray(e.traits)) e.traits = [];
     if (!e.looks || typeof e.looks !== 'object') e.looks = { ...founder.looks };
   }
+  // Partidas de antes de las versiones: el aburrimiento empieza a contar al cargar.
+  for (const p of s.products) if (p && p.launched && p.versionDay == null) p.versionDay = s.day;
   try {
     ensureLayout(s);
     ensureRivals(s);
