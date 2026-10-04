@@ -756,7 +756,7 @@ export class OfficeView {
     }
     // Año Nuevo: fiesta el 1 de enero.
     const today = dateOf(s.day);
-    if (today.m === 0 && today.d === 1 && this.nyKey !== today.y && !this.edit) {
+    if (today.m === 0 && today.d === 1 && s.day > 0 && this.nyKey !== today.y && !this.edit) {
       this.nyKey = today.y;
       this.party('newyear');
       this.banner = { text: `FELIZ ${today.y}!`, until: this.t + 5 };
@@ -855,13 +855,25 @@ export class OfficeView {
     const sh = Math.min(L.H, this.viewH());
     const ox = this.offX();
     const oy = this.offY();
-    // Si sobra hueco alrededor de la oficina: trama de puntos y sombra.
+    // Si sobra hueco alrededor de la oficina: fondo con degradado y trama de
+    // puntos, y una sombra suave debajo, como una maqueta sobre la mesa.
     if (ox > 0 || oy > 0) {
+      const H = this.canvas.height;
+      if (this.backdropH !== H) {
+        this.backdropH = H;
+        this.backdrop = c.createLinearGradient(0, 0, 0, H);
+        this.backdrop.addColorStop(0, '#1d2244');
+        this.backdrop.addColorStop(1, '#0c0e20');
+      }
+      c.fillStyle = this.backdrop;
+      c.fillRect(0, 0, this.canvas.width, H);
       c.fillStyle = this.dots();
-      c.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      c.fillRect(0, 0, this.canvas.width, H);
       const d = Math.max(3, Math.round(z * 3));
-      c.fillStyle = 'rgba(0,0,0,.35)';
-      c.fillRect(ox + d, oy + d, sw * z, sh * z);
+      for (let i = 3; i >= 1; i--) {
+        c.fillStyle = `rgba(3,4,14,${0.14 * (4 - i)})`;
+        c.fillRect(ox - i * d * 0.6 + d, oy + d * i * 0.8, sw * z + i * d * 1.2 - d, sh * z);
+      }
     }
     c.drawImage(this.world, this.cam.x, this.cam.y, sw, sh, ox, oy, sw * z, sh * z);
   }
